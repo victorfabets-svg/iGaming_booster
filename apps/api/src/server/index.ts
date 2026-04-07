@@ -5,7 +5,7 @@ import { connectWithRetry } from '../../../../shared/database/connection';
 async function start() {
   try {
     console.log('[DB] Attempting to connect to database...');
-    await connectWithRetry(env.DATABASE_URL);
+    await connectWithRetry();
   } catch (error) {
     console.error('[DB] Failed to connect to database:', error);
     process.exit(1);
