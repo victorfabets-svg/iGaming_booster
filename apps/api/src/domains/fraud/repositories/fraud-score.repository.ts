@@ -1,0 +1,34 @@
+import { pool, queryOne } from '../../../lib/database';
+
+export interface FraudScore {
+  id: string;
+  proof_id: string;
+  score: number;
+  signals: Record<string, unknown>;
+  created_at: Date;
+}
+
+export interface CreateFraudScoreInput {
+  proof_id: string;
+  score: number;
+  signals: Record<string, unknown>;
+}
+
+export async function createFraudScore(input: CreateFraudScoreInput): Promise<FraudScore> {
+  const result = await pool.query(
+    `INSERT INTO fraud.fraud_scores (proof_id, score, signals)
+     VALUES ($1, $2, $3)
+     RETURNING id, proof_id, score, signals, created_at`,
+    [input.proof_id, input.score, JSON.stringify(input.signals)]
+  );
+  return result.rows[0];
+}
+
+export async function findFraudScoreByProofId(proofId: string): Promise<FraudScore | null> {
+  return await queryOne<FraudScore>(
+    `SELECT id, proof_id, score, signals, created_at 
+     FROM fraud.fraud_scores 
+     WHERE proof_id = $1`,
+    [proofId]
+  );
+}
