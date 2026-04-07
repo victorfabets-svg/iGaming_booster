@@ -6,19 +6,31 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
   const id = randomUUID();
   const created_at = new Date().toISOString();
 
-  await db.query(
-    `INSERT INTO proofs (id, user_id, file_url, hash, created_at)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [id, proof.user_id, fileUrl, hash, created_at]
-  );
+  try {
+    await db.query(
+      `INSERT INTO proofs (id, user_id, file_url, hash, created_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, proof.user_id, fileUrl, hash, created_at]
+    );
 
-  return {
-    id,
-    user_id: proof.user_id,
-    file_url: fileUrl,
-    hash,
-    created_at,
-  };
+    return {
+      id,
+      user_id: proof.user_id,
+      file_url: fileUrl,
+      hash,
+      created_at,
+    };
+  } catch (error: any) {
+    // Handle UNIQUE constraint violation - return existing proof
+    if (error.code === '23505' && error.constraint === 'proofs_hash_key') {
+      const existing = await findByHash(hash);
+      if (existing) {
+        console.log('[PROOF] Duplicate detected at DB level, returning existing:', existing.id);
+        return existing;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function findByHash(hash: string): Promise<Proof | null> {
