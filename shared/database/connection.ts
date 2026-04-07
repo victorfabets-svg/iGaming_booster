@@ -2,32 +2,34 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-// Singleton pool - initialized on first connection attempt
-let db: Pool | null = null;
+// Singleton pool - always initialized
+export let db: Pool;
 
-export { db };
+export function initDatabase(connectionString: string): void {
+  db = new Pool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+
+  db.on('connect', () => {
+    console.log('[DB] New client connected to pool');
+  });
+
+  db.on('error', (err) => {
+    console.error('[DB] Unexpected error on idle client:', err);
+  });
+}
 
 export async function connectWithRetry(
   connectionString: string,
   retries = 5,
   delayMs = 2000
 ): Promise<void> {
-  // Create pool if not exists
+  // Initialize pool if not exists
   if (!db) {
-    db = new Pool({
-      connectionString,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
-
-    db.on('connect', () => {
-      console.log('[DB] New client connected to pool');
-    });
-
-    db.on('error', (err) => {
-      console.error('[DB] Unexpected error on idle client:', err);
-    });
+    initDatabase(connectionString);
   }
 
   // Retry connection

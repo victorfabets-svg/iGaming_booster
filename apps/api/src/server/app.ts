@@ -12,7 +12,7 @@ export function buildApp(): FastifyInstance {
 
   app.get('/health/db', async () => {
     try {
-      await db!.query('SELECT 1');
+      await db.query('SELECT 1');
       return { status: 'ok' };
     } catch (error) {
       return { status: 'error' };
