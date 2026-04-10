@@ -4,14 +4,14 @@ import { createFraudScore } from '../../fraud/repositories/fraud-score.repositor
 import { extractTextFromImage, OcrResult } from '../../validation/services/ocr.service';
 import { validateWithHeuristics, HeuristicResult } from '../../validation/services/heuristic.service';
 import { calculateFraudScore } from '../../fraud/services/fraud-score.service';
-import { createEvent } from '../../../shared/events/event.repository';
+import { createEvent } from '../../../../../../shared/events/event.repository';
 import { createPaymentSignal } from '../../payments/repositories/payment-signal.repository';
 import { extractIdentifiers } from '../../payments/services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../../payments/services/identifier-validation.service';
-import { logger, alertMonitor } from '../../../shared/observability/logger';
-import { recordValidationResult } from '../../../shared/observability/metrics.service';
-import { isValidationEnabled, isAutomaticApprovalEnabled } from '../../../shared/config/feature-flags';
-import { config } from '../../../shared/config/env';
+import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
+import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
+import { isValidationEnabled, isAutomaticApprovalEnabled } from '../../../../../../shared/config/feature-flags';
+import { config } from '../../../../../../shared/config/env';
 
 export interface ProcessValidationInput {
   proof_id: string;

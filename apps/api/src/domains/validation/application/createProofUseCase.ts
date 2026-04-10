@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { emitEvent } from '../../../../shared/events/emitter';
+import { emitEvent } from '../../../../../../shared/events/emitter';
 import { createProof } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
 

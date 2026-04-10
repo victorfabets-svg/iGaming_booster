@@ -1,4 +1,4 @@
-import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../shared/events/event-consumer.repository';
+import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../../../../shared/events/event-consumer.repository';
 import { processReward } from '../../rewards/use-cases/process-reward.use-case';
 
 const EVENT_TYPE = 'proof_validated';
