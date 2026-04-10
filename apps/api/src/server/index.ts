@@ -1,5 +1,5 @@
 import { buildApp } from './app';
-import { config } from '../shared/config/env';
+import { config } from '../../../../shared/config/env';
 import { connectWithRetry } from '../../../../shared/database/connection';
 
 async function start() {
