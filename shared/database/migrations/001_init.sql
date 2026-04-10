@@ -30,9 +30,6 @@ hash TEXT NOT NULL UNIQUE,
 submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Add unique constraint on hash for idempotency
-ALTER TABLE validation.proofs ADD CONSTRAINT proofs_hash_key UNIQUE (hash);
-
 
 -- PROOF VALIDATIONS
 CREATE TABLE validation.proof_validations (
