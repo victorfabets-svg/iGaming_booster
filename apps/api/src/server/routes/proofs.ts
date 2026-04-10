@@ -40,6 +40,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       const result = await createProofUseCase({
         user_id,
         file_buffer: fileBuffer,
+        filename: filename || undefined,
       });
 
       return reply.status(201).send({

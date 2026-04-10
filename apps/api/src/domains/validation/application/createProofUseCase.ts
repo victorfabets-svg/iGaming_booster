@@ -1,14 +1,22 @@
-import { createHash } from 'crypto';
 import { emitEvent } from '../../../../../../shared/events/emitter';
 import { createProof } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
+import { generateSHA256 } from '../../../../../../shared/utils/hash';
+import { getStorageService } from '../../../infrastructure/storage';
 
-function generateHash(buffer: Buffer): string {
-  return createHash('sha256').update(buffer).digest('hex');
-}
-
-function simulateStorage(proofId: string): string {
-  return `https://storage.local/proofs/${proofId}`;
+/**
+ * Determine content type from file extension
+ */
+function getContentType(ext: string): string {
+  const contentTypes: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'pdf': 'application/pdf',
+    'webp': 'image/webp',
+  };
+  return contentTypes[ext.toLowerCase()] || 'application/octet-stream';
 }
 
 export async function createProofUseCase(input: ProofInput): Promise<{ proof_id: string; status: string }> {
@@ -19,12 +27,20 @@ export async function createProofUseCase(input: ProofInput): Promise<{ proof_id:
     throw new Error('Invalid file buffer: empty or missing');
   }
 
-  // Generate hash from file buffer
-  const hash = generateHash(input.file_buffer);
+  // Generate hash first (before any operations that might fail)
+  const hash = generateSHA256(input.file_buffer);
 
-  // Generate proof ID for storage URL simulation
-  const tempId = `proof_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const fileUrl = simulateStorage(tempId);
+  // Get storage service
+  const storageService = getStorageService();
+
+  // Generate path and content type in domain layer (not in adapter)
+  const filename = input.filename || 'proof.pdf';
+  const fileExt = filename.split('.').pop() || 'pdf';
+  const path = `proofs/${input.user_id}/${hash.substring(0, 8)}.${fileExt}`;
+  const contentType = getContentType(fileExt);
+
+  // Upload file to storage and get public URL
+  const fileUrl = await storageService.upload(input.file_buffer, path, contentType);
 
   // Insert proof - DB enforces idempotency via UNIQUE constraint
   const result = await createProof(input, fileUrl, hash);

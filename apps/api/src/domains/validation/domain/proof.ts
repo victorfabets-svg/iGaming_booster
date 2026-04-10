@@ -9,6 +9,7 @@ export interface Proof {
 export interface ProofInput {
   user_id: string;
   file_buffer: Buffer;
+  filename?: string;
 }
 
 export interface ProofResult {
