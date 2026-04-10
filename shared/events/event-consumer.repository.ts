@@ -1,5 +1,6 @@
 import { db } from '../database/connection';
 import { Event } from './types';
+export { Event };
 
 export async function ensureProcessedEventsTable(): Promise<void> {
   await db.query(`

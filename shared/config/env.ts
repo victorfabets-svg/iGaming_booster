@@ -101,7 +101,7 @@ class ConfigManager {
   private static instance: AppConfig;
   private initialized = false;
 
-  private constructor() {}
+  public constructor() {}
 
   getConfig(): AppConfig {
     if (!this.initialized) {

@@ -5,7 +5,7 @@
 
 import { config, environment, isProduction, isDevelopment } from './env';
 import { featureFlags } from './feature-flags';
-import { logger } from './observability';
+import { logger } from '../observability';
 
 export function initializeEnvironment(): void {
   // Log environment info

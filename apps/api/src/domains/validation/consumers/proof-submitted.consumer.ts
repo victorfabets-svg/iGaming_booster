@@ -1,4 +1,4 @@
-import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
@@ -7,7 +7,7 @@ const BATCH_SIZE = 10;
 
 export async function startProofSubmittedConsumer(): Promise<void> {
   console.log('🔄 Starting proof_submitted consumer...');
-  
+
   // Ensure processed_events table exists
   await ensureProcessedEventsTable();
   console.log('✅ Processed events tracking ready');
@@ -23,8 +23,11 @@ export async function startProofSubmittedConsumer(): Promise<void> {
 
 async function pollEvents(): Promise<void> {
   try {
-    const events = await fetchUnprocessedEvents(EVENT_TYPE, BATCH_SIZE);
+    const allEvents = await fetchUnprocessedEvents(BATCH_SIZE);
     
+    // Filter by event type
+    const events = allEvents.filter(e => e.event_type === EVENT_TYPE);
+
     if (events.length === 0) {
       return;
     }
@@ -39,8 +42,8 @@ async function pollEvents(): Promise<void> {
   }
 }
 
-async function processEvent(event: { id: string; payload: Record<string, unknown> }): Promise<void> {
-  const eventId = event.id;
+async function processEvent(event: Event): Promise<void> {
+  const eventId = event.event_id || event.id || '';
   const payload = event.payload as ProofSubmittedEventPayload;
 
   console.log(`\n🔔 Processing event: ${eventId}`);
@@ -49,10 +52,10 @@ async function processEvent(event: { id: string; payload: Record<string, unknown
 
   try {
     await processProofSubmitted(payload);
-    
+
     // Mark event as processed after successful handling
     await markEventProcessed(eventId);
-    
+
     console.log(`✅ Event ${eventId} processed and marked`);
   } catch (error) {
     console.error(`❌ Failed to process event ${eventId}:`, error);
