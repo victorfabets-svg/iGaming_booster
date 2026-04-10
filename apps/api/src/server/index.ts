@@ -1,6 +1,6 @@
 import { buildApp } from './app';
-import { env } from '../config/env';
-import { connectWithRetry } from '../../../../shared/database/connection';
+import { config } from '../shared/config/env';
+import { connectWithRetry } from '../../../shared/database/connection';
 
 async function start() {
   try {
@@ -13,7 +13,7 @@ async function start() {
 
   const app = buildApp();
 
-  const port = parseInt(env.PORT, 10);
+  const port = config.apiPort;
 
   try {
     await app.listen({ port });
