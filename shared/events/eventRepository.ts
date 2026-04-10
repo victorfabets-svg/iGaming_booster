@@ -67,3 +67,8 @@ export async function saveEvent(event: Event): Promise<void> {
     throw new Error(`Failed to save event: ${normalized.event_id}`);
   }
 }
+
+// Wrapper for domain use - creates and saves event
+export async function createEvent(event: Event): Promise<void> {
+  await saveEvent(event);
+}

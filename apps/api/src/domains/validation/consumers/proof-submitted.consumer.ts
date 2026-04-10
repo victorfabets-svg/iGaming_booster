@@ -1,5 +1,5 @@
 import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../../../../shared/events/event-consumer.repository';
-import { processProofSubmitted, ProofSubmittedEventPayload } from '../../use-cases/process-proof-submitted.use-case';
+import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
 const POLL_INTERVAL_MS = 5000;

@@ -1,4 +1,4 @@
-import { findValidationByProofId, findProofById } from '../../validation/repositories/proof-validation.repository';
+import { findValidationByProofId } from '../../validation/repositories/proof-validation.repository';
 import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createReward, findRewardById } from '../repositories/reward.repository';
 import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } from '../repositories/ticket.repository';

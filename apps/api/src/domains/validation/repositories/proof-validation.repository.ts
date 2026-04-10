@@ -1,4 +1,4 @@
-import { pool, queryOne } from '../../../../lib/database';
+import { pool, queryOne } from '../../../lib/database';
 
 export interface ProofValidation {
   id: string;

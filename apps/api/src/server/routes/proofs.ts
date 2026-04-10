@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { createProofUseCase } from '../../../domains/validation/application/createProofUseCase';
+import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
