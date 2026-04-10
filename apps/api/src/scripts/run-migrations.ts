@@ -24,7 +24,8 @@ async function ensureMigrationsTable(): Promise<void> {
 async function getExecutedMigrations(): Promise<Migration[]> {
   const result = await db.query<Migration>(
     `SELECT filename, executed_at FROM events.migrations ORDER BY executed_at ASC`
-  ) as unknown as Migration[] || [];
+  );
+  return result.rows;
 }
 
 async function markMigrationExecuted(filename: string): Promise<void> {
