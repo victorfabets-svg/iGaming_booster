@@ -1,23 +1,41 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createProofUseCase } from '../../../domains/validation/application/createProofUseCase';
 
-interface ProofBody {
-  user_id: string;
-  file: string; // base64 encoded for simplicity
-}
-
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.post<{ Body: ProofBody }>(
+  fastify.post(
     '/proofs',
-    async (request: FastifyRequest<{ Body: ProofBody }>, reply: FastifyReply) => {
-      const { user_id, file } = request.body;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // Use parts() iterator to handle multipart form data
+      const parts = request.parts();
 
-      if (!user_id || !file) {
-        return reply.status(400).send({ error: 'Missing required fields: user_id and file' });
+      let user_id: string | null = null;
+      let fileBuffer: Buffer | null = null;
+      let filename: string | null = null;
+
+      // Async iteration over parts
+      for await (const part of parts) {
+        if (part.type === 'file' && part.fieldname === 'file') {
+          // Read file buffer from stream
+          fileBuffer = await part.toBuffer();
+          filename = part.filename;
+        }
+
+        if (part.type === 'field' && part.fieldname === 'user_id') {
+          user_id = part.value as string;
+        }
       }
 
-      // Convert base64 to buffer
-      const fileBuffer = Buffer.from(file, 'base64');
+      // Validate user_id
+      if (!user_id) {
+        return reply.status(400).send({ error: 'Missing required field: user_id' });
+      }
+
+      // Validate file
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return reply.status(400).send({ error: 'Missing required file upload or file is empty' });
+      }
+
+      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes`);
 
       const result = await createProofUseCase({
         user_id,

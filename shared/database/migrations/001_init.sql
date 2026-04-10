@@ -2,6 +2,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- SCHEMAS (must exist before tables)
+CREATE SCHEMA IF NOT EXISTS identity;
+CREATE SCHEMA IF NOT EXISTS validation;
+CREATE SCHEMA IF NOT EXISTS fraud;
+CREATE SCHEMA IF NOT EXISTS rewards;
+CREATE SCHEMA IF NOT EXISTS raffles;
+CREATE SCHEMA IF NOT EXISTS events;
+
 
 -- USERS
 CREATE TABLE identity.users (
@@ -21,6 +29,9 @@ file_url TEXT NOT NULL,
 hash TEXT NOT NULL UNIQUE,
 submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Add unique constraint on hash for idempotency
+ALTER TABLE validation.proofs ADD CONSTRAINT proofs_hash_key UNIQUE (hash);
 
 
 -- PROOF VALIDATIONS
