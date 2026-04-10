@@ -4,9 +4,10 @@ export interface Event {
   id: string;
   event_type: string;
   version: string;
-  payload: Record<string, unknown>;
+  timestamp: Date;
   producer: string;
-  created_at: Date;
+  correlation_id: string;
+  payload: Record<string, unknown>;
 }
 
 export interface ProcessedEvent {
@@ -49,12 +50,12 @@ export async function markEventProcessed(eventId: string): Promise<void> {
 export async function fetchUnprocessedEvents(eventType: string, limit: number = 10): Promise<Event[]> {
   // Get events that haven't been processed by this consumer
   const result = await pool.query(
-    `SELECT e.id, e.event_type, e.version, e.payload, e.producer, e.created_at
+    `SELECT e.id, e.event_type, e.version, e.timestamp, e.producer, e.correlation_id, e.payload
      FROM events.events e
      LEFT JOIN events.processed_events pe 
        ON e.id = pe.event_id AND pe.consumer_name = $1
      WHERE e.event_type = $2 AND pe.event_id IS NULL
-     ORDER BY e.created_at ASC
+     ORDER BY e.timestamp ASC
      LIMIT $3`,
     [CONSUMER_NAME, eventType, limit]
   );

@@ -42,7 +42,7 @@ export async function saveEvent(event: Event): Promise<void> {
 
   try {
     await db.query(
-      `INSERT INTO events (
+      `INSERT INTO events.events (
         id,
         event_type,
         version,
