@@ -27,22 +27,25 @@ export async function createProofUseCase(input: ProofInput): Promise<{ proof_id:
   const fileUrl = simulateStorage(tempId);
 
   // Insert proof - DB enforces idempotency via UNIQUE constraint
-  const proof = await createProof(input, fileUrl, hash);
+  const result = await createProof(input, fileUrl, hash);
 
-  console.log('[PROOF] Created proof:', proof.id);
+  console.log('[PROOF] Created proof:', result.proof.id);
 
-  // Emit event AFTER successful insert
-  await emitEvent({
-    event_type: 'proof_submitted',
-    producer: 'validation',
-    payload: {
-      proof_id: proof.id,
-      user_id: proof.user_id,
-      hash: proof.hash,
-    },
-  });
+  // Only emit event for new proofs (not duplicates)
+  if (result.isNew) {
+    await emitEvent({
+      event_type: 'proof_submitted',
+      producer: 'validation',
+      payload: {
+        proof_id: result.proof.id,
+        user_id: result.proof.user_id,
+        hash: result.proof.hash,
+      },
+    });
+    console.log('[PROOF] Event proof_submitted emitted for:', result.proof.id);
+  } else {
+    console.log('[PROOF] Duplicate proof - skipping event emit');
+  }
 
-  console.log('[PROOF] Event proof_submitted emitted for:', proof.id);
-
-  return { proof_id: proof.id, status: 'submitted' };
+  return { proof_id: result.proof.id, status: 'submitted' };
 }

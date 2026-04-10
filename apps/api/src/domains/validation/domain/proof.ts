@@ -10,3 +10,8 @@ export interface ProofInput {
   user_id: string;
   file_buffer: Buffer;
 }
+
+export interface ProofResult {
+  proof: Proof;
+  isNew: boolean;
+}
