@@ -10,6 +10,7 @@
     "migrate": "ts-node scripts/run-migrations.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "^8.1.0",
     "fastify": "^4.25.0",
     "pg": "^8.11.3"
   },
