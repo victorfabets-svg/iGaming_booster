@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { pool, execute, queryOne, closePool } from '../lib/database';
+import { pool, execute, queryOne, closePool } from '../../lib/database';
 
-const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
+const MIGRATIONS_DIR = path.join(__dirname, '../../../shared/database/migrations');
 
 interface Migration {
   filename: string;
