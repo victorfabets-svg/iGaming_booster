@@ -3,7 +3,7 @@ export interface Proof {
   user_id: string;
   file_url: string;
   hash: string;
-  created_at: string;
+  submitted_at: string;
 }
 
 export interface ProofInput {

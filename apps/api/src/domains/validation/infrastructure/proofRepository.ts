@@ -4,13 +4,13 @@ import { Proof, ProofInput } from '../domain/proof';
 
 export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<Proof> {
   const id = randomUUID();
-  const created_at = new Date().toISOString();
+  const submitted_at = new Date().toISOString();
 
   try {
     await db.query(
-      `INSERT INTO proofs (id, user_id, file_url, hash, created_at)
+      `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
        VALUES ($1, $2, $3, $4, $5)`,
-      [id, proof.user_id, fileUrl, hash, created_at]
+      [id, proof.user_id, fileUrl, hash, submitted_at]
     );
 
     return {
@@ -18,7 +18,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
       user_id: proof.user_id,
       file_url: fileUrl,
       hash,
-      created_at,
+      submitted_at,
     };
   } catch (error: any) {
     // Handle UNIQUE constraint violation - return existing proof
@@ -35,7 +35,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
 
 export async function findByHash(hash: string): Promise<Proof | null> {
   const result = await db.query(
-    `SELECT id, user_id, file_url, hash, created_at FROM proofs WHERE hash = $1`,
+    `SELECT id, user_id, file_url, hash, submitted_at FROM validation.proofs WHERE hash = $1`,
     [hash]
   );
 
