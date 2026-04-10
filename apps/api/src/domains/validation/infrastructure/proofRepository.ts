@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto';
 import { db } from '../../../../shared/database/connection';
-import { Proof, ProofInput } from '../domain/proof';
+import { Proof, ProofInput, ProofResult } from '../domain/proof';
 
-export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<Proof> {
+export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<ProofResult> {
   const id = randomUUID();
   const submitted_at = new Date().toISOString();
 
@@ -14,11 +14,14 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
     );
 
     return {
-      id,
-      user_id: proof.user_id,
-      file_url: fileUrl,
-      hash,
-      submitted_at,
+      proof: {
+        id,
+        user_id: proof.user_id,
+        file_url: fileUrl,
+        hash,
+        submitted_at,
+      },
+      isNew: true,
     };
   } catch (error: any) {
     // Handle UNIQUE constraint violation - return existing proof
@@ -26,7 +29,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
       const existing = await findByHash(hash);
       if (existing) {
         console.log('[PROOF] Duplicate detected at DB level, returning existing:', existing.id);
-        return existing;
+        return { proof: existing, isNew: false };
       }
     }
     throw error;

@@ -30,9 +30,6 @@ hash TEXT NOT NULL UNIQUE,
 submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Add unique constraint on hash for idempotency
-ALTER TABLE validation.proofs ADD CONSTRAINT proofs_hash_key UNIQUE (hash);
-
 
 -- PROOF VALIDATIONS
 CREATE TABLE validation.proof_validations (
@@ -96,7 +93,8 @@ CREATE TABLE events.events (
 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 event_type TEXT NOT NULL,
 version TEXT NOT NULL,
-payload JSONB NOT NULL,
+timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
 producer TEXT NOT NULL,
-created_at TIMESTAMP NOT NULL DEFAULT NOW()
+correlation_id TEXT NOT NULL,
+payload JSONB NOT NULL
 );

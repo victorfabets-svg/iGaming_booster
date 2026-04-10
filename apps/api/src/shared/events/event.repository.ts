@@ -1,37 +1,44 @@
 import { pool } from '../../lib/database';
+import { randomUUID } from 'crypto';
 
 export interface EventInput {
   event_type: string;
   version: string;
   payload: Record<string, unknown>;
   producer: string;
+  correlation_id?: string;
 }
 
 export interface StoredEvent {
   id: string;
   event_type: string;
   version: string;
-  payload: Record<string, unknown>;
+  timestamp: Date;
   producer: string;
-  created_at: Date;
+  correlation_id: string;
+  payload: Record<string, unknown>;
 }
 
 export async function createEvent(input: EventInput): Promise<StoredEvent> {
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+  const correlation_id = input.correlation_id || id;
+
   const result = await pool.query(
-    `INSERT INTO events.events (event_type, version, payload, producer)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, event_type, version, payload, producer, created_at`,
-    [input.event_type, input.version, JSON.stringify(input.payload), input.producer]
+    `INSERT INTO events.events (id, event_type, version, timestamp, producer, correlation_id, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, event_type, version, timestamp, producer, correlation_id, payload`,
+    [id, input.event_type, input.version, timestamp, input.producer, correlation_id, JSON.stringify(input.payload)]
   );
   return result.rows[0];
 }
 
 export async function findEventsByType(eventType: string): Promise<StoredEvent[]> {
   const result = await pool.query(
-    `SELECT id, event_type, version, payload, producer, created_at
+    `SELECT id, event_type, version, timestamp, producer, correlation_id, payload
      FROM events.events
      WHERE event_type = $1
-     ORDER BY created_at DESC`,
+     ORDER BY timestamp DESC`,
     [eventType]
   );
   return result.rows;
