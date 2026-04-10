@@ -10,6 +10,8 @@ interface Migration {
 }
 
 async function ensureMigrationsTable(): Promise<void> {
+  // Schema must exist before creating the table inside it
+  await db.query(`CREATE SCHEMA IF NOT EXISTS events;`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS events.migrations (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
