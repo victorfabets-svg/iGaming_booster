@@ -1,4 +1,4 @@
-import { pool, queryOne, execute } from '../../../lib/database';
+import { pool, query, queryOne, execute } from '../../../lib/database';
 
 export interface Proof {
   id: string;
@@ -39,5 +39,15 @@ export async function findProofById(id: string): Promise<Proof | null> {
      FROM validation.proofs 
      WHERE id = $1`,
     [id]
+  );
+}
+
+export async function findProofsByUserId(userId: string): Promise<Proof[]> {
+  return await query<Proof>(
+    `SELECT id, user_id, file_url, hash, submitted_at 
+     FROM validation.proofs 
+     WHERE user_id = $1 
+     ORDER BY submitted_at DESC`,
+    [userId]
   );
 }

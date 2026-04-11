@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { createProofUseCase } from '../../../domains/validation/application/createProofUseCase';
+import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
@@ -40,6 +40,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       const result = await createProofUseCase({
         user_id,
         file_buffer: fileBuffer,
+        filename: filename || undefined,
       });
 
       return reply.status(201).send({

@@ -1,14 +1,14 @@
 import { buildApp } from './app';
-import { config } from '../shared/config/env';
-import { connectWithRetry } from '../../../shared/database/connection';
+import { config } from '../../../../shared/config/env';
+import { connectWithRetry, getDb } from '../../../../shared/database/connection';
 
 async function start() {
+  // Try to connect to database, but allow server to start even if it fails
   try {
     console.log('[DB] Attempting to connect to database...');
     await connectWithRetry();
   } catch (error) {
-    console.error('[DB] Failed to connect to database:', error);
-    process.exit(1);
+    console.error('[DB] Warning: Database connection failed, continuing anyway:', error);
   }
 
   const app = buildApp();

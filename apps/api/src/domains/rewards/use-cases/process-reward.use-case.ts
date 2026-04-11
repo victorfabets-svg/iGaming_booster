@@ -1,17 +1,17 @@
-import { findValidationByProofId, findProofById } from '../../validation/repositories/proof-validation.repository';
+import { findValidationByProofId } from '../../validation/repositories/proof-validation.repository';
 import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createReward, findRewardById } from '../repositories/reward.repository';
 import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } from '../repositories/ticket.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
 import { createRewardEconomics } from '../repositories/reward-economics.repository';
-import { createEvent } from '../../../shared/events/event.repository';
+import { createEvent } from '../../../../../../shared/events/event.repository';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
-import { logger, alertMonitor } from '../../../shared/observability/logger';
-import { recordReward, recordTicketGenerated } from '../../../shared/observability/metrics.service';
-import { isRewardsEnabled, isRaffleEnabled } from '../../../shared/config/feature-flags';
-import { config } from '../../../shared/config/env';
+import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
+import { recordReward, recordTicketGenerated } from '../../../../../../shared/observability/metrics.service';
+import { isRewardsEnabled, isRaffleEnabled } from '../../../../../../shared/config/feature-flags';
+import { config } from '../../../../../../shared/config/env';
 import { experimentService } from '../services/experiment.service';
 
 export interface ProofValidatedEventPayload {

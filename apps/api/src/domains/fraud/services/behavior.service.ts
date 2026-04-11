@@ -97,7 +97,7 @@ export class BehaviorAnalysisService {
         value: isSuspicious ? 'suspicious' : 'normal',
         metadata: {
           signals,
-          risk_score_modifier,
+          riskScoreModifier,
           proof_count_24h: userProofs.length,
         },
       });

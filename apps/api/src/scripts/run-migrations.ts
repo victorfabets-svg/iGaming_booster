@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { db, connectWithRetry } from '../../../shared/database/connection';
+import { db, connectWithRetry } from '../../../../shared/database/connection';
 
-const MIGRATIONS_DIR = path.join(__dirname, '../../../shared/database/migrations');
+const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
 
 interface Migration {
   filename: string;
@@ -10,6 +10,8 @@ interface Migration {
 }
 
 async function ensureMigrationsTable(): Promise<void> {
+  // Schema must exist before creating the table inside it
+  await db.query(`CREATE SCHEMA IF NOT EXISTS events;`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS events.migrations (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -22,7 +24,8 @@ async function ensureMigrationsTable(): Promise<void> {
 async function getExecutedMigrations(): Promise<Migration[]> {
   const result = await db.query<Migration>(
     `SELECT filename, executed_at FROM events.migrations ORDER BY executed_at ASC`
-  ) as unknown as Migration[] || [];
+  );
+  return result.rows;
 }
 
 async function markMigrationExecuted(filename: string): Promise<void> {

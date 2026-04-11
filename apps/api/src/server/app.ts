@@ -18,15 +18,12 @@ export function buildApp(): FastifyInstance {
   // Register routes
   app.register(proofRoutes);
 
+  // Health check - MUST reflect real DB state
   app.get('/health', async () => {
-    return { status: 'ok' };
-  });
-
-  app.get('/health/db', async () => {
     try {
       await db.query('SELECT 1');
       return { status: 'ok' };
-    } catch (error) {
+    } catch (err) {
       return { status: 'error' };
     }
   });
