@@ -20,11 +20,17 @@ export async function initDb(connectionString?: string): Promise<void> {
     throw new Error('DATABASE_URL environment variable not set');
   }
 
+  // Configure SSL for cloud providers (Neon, Supabase, etc.)
+  const sslConfig = process.env.NODE_ENV === 'production' 
+    ? { rejectUnauthorized: false }
+    : false;
+
   _db = new Pool({
     connectionString: dbUrl,
+    ssl: sslConfig,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000,
   });
 
   _db.on('error', (err: Error) => {
