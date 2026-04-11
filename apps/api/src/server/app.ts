@@ -27,7 +27,7 @@ export function buildApp(): FastifyInstance {
       await db.query('SELECT 1');
       return { status: 'ok' };
     } catch (error) {
-      return { status: 'error' };
+      return { status: 'error', error: 'Database not connected' };
     }
   });
 
