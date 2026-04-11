@@ -41,6 +41,7 @@ export async function createProofUseCase(input: ProofInput): Promise<{ proof_id:
 
   // Upload file to storage and get public URL
   const fileUrl = await storageService.upload(input.file_buffer, path, contentType);
+  console.log('[PROOF] Storage URL:', fileUrl);
 
   // Insert proof - DB enforces idempotency via UNIQUE constraint
   const result = await createProof(input, fileUrl, hash);
