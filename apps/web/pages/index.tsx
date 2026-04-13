@@ -7,11 +7,17 @@ import useApi from '../hooks/useApi';
 
 const IndexPage: React.FC = () => {
   const api = createApiClient('');
-  const { data, loading, error, execute } = useApi();
+  const healthApi = useApi();
+  const statusApi = useApi();
 
   useEffect(() => {
-    execute(api.getHealth);
+    healthApi.execute(api.getHealth);
+    statusApi.execute(api.getHealth);
   }, []);
+
+  const loading = healthApi.loading || statusApi.loading;
+  const error = healthApi.error || statusApi.error;
+  const data = healthApi.data && statusApi.data;
 
   return (
     <Layout>
