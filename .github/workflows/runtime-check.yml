@@ -31,7 +31,6 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           node apps/api/dist/apps/api/src/server/index.js &
-          sleep 5
 
       - name: Health check
         run: |
