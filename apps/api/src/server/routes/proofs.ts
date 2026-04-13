@@ -43,10 +43,18 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         filename: filename || undefined,
       });
 
-      return reply.status(201).send({
+      // Build response with optional signed URL
+      const response: any = {
         proof_id: result.proof_id,
         status: result.status,
-      });
+      };
+      
+      if (result.file_url) {
+        response.file_url = result.file_url;
+        response.expires_in = result.expires_in;
+      }
+
+      return reply.status(201).send(response);
     }
   );
 }

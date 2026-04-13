@@ -2,7 +2,7 @@ import { emitEvent } from '../../../../../../shared/events/emitter';
 import { createProof } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
 import { generateSHA256 } from '../../../../../../shared/utils/hash';
-import { getStorageService } from '../../../infrastructure/storage';
+import { getStorageService, getR2StorageService } from '../../../infrastructure/storage';
 
 /**
  * Determine content type from file extension
@@ -19,7 +19,14 @@ function getContentType(ext: string): string {
   return contentTypes[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-export async function createProofUseCase(input: ProofInput): Promise<{ proof_id: string; status: string }> {
+export interface CreateProofResult {
+  proof_id: string;
+  status: string;
+  file_url?: string;
+  expires_in?: number;
+}
+
+export async function createProofUseCase(input: ProofInput): Promise<CreateProofResult> {
   console.log('[PROOF] Request received for user_id:', input.user_id);
 
   // Validate buffer is not empty
@@ -48,6 +55,18 @@ export async function createProofUseCase(input: ProofInput): Promise<{ proof_id:
 
   console.log('[PROOF] Created proof:', result.proof.id);
 
+  // Generate signed URL for R2
+  let signedUrl: string | undefined;
+  let expiresIn: number | undefined;
+  
+  // Check if R2 is configured (preferred)
+  if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+    const r2Service = getR2StorageService();
+    signedUrl = await r2Service.getSignedUrl(path, 300); // 5 minutes
+    expiresIn = 300;
+    console.log('[PROOF] Generated signed URL, expires in:', expiresIn, 'seconds');
+  }
+
   // Only emit event for new proofs (not duplicates)
   if (result.isNew) {
     await emitEvent({
@@ -64,5 +83,10 @@ export async function createProofUseCase(input: ProofInput): Promise<{ proof_id:
     console.log('[PROOF] Duplicate proof - skipping event emit');
   }
 
-  return { proof_id: result.proof.id, status: 'submitted' };
+  return { 
+    proof_id: result.proof.id, 
+    status: 'submitted',
+    file_url: signedUrl,
+    expires_in: expiresIn
+  };
 }
