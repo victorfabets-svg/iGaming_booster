@@ -15,7 +15,9 @@ export declare class R2StorageAdapter implements StorageService {
      * @param path - The target path within the storage bucket
      * @param contentType - The MIME type of the file
      */
-    upload(file: Buffer, path: string, contentType: string): Promise<string>;
+    upload(file: Buffer, path: string, contentType: string): Promise<{
+        key: string;
+    }>;
     /**
      * Get the public URL for an uploaded file
      */

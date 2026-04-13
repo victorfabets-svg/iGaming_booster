@@ -55,7 +55,7 @@ export class R2StorageAdapter implements StorageService {
    * @param path - The target path within the storage bucket
    * @param contentType - The MIME type of the file
    */
-  async upload(file: Buffer, path: string, contentType: string): Promise<string> {
+  async upload(file: Buffer, path: string, contentType: string): Promise<{ key: string }> {
     try {
       const command = new PutObjectCommand({
         Bucket: this.bucket,
@@ -67,8 +67,8 @@ export class R2StorageAdapter implements StorageService {
       await this.client.send(command);
       console.log('[R2] File uploaded:', path);
 
-      // Return the public URL (R2 with public access)
-      return this.getPublicUrl(path);
+      // Return the storage key
+      return { key: path };
     } catch (error) {
       // Log the error for debugging
       const err = error as Error;

@@ -34,11 +34,11 @@ async function createProofUseCase(input) {
     const fileExt = filename.split('.').pop() || 'pdf';
     const path = `proofs/${input.user_id}/${hash.substring(0, 8)}.${fileExt}`;
     const contentType = getContentType(fileExt);
-    // Upload file to storage and get public URL
-    const fileUrl = await storageService.upload(input.file_buffer, path, contentType);
-    console.log('[PROOF] Storage URL:', fileUrl);
+    // Upload file to storage and get storage key
+    const { key } = await storageService.upload(input.file_buffer, path, contentType);
+    console.log('[PROOF] Storage key:', key);
     // Insert proof - DB enforces idempotency via UNIQUE constraint
-    const result = await (0, proofRepository_1.createProof)(input, fileUrl, hash);
+    const result = await (0, proofRepository_1.createProof)(input, key, hash);
     console.log('[PROOF] Created proof:', result.proof.id);
     // Generate signed URL for R2 (best effort - failures should not crash the response)
     let signedUrl;
@@ -46,7 +46,6 @@ async function createProofUseCase(input) {
     try {
         // Check if R2 is configured (preferred)
         if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
-            const storageService = (0, storage_1.getStorageService)();
             // getStorageService returns R2StorageAdapter which has getSignedUrl
             signedUrl = await storageService.getSignedUrl(path, 300); // 5 minutes
             expiresIn = 300;

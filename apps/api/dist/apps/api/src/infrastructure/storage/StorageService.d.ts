@@ -9,8 +9,10 @@ export interface StorageService {
      * @param file - The file content as a Buffer
      * @param path - The target path within the storage bucket
      * @param contentType - The MIME type of the file
-     * @returns The public URL of the uploaded file
+     * @returns The storage key/path of the uploaded file
      */
-    upload(file: Buffer, path: string, contentType: string): Promise<string>;
+    upload(file: Buffer, path: string, contentType: string): Promise<{
+        key: string;
+    }>;
 }
 //# sourceMappingURL=StorageService.d.ts.map

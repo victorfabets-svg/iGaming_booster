@@ -51,8 +51,8 @@ class R2StorageAdapter {
             });
             await this.client.send(command);
             console.log('[R2] File uploaded:', path);
-            // Return the public URL (R2 with public access)
-            return this.getPublicUrl(path);
+            // Return the storage key
+            return { key: path };
         }
         catch (error) {
             // Log the error for debugging

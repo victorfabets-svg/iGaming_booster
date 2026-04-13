@@ -46,12 +46,12 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   const path = `proofs/${input.user_id}/${hash.substring(0, 8)}.${fileExt}`;
   const contentType = getContentType(fileExt);
 
-  // Upload file to storage and get public URL
-  const fileUrl = await storageService.upload(input.file_buffer, path, contentType);
-  console.log('[PROOF] Storage URL:', fileUrl);
+  // Upload file to storage and get storage key
+  const { key } = await storageService.upload(input.file_buffer, path, contentType);
+  console.log('[PROOF] Storage key:', key);
 
   // Insert proof - DB enforces idempotency via UNIQUE constraint
-  const result = await createProof(input, fileUrl, hash);
+  const result = await createProof(input, key, hash);
 
   console.log('[PROOF] Created proof:', result.proof.id);
 
@@ -62,7 +62,6 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   try {
     // Check if R2 is configured (preferred)
     if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
-      const storageService = getStorageService();
       // getStorageService returns R2StorageAdapter which has getSignedUrl
       signedUrl = await (storageService as any).getSignedUrl(path, 300); // 5 minutes
       expiresIn = 300;
