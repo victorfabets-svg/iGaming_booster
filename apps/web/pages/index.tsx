@@ -10,6 +10,7 @@ const IndexPage: React.FC = () => {
   const api = createApiClient('');
   const healthApi = useApi();
   const statusApi = useApi();
+  const uploadApi = useApi();
 
   useEffect(() => {
     healthApi.execute(api.getHealth);
@@ -21,7 +22,7 @@ const IndexPage: React.FC = () => {
   const data = healthApi.data && statusApi.data;
 
   const handleSubmit = (file: File) => {
-    // empty for now
+    uploadApi.execute(() => api.submitProof(file));
   };
 
   return (
@@ -32,6 +33,9 @@ const IndexPage: React.FC = () => {
         {data && <p>Loaded</p>}
         <h1>Welcome</h1>
         <Button>Continue</Button>
+        {uploadApi.loading && <p>Uploading...</p>}
+        {uploadApi.error && <p>Upload failed</p>}
+        {uploadApi.data && <p>Proof submitted</p>}
         <ProofUpload onSubmit={handleSubmit} />
       </Card>
     </Layout>
