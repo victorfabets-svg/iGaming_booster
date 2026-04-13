@@ -25,7 +25,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
     };
   } catch (error: any) {
     // Handle UNIQUE constraint violation - return existing proof
-    if (error.code === '23505' && error.constraint === 'proofs_hash_key') {
+    if (error.code === '23505' && error.constraint === 'validation_proofs_hash_key') {
       const existing = await findByHash(hash);
       if (existing) {
         console.log('[PROOF] Duplicate detected at DB level, returning existing:', existing.id);
