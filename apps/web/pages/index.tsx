@@ -1,11 +1,16 @@
 import React from 'react';
+import Layout from '../components/Layout';
+import Card from '../components/Card';
+import Button from '../components/Button';
 
 const IndexPage: React.FC = () => {
   return (
-    <div>
-      <h1>Welcome to iGaming Booster</h1>
-      <p>Your gaming platform awaits</p>
-    </div>
+    <Layout>
+      <Card>
+        <h1>Welcome</h1>
+        <Button>Continue</Button>
+      </Card>
+    </Layout>
   );
 };
 
