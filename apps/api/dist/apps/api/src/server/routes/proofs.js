@@ -34,10 +34,16 @@ async function proofRoutes(fastify) {
             file_buffer: fileBuffer,
             filename: filename || undefined,
         });
-        return reply.status(201).send({
+        // Build response with optional signed URL
+        const response = {
             proof_id: result.proof_id,
             status: result.status,
-        });
+        };
+        if (result.file_url) {
+            response.file_url = result.file_url;
+            response.expires_in = result.expires_in;
+        }
+        return reply.status(201).send(response);
     });
 }
 //# sourceMappingURL=proofs.js.map

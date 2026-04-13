@@ -56,18 +56,27 @@ export class R2StorageAdapter implements StorageService {
    * @param contentType - The MIME type of the file
    */
   async upload(file: Buffer, path: string, contentType: string): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: path,
-      Body: file,
-      ContentType: contentType,
-    });
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: path,
+        Body: file,
+        ContentType: contentType,
+      });
 
-    await this.client.send(command);
-    console.log('[R2] File uploaded:', path);
+      await this.client.send(command);
+      console.log('[R2] File uploaded:', path);
 
-    // Return the public URL (R2 with public access)
-    return this.getPublicUrl(path);
+      // Return the public URL (R2 with public access)
+      return this.getPublicUrl(path);
+    } catch (error) {
+      // Log the error for debugging
+      const err = error as Error;
+      console.error('[R2] Upload failed:', err.message);
+      
+      // Re-throw a controlled error with user-friendly message
+      throw new Error(`Storage upload failed: ${err.message}`);
+    }
   }
 
   /**
@@ -85,12 +94,21 @@ export class R2StorageAdapter implements StorageService {
    * @param expiresIn - Expiration time in seconds (default 300)
    */
   async getSignedUrl(path: string, expiresIn: number = 300): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: path,
-    });
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: path,
+      });
 
-    return getSignedUrl(this.client, command, { expiresIn });
+      return await getSignedUrl(this.client, command, { expiresIn });
+    } catch (error) {
+      // Log the error for debugging
+      const err = error as Error;
+      console.error('[R2] Signed URL generation failed:', err.message);
+      
+      // Re-throw a controlled error with user-friendly message
+      throw new Error(`Signed URL generation failed: ${err.message}`);
+    }
   }
 }
 

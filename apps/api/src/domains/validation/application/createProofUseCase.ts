@@ -2,7 +2,7 @@ import { emitEvent } from '../../../../../../shared/events/emitter';
 import { createProof } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
 import { generateSHA256 } from '../../../../../../shared/utils/hash';
-import { getStorageService, getR2StorageService } from '../../../infrastructure/storage';
+import { getStorageService } from '../../../infrastructure/storage';
 
 /**
  * Determine content type from file extension
@@ -55,16 +55,22 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
 
   console.log('[PROOF] Created proof:', result.proof.id);
 
-  // Generate signed URL for R2
+  // Generate signed URL for R2 (best effort - failures should not crash the response)
   let signedUrl: string | undefined;
   let expiresIn: number | undefined;
   
-  // Check if R2 is configured (preferred)
-  if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
-    const r2Service = getR2StorageService();
-    signedUrl = await r2Service.getSignedUrl(path, 300); // 5 minutes
-    expiresIn = 300;
-    console.log('[PROOF] Generated signed URL, expires in:', expiresIn, 'seconds');
+  try {
+    // Check if R2 is configured (preferred)
+    if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+      const storageService = getStorageService();
+      // getStorageService returns R2StorageAdapter which has getSignedUrl
+      signedUrl = await (storageService as any).getSignedUrl(path, 300); // 5 minutes
+      expiresIn = 300;
+      console.log('[PROOF] Generated signed URL, expires in:', expiresIn, 'seconds');
+    }
+  } catch (error) {
+    // Signed URL is optional - log but don't fail
+    console.error('[PROOF] Signed URL generation failed:', (error as Error).message);
   }
 
   // Only emit event for new proofs (not duplicates)

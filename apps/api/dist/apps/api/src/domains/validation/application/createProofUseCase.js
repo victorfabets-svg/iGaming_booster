@@ -40,6 +40,23 @@ async function createProofUseCase(input) {
     // Insert proof - DB enforces idempotency via UNIQUE constraint
     const result = await (0, proofRepository_1.createProof)(input, fileUrl, hash);
     console.log('[PROOF] Created proof:', result.proof.id);
+    // Generate signed URL for R2 (best effort - failures should not crash the response)
+    let signedUrl;
+    let expiresIn;
+    try {
+        // Check if R2 is configured (preferred)
+        if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+            const storageService = (0, storage_1.getStorageService)();
+            // getStorageService returns R2StorageAdapter which has getSignedUrl
+            signedUrl = await storageService.getSignedUrl(path, 300); // 5 minutes
+            expiresIn = 300;
+            console.log('[PROOF] Generated signed URL, expires in:', expiresIn, 'seconds');
+        }
+    }
+    catch (error) {
+        // Signed URL is optional - log but don't fail
+        console.error('[PROOF] Signed URL generation failed:', error.message);
+    }
     // Only emit event for new proofs (not duplicates)
     if (result.isNew) {
         await (0, emitter_1.emitEvent)({
@@ -56,6 +73,11 @@ async function createProofUseCase(input) {
     else {
         console.log('[PROOF] Duplicate proof - skipping event emit');
     }
-    return { proof_id: result.proof.id, status: 'submitted' };
+    return {
+        proof_id: result.proof.id,
+        status: 'submitted',
+        file_url: signedUrl,
+        expires_in: expiresIn
+    };
 }
 //# sourceMappingURL=createProofUseCase.js.map
