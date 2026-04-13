@@ -1,11 +1,24 @@
 // Placeholder API client - real implementation in services/
 const createApiClient = (baseUrl: string) => {
   return {
-    getHealth: async () => {
-      // Placeholder - real implementation would make actual API call
-      return null;
-    },
-  };
-};
+    getHealth: async () => null,
 
-export default createApiClient;
+    submitProof: async (file: File) => {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const response = await fetch("/proofs", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`)
+      }
+
+      return response
+    },
+  }
+}
+
+export default createApiClient
