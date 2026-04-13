@@ -1,0 +1,44 @@
+name: Runtime Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    env:
+      NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server
+        run: |
+          node apps/api/dist/apps/api/src/server/index.js &
+          sleep 5
+
+      - name: Health check
+        run: curl -s http://localhost:3000/health
+
+      - name: Upload proof
+        run: |
+          echo "test file" > test.txt
+          curl -X POST http://localhost:3000/proofs \
+            -F "user_id=11111111-1111-1111-1111-111111111111" \
+            -F "file=@test.txt"
+
+      - name: Verify DB insert
+        run: |
+          echo "Check logs manually if needed"

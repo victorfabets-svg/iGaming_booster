@@ -1,4 +1,5 @@
 export interface Event {
+  id?: string;
   event_id?: string;
   event_type: string;
   version?: string;

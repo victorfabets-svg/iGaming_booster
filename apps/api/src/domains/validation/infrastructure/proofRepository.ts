@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { db } from '../../../../shared/database/connection';
+import { db } from '../../../../../../shared/database/connection';
 import { Proof, ProofInput, ProofResult } from '../domain/proof';
 
 export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<ProofResult> {

@@ -1,10 +1,10 @@
 import * as crypto from 'crypto';
 import { createProof, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
-import { createEvent } from '../../../shared/events/event.repository';
+import { createEvent } from '../../../../../../shared/events/event.repository';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
-import { logger, alertMonitor } from '../../../shared/observability/logger';
-import { recordProofSubmission } from '../../../shared/observability/metrics.service';
+import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
+import { recordProofSubmission } from '../../../../../../shared/observability/metrics.service';
 
 export interface SubmitProofInput {
   user_id: string;
