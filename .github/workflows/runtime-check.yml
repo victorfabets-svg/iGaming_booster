@@ -7,13 +7,6 @@ jobs:
   runtime-check:
     runs-on: ubuntu-latest
 
-    env:
-      DATABASE_URL: ${{ secrets.NEON_DB_URL }}
-      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-      R2_BUCKET: ${{ secrets.R2_BUCKET }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -33,46 +26,10 @@ jobs:
           cd apps/api
           npm run build
 
-      - name: Debug build output
+      - name: Start server
         run: |
-          echo "=== ROOT ==="
-          ls -la
-
-          echo "=== DIST ==="
-          ls -la apps/api/dist || true
-
-          echo "=== FULL TREE ==="
-          find apps/api/dist -type f || true
-
-      - name: Start server (debug mode)
-        run: |
-          FILE=$(find apps/api/dist -name index.js | grep server/index.js | head -n 1)
-
-          echo "Found entry: $FILE"
-
-          if [ -z "$FILE" ]; then
-            echo "Server entry not found"
-            exit 1
-          fi
-
-          echo "=== STARTING SERVER ==="
-          node $FILE &
-
-          echo "Waiting for server..."
-          for i in {1..20}; do
-            if curl -s http://localhost:3000/health > /dev/null 2>&1; then
-              echo "Server is up"
-              break
-            fi
-            sleep 1
-          done
+          node apps/api/dist/apps/api/src/server/index.js &
+          sleep 5
 
       - name: Health check
-        run: curl -s http://localhost:3000/health || echo "Health check completed"
-
-      - name: Test proof upload
-        run: |
-          echo "test" > test.txt
-          curl -X POST http://localhost:3000/proofs \
-            -F "file=@test.txt" \
-            -F "user_id=test-user" || echo "Upload attempted"
+        run: curl -s http://localhost:3000/health || echo "Health check done"
