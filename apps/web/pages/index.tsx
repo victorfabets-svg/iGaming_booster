@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -10,20 +10,21 @@ const IndexPage: React.FC = () => {
   const api = createApiClient('');
   const uploadApi = useApi();
 
+  const [proofId, setProofId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
   const handleSubmit = (file: File) => {
     uploadApi.execute(() => api.submitProof(file));
   };
 
-  let proofId = null;
-  let status = null;
-
-  if (uploadApi.data) {
-    try {
-      const json = uploadApi.data.json();
-      proofId = json?.proof_id;
-      status = json?.status;
-    } catch (e) {}
-  }
+  useEffect(() => {
+    if (uploadApi.data) {
+      uploadApi.data.json().then((json: any) => {
+        setProofId(json?.proof_id ?? null);
+        setStatus(json?.status ?? null);
+      }).catch(() => {})
+    }
+  }, [uploadApi.data]);
 
   return (
     <Layout>
