@@ -14,6 +14,17 @@ const IndexPage: React.FC = () => {
     uploadApi.execute(() => api.submitProof(file));
   };
 
+  let proofId = null;
+  let status = null;
+
+  if (uploadApi.data) {
+    try {
+      const json = uploadApi.data.json();
+      proofId = json?.proof_id;
+      status = json?.status;
+    } catch (e) {}
+  }
+
   return (
     <Layout>
       <Card>
@@ -21,7 +32,8 @@ const IndexPage: React.FC = () => {
         <Button>Continue</Button>
         {uploadApi.loading && <p>Uploading...</p>}
         {uploadApi.error && <p>Upload failed</p>}
-        {uploadApi.data && <p>Proof submitted</p>}
+        {proofId && <p>Comprovante enviado</p>}
+        {status && <p>Status: em análise</p>}
         <ProofUpload onSubmit={handleSubmit} />
       </Card>
     </Layout>
