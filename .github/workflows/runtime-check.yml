@@ -1,7 +1,7 @@
 name: Runtime Validation
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   runtime-check:
@@ -22,19 +22,36 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Start server
+      - name: Debug build output
+        run: |
+          echo "=== ROOT ==="
+          ls -la
+
+          echo "=== DIST ==="
+          ls -la apps/api/dist || true
+
+          echo "=== FULL TREE ==="
+          find apps/api/dist -type f || true
+
+      - name: Start server (safe)
         env:
           DATABASE_URL: ${{ secrets.NEON_DB_URL }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          node apps/api/dist/apps/api/src/server/index.js &
+          FILE=$(find apps/api/dist -name index.js | grep server/index.js | head -n 1)
+
+          echo "Found entry: $FILE"
+
+          if [ -z "$FILE" ]; then
+            echo "Server entry not found"
+            exit 1
+          fi
+
+          node $FILE &
+
+          sleep 5
 
       - name: Health check
-        run: |
-          curl -s http://localhost:3000/health
+        run: curl -s http://localhost:3000/health
 
       - name: Test proof upload
         run: |
