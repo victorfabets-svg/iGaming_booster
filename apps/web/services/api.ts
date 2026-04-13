@@ -5,10 +5,6 @@ const createApiClient = (baseUrl: string) => {
       // Placeholder - real implementation would make actual API call
       return null;
     },
-    submitProof: async (_file: File) => {
-      // Placeholder - real implementation would make actual API call
-      return null;
-    },
   };
 };
 
