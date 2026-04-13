@@ -4,18 +4,10 @@ on:
 workflow_dispatch:
 
 jobs:
-runtime-check:
-runs-on: ubuntu-latest
+ runtime-check:
+  runs-on: ubuntu-latest
 
-```
-env:
-  NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-  R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-  R2_BUCKET: ${{ secrets.R2_BUCKET }}
-  R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-  R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-
-steps:
+  steps:
   - name: Checkout repo
     uses: actions/checkout@v4
 
@@ -31,6 +23,12 @@ steps:
     run: npm run build
 
   - name: Start server
+    env:
+      NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     run: |
       node apps/api/dist/apps/api/src/server/index.js &
       sleep 5
@@ -41,7 +39,7 @@ steps:
 
   - name: Test proof upload
     run: |
-      echo "test" > test.txt
-      curl -X POST http://localhost:3000/proofs \
-        -F "file=@test.txt" \
-        -F "user_id=test-user"
+     echo "test" > test.txt
+     curl -X POST http://localhost:3000/proofs \
+      -F "file=@test.txt" \
+      -F "user_id=test-user"
