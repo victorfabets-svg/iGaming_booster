@@ -24,7 +24,7 @@ jobs:
 
       - name: Start server
         env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          DATABASE_URL: ${{ secrets.NEON_DB_URL }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
