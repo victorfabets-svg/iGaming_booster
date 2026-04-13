@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 
 interface ProofUploadProps {
   onSubmit: (file: File) => void;
+  loading?: boolean;
 }
 
-const ProofUpload: React.FC<ProofUploadProps> = ({ onSubmit }) => {
+const ProofUpload: React.FC<ProofUploadProps> = ({ onSubmit, loading }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -21,7 +22,7 @@ const ProofUpload: React.FC<ProofUploadProps> = ({ onSubmit }) => {
   return (
     <div>
       <input type="file" onChange={handleFileChange} />
-      <button onClick={handleSubmit}>Send</button>
+      <button onClick={handleSubmit} disabled={loading}>Send</button>
     </div>
   );
 };

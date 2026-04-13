@@ -6,6 +6,7 @@ const createApiClient = (baseUrl: string) => {
     submitProof: async (file: File) => {
       const formData = new FormData()
       formData.append("file", file)
+      formData.append("user_id", "test-user")
 
       const response = await fetch("/proofs", {
         method: "POST",

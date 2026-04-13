@@ -35,7 +35,7 @@ const IndexPage: React.FC = () => {
         {uploadApi.error && <p>Upload failed</p>}
         {proofId && <p>Comprovante enviado</p>}
         {status && <p>Status: em análise</p>}
-        <ProofUpload onSubmit={handleSubmit} />
+        <ProofUpload onSubmit={handleSubmit} loading={uploadApi.loading} />
       </Card>
     </Layout>
   );
