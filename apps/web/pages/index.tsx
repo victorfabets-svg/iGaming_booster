@@ -1,11 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Layout from '../components/Layout';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import createApiClient from '../services/api';
 import useApi from '../hooks/useApi';
 
 const IndexPage: React.FC = () => {
-  const { loading, error, data } = useApi<string>('/health');
+  const api = createApiClient('');
+  const { data, loading, error, execute } = useApi();
+
+  useEffect(() => {
+    execute(api.getHealth);
+  }, []);
 
   return (
     <Layout>

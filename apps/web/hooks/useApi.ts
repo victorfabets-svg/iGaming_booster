@@ -1,34 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface UseApiResult<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  execute: (request: () => Promise<T>) => Promise<void>;
 }
 
-const useApi = <T,>(request: string): UseApiResult<T> => {
+const useApi = <T,>(): UseApiResult<T> => {
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Placeholder - real implementation would be in services/
-        setData(null);
-      } catch (err) {
-        setError('Error');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const execute = async (request: () => Promise<T>) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await request();
+      setData(result);
+    } catch (err) {
+      setError('Error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchData();
-  }, [request]);
-
-  return { data, loading, error };
+  return { data, loading, error, execute };
 };
 
 export default useApi;
