@@ -31,7 +31,7 @@ jobs:
       - name: Find server entry (after build)
         id: find-server
         run: |
-          SERVER_PATH=$(find apps/api/dist -name index.js | grep server | head -1)
+          SERVER_PATH=$(find apps/api/dist -path "*/server/index.js" | head -1)
           if [ -z "$SERVER_PATH" ]; then
             echo "ERROR: Server entry not found"
             exit 1
@@ -42,8 +42,14 @@ jobs:
       - name: Start server
         run: |
           node ${{ steps.find-server.outputs.server_path }} &
-          echo "Server started, waiting for it to be ready..."
-          sleep 10
+          echo "Waiting for server..."
+          for i in {1..20}; do
+            if curl -s http://localhost:3000/health > /dev/null 2>&1; then
+              echo "Server is up"
+              break
+            fi
+            sleep 1
+          done
 
       - name: Health check
         run: curl -s http://localhost:3000/health || echo "Health check completed"
