@@ -1,5 +1,7 @@
-import { createProofValidation, findValidationByProofId, CreateProofValidationInput } from '../repositories/proof-validation.repository';
+import { createProofValidation, findValidationByProofId, updateValidationStatus, CreateProofValidationInput } from '../repositories/proof-validation.repository';
 import { processValidation } from './process-validation.use-case';
+import { createEvent } from '../../../../../../shared/events/event.repository';
+import { findProofById } from '../repositories/proof.repository';
 
 export interface ProofSubmittedEventPayload {
   proof_id: string;
@@ -34,6 +36,34 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload)
 
   // Process the validation (run OCR, heuristics, fraud scoring)
   console.log(`🔄 Starting validation pipeline...`);
-  await processValidation({ proof_id: payload.proof_id });
-  console.log(`✨ Validation pipeline completed for proof: ${payload.proof_id}`);
+  try {
+    await processValidation({ proof_id: payload.proof_id });
+    console.log(`✨ Validation pipeline completed for proof: ${payload.proof_id}`);
+  } catch (error) {
+    // FAILSAFE: On any error, set status to manual_review
+    console.error(`❌ Validation failed for proof: ${payload.proof_id}, setting to manual_review`);
+    
+    const proof = await findProofById(payload.proof_id);
+    
+    // Update validation status to manual_review
+    await updateValidationStatus(validation.id, 'manual_review');
+    console.log(`⚠️  Set validation status to manual_review`);
+    
+    // Emit proof_rejected event for manual_review
+    await createEvent({
+      event_type: 'proof_rejected',
+      version: 'v1',
+      payload: {
+        proof_id: payload.proof_id,
+        user_id: proof?.user_id || payload.user_id,
+        file_url: proof?.file_url || '',
+        submitted_at: payload.submitted_at,
+        validation_id: validation.id,
+        reason: 'validation_error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      producer: 'validation',
+    });
+    console.log(`📢 Emitted proof_rejected event: validation error → manual_review`);
+  }
 }
