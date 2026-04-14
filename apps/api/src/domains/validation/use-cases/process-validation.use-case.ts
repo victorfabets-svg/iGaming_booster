@@ -1,8 +1,8 @@
-import { findProofById, findProofByHash } from '../../validation/repositories/proof.repository';
-import { findValidationByProofId, updateValidationStatus } from '../../validation/repositories/proof-validation.repository';
+import { findProofById, findProofByHash } from '../repositories/proof.repository';
+import { findValidationByProofId, updateValidationStatus } from '../repositories/proof-validation.repository';
 import { createFraudScore } from '../../fraud/repositories/fraud-score.repository';
-import { extractTextFromImage, OcrResult } from '../../validation/services/ocr.service';
-import { validateWithHeuristics, HeuristicResult } from '../../validation/services/heuristic.service';
+import { extractTextFromImage, OcrResult } from '../services/ocr.service';
+import { validateWithHeuristics, HeuristicResult } from '../services/heuristic.service';
 import { calculateFraudScore } from '../../fraud/services/fraud-score.service';
 import { createEvent } from '../../../../../../shared/events/event.repository';
 import { createPaymentSignal } from '../../payments/repositories/payment-signal.repository';

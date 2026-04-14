@@ -39,7 +39,8 @@ status TEXT NOT NULL,
 confidence_score NUMERIC(3,2),
 validation_version TEXT NOT NULL,
 validated_at TIMESTAMP,
-created_at TIMESTAMP NOT NULL DEFAULT NOW()
+created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+UNIQUE (proof_id)
 );
 
 
