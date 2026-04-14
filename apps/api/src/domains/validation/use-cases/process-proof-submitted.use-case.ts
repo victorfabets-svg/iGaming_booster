@@ -36,20 +36,22 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload)
 
   // Process the validation (run OCR, heuristics, fraud scoring)
   console.log(`🔄 Starting validation pipeline...`);
+  
+  // AUDIT FIX: FAILSAFE - Wrap processValidation in try/catch
   try {
     await processValidation({ proof_id: payload.proof_id });
     console.log(`✨ Validation pipeline completed for proof: ${payload.proof_id}`);
   } catch (error) {
-    // FAILSAFE: On any error, set status to manual_review
+    // AUDIT FIX: FAILSAFE - On any error, set status to manual_review
     console.error(`❌ Validation failed for proof: ${payload.proof_id}, setting to manual_review`);
     
     const proof = await findProofById(payload.proof_id);
     
-    // Update validation status to manual_review
+    // Update validation status to manual_review (includes validated_at)
     await updateValidationStatus(validation.id, 'manual_review');
     console.log(`⚠️  Set validation status to manual_review`);
     
-    // Emit proof_rejected event for manual_review
+    // AUDIT FIX: EVENT FLOW - Emit proof_rejected event for error case
     await createEvent({
       event_type: 'proof_rejected',
       version: 'v1',

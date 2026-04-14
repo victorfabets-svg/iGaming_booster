@@ -63,7 +63,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       await updateValidationStatus(validation.id, 'rejected', 0.0);
     }
 
-    // Emit proof_rejected event
+    // AUDIT FIX: EVENT FLOW - Emit proof_rejected for duplicate hash
     await createEvent({
       event_type: 'proof_rejected',
       version: 'v1',
@@ -216,22 +216,46 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     await updateValidationStatus(validation.id, decision, fraudScoreResult.score);
     console.log(`✅ Validation record updated: status = ${decision}, confidence_score = ${fraudScoreResult.score}`);
 
-    // Emit proof_validated event
-    await createEvent({
-      event_type: 'proof_validated',
-      version: 'v1',
-      payload: {
-        proof_id: proof_id,
-        user_id: proof.user_id,
-        file_url: proof.file_url,
-        submitted_at: proof.submitted_at,
-        validation_id: validation.id,
-        status: decision,
-        confidence_score: fraudScoreResult.score,
-      },
-      producer: 'validation',
-    });
-    console.log(`📢 Emitted proof_validated event`);
+    // AUDIT FIX: EVENT FLOW - Explicit approved path emits proof_validated
+    if (decision === 'approved') {
+      await createEvent({
+        event_type: 'proof_validated',
+        version: 'v1',
+        payload: {
+          proof_id: proof_id,
+          user_id: proof.user_id,
+          file_url: proof.file_url,
+          submitted_at: proof.submitted_at,
+          validation_id: validation.id,
+          status: decision,
+          confidence_score: fraudScoreResult.score,
+        },
+        producer: 'validation',
+      });
+      console.log(`📢 Emitted proof_validated event (approved)`);
+    }
+    
+    // AUDIT FIX: EVENT FLOW - Explicit rejected/manual_review path emits proof_rejected
+    // Note: decision can be 'rejected' (duplicate hash) or 'manual_review'
+    const decisionStr = decision as string;
+    if (decisionStr === 'rejected' || decisionStr === 'manual_review') {
+      await createEvent({
+        event_type: 'proof_rejected',
+        version: 'v1',
+        payload: {
+          proof_id: proof_id,
+          user_id: proof.user_id,
+          file_url: proof.file_url,
+          submitted_at: proof.submitted_at,
+          validation_id: validation.id,
+          status: decision,
+          confidence_score: fraudScoreResult.score,
+          reason: decisionStr === 'rejected' ? 'duplicate_hash' : 'manual_review_required',
+        },
+        producer: 'validation',
+      });
+      console.log(`📢 Emitted proof_rejected event (${decision})`);
+    }
 
     return {
       validation_id: validation.id,
@@ -242,7 +266,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       heuristic_result: heuristicResult,
     };
   } catch (error) {
-    // Any error → manual_review
+    // AUDIT FIX: FAILSAFE - Any error → manual_review
     console.error(`❌ Validation error: ${error}`);
     
     const validation = await findValidationByProofId(proof_id);
@@ -250,7 +274,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       await updateValidationStatus(validation.id, 'manual_review');
     }
 
-    // Emit proof_rejected event for manual_review
+    // AUDIT FIX: EVENT FLOW - Emit proof_rejected for validation error
     await createEvent({
       event_type: 'proof_rejected',
       version: 'v1',

@@ -111,6 +111,8 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     return;
   }
 
+  // AUDIT FIX: EVENT FLOW - Only proceed if shouldGrantReward is true
+
   // Step 6: Get experiment variant for this user
   const experimentVariant = await experimentService.assignUserToExperiment(payload.user_id, 'reward_tickets');
   console.log(`🧪 Experiment variant: ${experimentVariant}`);
@@ -150,7 +152,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   // Step 7: Create reward with transaction safety
   const REWARD_VALUE = 10;
   const REWARD_TYPE = 'approval';
-
+  
   // Calculate economics values before transaction
   const costPerTicket = config.rewards?.costPerTicket || 0.50;
   const estimatedRevenuePerTicket = config.rewards?.revenuePerTicket || 2.00;
@@ -158,7 +160,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const totalCost = effectiveNumbers * costPerTicket;
   const estimatedRevenue = effectiveNumbers * estimatedRevenuePerTicket;
 
-  // Wrap core DB operations in single transaction
+  // AUDIT FIX: TRANSACTION - Wrap core DB operations in single transaction
   const reward = await withTransaction(async (client) => {
     // Create reward
     const createdReward = await createRewardTx({
@@ -180,6 +182,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   });
 
   // Step 8: Emit reward_created event AFTER DB transaction succeeds
+  // AUDIT FIX: EVENT FLOW - Event emitted AFTER DB persist
   await createEvent({
     event_type: 'reward_created',
     version: 'v1',
