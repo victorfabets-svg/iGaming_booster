@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -34,4 +34,22 @@ export async function execute(text: string, params?: unknown[]): Promise<number>
 
 export async function closePool(): Promise<void> {
   await pool.end();
+}
+
+// Transaction support
+export async function withTransaction<T>(
+  callback: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
