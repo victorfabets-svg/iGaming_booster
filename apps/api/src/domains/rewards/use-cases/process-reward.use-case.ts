@@ -10,7 +10,7 @@ import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordReward, recordTicketGenerated } from '../../../../../../shared/observability/metrics.service';
-import { isRewardsEnabled, isRaffleEnabled } from '../../../../../../shared/config/feature-flags';
+import { isRewardsEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
 import { experimentService } from '../services/experiment.service';
 
@@ -35,12 +35,6 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     logger.warn('rewards_disabled', 'rewards', 'Rewards are currently disabled', payload.user_id, { proof_id: payload.proof_id });
     console.log(`⚠️  Rewards are disabled, skipping reward`);
     return;
-  }
-
-  // Check if raffle is enabled
-  if (!isRaffleEnabled()) {
-    logger.warn('raffle_disabled', 'raffles', 'Raffle is currently disabled', payload.user_id, { proof_id: payload.proof_id });
-    console.log(`⚠️  Raffle is disabled, but will generate reward without tickets`);
   }
 
   logger.info('reward_started', 'rewards', `Processing reward for proof: ${payload.proof_id}`, payload.user_id, { 

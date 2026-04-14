@@ -68,4 +68,4 @@ export function initializeEnvironment(): void {
 
 // Export config for use throughout the application
 export { config, environment, isProduction, isDevelopment, featureFlags } from './env';
-export { featureFlags as ff, isRewardsEnabled, isValidationEnabled, isRaffleEnabled, isAutomaticApprovalEnabled } from './feature-flags';
+export { featureFlags as ff, isRewardsEnabled, isValidationEnabled, isAutomaticApprovalEnabled } from './feature-flags';

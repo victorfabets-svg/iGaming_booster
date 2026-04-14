@@ -5,7 +5,6 @@ import { createRaffleDraw, findRaffleDrawByRaffleId, updateRaffleDrawWinner } fr
 import { createEvent } from '../../../../../../shared/events/event.repository';
 import { logger } from '../../../../../../shared/observability/logger';
 import { recordRaffleExecution } from '../../../../../../shared/observability/metrics.service';
-import { isRaffleEnabled } from '../../../../../../shared/config/feature-flags';
 
 export interface ExecuteRaffleDrawInput {
   raffle_id: string;
@@ -34,12 +33,6 @@ function calculateResultNumber(seed: string, raffleId: string, totalNumbers: num
 
 export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<ExecuteRaffleDrawResult> {
   const { raffle_id } = input;
-
-  // Check if raffle is enabled
-  if (!isRaffleEnabled()) {
-    logger.warn('raffle_disabled', 'raffles', 'Raffle execution is currently disabled', undefined, { raffle_id });
-    throw new Error('Raffle execution is currently disabled');
-  }
 
   console.log(`🎰 Executing raffle draw for raffle: ${raffle_id}`);
   logger.info('raffle_execution_started', 'raffles', `Executing raffle draw: ${raffle_id}`, undefined, { raffle_id });

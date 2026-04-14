@@ -14,6 +14,7 @@ export interface FeatureFlagState {
 }
 
 // Feature flag definitions with metadata
+// SAFE DEFAULTS: All production features disabled until explicitly enabled
 const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, { 
   description: string; 
   defaultValue: boolean;
@@ -29,14 +30,9 @@ const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, {
     defaultValue: true,
     critical: true, // Disabling stops all validation
   },
-  ENABLE_RAFFLE: {
-    description: 'Enable raffle execution and drawing',
-    defaultValue: true,
-    critical: false,
-  },
   ENABLE_AUTOMATIC_APPROVAL: {
-    description: 'Enable automatic approval for high-confidence validations',
-    defaultValue: true,
+    description: 'Enable automatic approval for high-confidence validations - if false, default to manual_review',
+    defaultValue: false, // SAFE DEFAULT: require manual review unless explicitly enabled
     critical: false,
   },
 };
@@ -158,7 +154,6 @@ export const featureFlags = FeatureFlagsService.getInstance();
 // Convenience functions
 export const isRewardsEnabled = () => featureFlags.isEnabled('ENABLE_REWARDS');
 export const isValidationEnabled = () => featureFlags.isEnabled('ENABLE_VALIDATION');
-export const isRaffleEnabled = () => featureFlags.isEnabled('ENABLE_RAFFLE');
 export const isAutomaticApprovalEnabled = () => featureFlags.isEnabled('ENABLE_AUTOMATIC_APPROVAL');
 
 // Guard functions that throw if disabled
@@ -170,9 +165,4 @@ export function requireRewards(): void {
 export function requireValidation(): void {
   if (isValidationEnabled()) return;
   throw new Error('Validation is currently disabled');
-}
-
-export function requireRaffle(): void {
-  if (isRaffleEnabled()) return;
-  throw new Error('Raffle is currently disabled');
 }
