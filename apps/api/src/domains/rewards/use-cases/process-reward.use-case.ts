@@ -180,21 +180,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     console.log(`✅ Created reward: ${createdReward.id} (within transaction)`);
     return createdReward;
   });
-
-  // Step 8: Emit reward_created event AFTER DB transaction succeeds
-  // AUDIT FIX: EVENT FLOW - Event emitted AFTER DB persist
-  await createEvent({
-    event_type: 'reward_created',
-    version: 'v1',
-    payload: {
-      reward_id: reward.id,
-      proof_id: payload.proof_id,
-      user_id: payload.user_id,
-      amount: effectiveNumbers,
-    },
-    producer: 'rewards',
-  });
-  console.log(`📢 Emitted reward_created event`);
+  // Note: Only reward_granted event - reward_created is NOT part of contract
 
   // Record metrics (outside transaction but after persist)
   recordReward('granted');
