@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Icon from './Icon';
 
 interface ProofUploadProps {
   onSubmit: (file: File) => void;
@@ -8,21 +9,29 @@ interface ProofUploadProps {
 const ProofUpload: React.FC<ProofUploadProps> = ({ onSubmit, loading }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
-    setSelectedFile(file);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedFile(e.target.files?.[0] || null);
   };
 
   const handleSubmit = () => {
-    if (selectedFile) {
-      onSubmit(selectedFile);
-    }
+    if (selectedFile) onSubmit(selectedFile);
   };
 
   return (
-    <div>
-      <input type="file" onChange={handleFileChange} />
-      <button onClick={handleSubmit} disabled={loading}>Send</button>
+    <div className="upload-dropzone">
+      <Icon name="upload" size={28} color="var(--text-secondary)" />
+      <p style={{ marginTop: 8, fontSize: 13 }}>
+        {selectedFile ? selectedFile.name : 'Selecione um comprovante (imagem ou PDF)'}
+      </p>
+      <input type="file" accept="image/*,application/pdf" onChange={handleFileChange} />
+      <button
+        className="btn btn-primary"
+        style={{ marginTop: 16 }}
+        onClick={handleSubmit}
+        disabled={!selectedFile || loading}
+      >
+        {loading ? 'Enviando…' : 'Enviar Comprovante'}
+      </button>
     </div>
   );
 };
