@@ -105,7 +105,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     throw new Error(`Proof not found: ${payload.proof_id}`);
   }
 
-  // If shouldGrantReward is false, do nothing (no ghost events)
+  // Check risk first - if high risk, don't create reward
   if (!shouldGrantReward) {
     console.log(`🚫 Reward not granted due to risk assessment: ${downgradeReason}`);
     return;
@@ -154,15 +154,14 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   // Calculate economics values before transaction
   const costPerTicket = config.rewards?.costPerTicket || 0.50;
   const estimatedRevenuePerTicket = config.rewards?.revenuePerTicket || 2.00;
+
   const totalCost = effectiveNumbers * costPerTicket;
   const estimatedRevenue = effectiveNumbers * estimatedRevenuePerTicket;
 
   // Wrap core DB operations in single transaction
-  let reward: Awaited<ReturnType<typeof createRewardTx>>;
-  
-  await withTransaction(async (client) => {
+  const reward = await withTransaction(async (client) => {
     // Create reward
-    reward = await createRewardTx({
+    const createdReward = await createRewardTx({
       user_id: payload.user_id,
       proof_id: payload.proof_id,
       reward_type: REWARD_TYPE,
@@ -173,11 +172,26 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     await client.query(
       `INSERT INTO rewards.reward_economics (reward_id, cost, estimated_revenue)
        VALUES ($1, $2, $3)`,
-      [reward.id, totalCost, estimatedRevenue]
+      [createdReward.id, totalCost, estimatedRevenue]
     );
 
-    console.log(`✅ Created reward: ${reward.id} (within transaction)`);
+    console.log(`✅ Created reward: ${createdReward.id} (within transaction)`);
+    return createdReward;
   });
+
+  // Step 8: Emit reward_created event AFTER DB transaction succeeds
+  await createEvent({
+    event_type: 'reward_created',
+    version: 'v1',
+    payload: {
+      reward_id: reward.id,
+      proof_id: payload.proof_id,
+      user_id: payload.user_id,
+      amount: effectiveNumbers,
+    },
+    producer: 'rewards',
+  });
+  console.log(`📢 Emitted reward_created event`);
 
   // Record metrics (outside transaction but after persist)
   recordReward('granted');
