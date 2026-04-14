@@ -1,6 +1,6 @@
 import { findValidationByProofId } from '../../validation/repositories/proof-validation.repository';
 import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
-import { findRewardByProofId, createReward, findRewardById } from '../repositories/reward.repository';
+import { findRewardByProofId, createReward, createRewardTx, findRewardById } from '../repositories/reward.repository';
 import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } from '../repositories/ticket.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
@@ -13,6 +13,7 @@ import { recordReward, recordTicketGenerated } from '../../../../../../shared/ob
 import { isRewardsEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
 import { experimentService } from '../services/experiment.service';
+import { withTransaction } from '../../../lib/database';
 
 export interface ProofValidatedEventPayload {
   proof_id: string;
@@ -104,17 +105,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     throw new Error(`Proof not found: ${payload.proof_id}`);
   }
 
-  // Emit reward_created event
-  await createEvent({
-    event_type: 'reward_created',
-    version: 'v1',
-    payload: {
-      proof_id: payload.proof_id,
-      user_id: payload.user_id,
-    },
-    producer: 'rewards',
-  });
-
+  // If shouldGrantReward is false, do nothing (no ghost events)
   if (!shouldGrantReward) {
     console.log(`🚫 Reward not granted due to risk assessment: ${downgradeReason}`);
     return;
@@ -156,39 +147,39 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   console.log(`📋 Using benefit rule: ${effectiveNumbers} tickets (base: ${benefitRule.numbers_generated}, multiplier: ${benefitRule.risk_multiplier || 1}), ${benefitRule.access_days} days`);
 
-  // Step 7: Create reward (status = "granted")
-  const reward = await createReward({
-    user_id: payload.user_id,
-    proof_id: payload.proof_id,
-    type: 'raffle_ticket',
-    status: 'granted',
-  });
+  // Step 7: Create reward with transaction safety
+  const REWARD_VALUE = 10;
+  const REWARD_TYPE = 'approval';
 
-  console.log(`✅ Created reward: ${reward.id}`);
-
-  // Step 8: Calculate and store economics
-  const costPerTicket = config.rewards?.costPerTicket || 0.50; // Default $0.50 per ticket
-  const estimatedRevenuePerTicket = config.rewards?.revenuePerTicket || 2.00; // Default $2.00 per ticket
-  
+  // Calculate economics values before transaction
+  const costPerTicket = config.rewards?.costPerTicket || 0.50;
+  const estimatedRevenuePerTicket = config.rewards?.revenuePerTicket || 2.00;
   const totalCost = effectiveNumbers * costPerTicket;
   const estimatedRevenue = effectiveNumbers * estimatedRevenuePerTicket;
+
+  // Wrap core DB operations in single transaction
+  let reward: Awaited<ReturnType<typeof createRewardTx>>;
   
-  await createRewardEconomics({
-    reward_id: reward.id,
-    cost: totalCost,
-    estimated_revenue: estimatedRevenue,
-  });
-  
-  logger.info('reward_economics_recorded', 'rewards', `Economics recorded for reward: ${reward.id}`, payload.user_id, {
-    reward_id: reward.id,
-    tickets_generated: effectiveNumbers,
-    cost: totalCost,
-    estimated_revenue: estimatedRevenue,
-    margin: estimatedRevenue - totalCost,
-    experiment_variant: experimentVariant,
+  await withTransaction(async (client) => {
+    // Create reward
+    reward = await createRewardTx({
+      user_id: payload.user_id,
+      proof_id: payload.proof_id,
+      reward_type: REWARD_TYPE,
+      value: REWARD_VALUE,
+    }, client);
+
+    // Create reward economics
+    await client.query(
+      `INSERT INTO rewards.reward_economics (reward_id, cost, estimated_revenue)
+       VALUES ($1, $2, $3)`,
+      [reward.id, totalCost, estimatedRevenue]
+    );
+
+    console.log(`✅ Created reward: ${reward.id} (within transaction)`);
   });
 
-  // Record metrics
+  // Record metrics (outside transaction but after persist)
   recordReward('granted');
   alertMonitor.recordRewardGranted();
   logger.info('reward_granted', 'rewards', `Reward granted: ${reward.id}`, payload.user_id, { 
@@ -198,10 +189,10 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     experiment_variant: experimentVariant,
   });
 
-  // Record reward in rate limit
+  // Record reward in rate limit (outside transaction)
   await rateLimitService.recordRewardGranted(payload.user_id);
 
-  // Emit reward_granted event
+  // Emit reward_granted event ONLY after successful DB persist
   await createEvent({
     event_type: 'reward_granted',
     version: 'v1',
@@ -209,7 +200,8 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       reward_id: reward.id,
       proof_id: payload.proof_id,
       user_id: payload.user_id,
-      type: reward.type,
+      reward_type: reward.reward_type,
+      value: reward.value,
     },
     producer: 'rewards',
   });
