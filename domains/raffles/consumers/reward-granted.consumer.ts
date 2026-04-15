@@ -1,6 +1,7 @@
 import { fetchAndLockEvents, getRetryCount, processWithRetry } from '../../../shared/events/event-consumer.repository';
 import { getActiveRaffle } from '../application/get-active-raffle';
 import { db } from '../../../shared/database/connection';
+import { randomUUID } from 'crypto';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;
@@ -111,7 +112,7 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   console.log(`🎰 Using raffle: ${raffle.id}`);
 
-  // Step 4: Idempotent insert with explicit result tracking
+// Step 4: Idempotent insert with explicit result tracking
   // UNIQUE constraint on reward_id ensures idempotency
   const ticketResult = await db.query(
     `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
@@ -121,11 +122,29 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
     [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
   );
 
-  // Explicit idempotency check - no silent paths
+  // Explicit idempotency check - insert audit log for both cases
   if (ticketResult.rowCount === 1) {
+    // Ticket created - insert success audit
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'ticket_created', 'ticket', ticketResult.rows[0].id, payload.user_id, JSON.stringify({
+        reward_id: payload.reward_id,
+        proof_id: payload.proof_id,
+        raffle_id: raffle.id
+      })]
+    );
     console.log(`🎫 Created new eligibility ticket for reward: ${payload.reward_id}`);
   } else if (ticketResult.rowCount === 0) {
-    // Duplicate - already exists
+    // Duplicate - insert idempotency audit
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'ticket_duplicate_ignored', 'ticket', null, payload.user_id, JSON.stringify({
+        reward_id: payload.reward_id,
+        reason: 'idempotency_conflict'
+      })]
+    );
     console.log(`⚠️  Duplicate ticket ignored for reward: ${payload.reward_id} (already exists)`);
     console.log(`   📋 idempotency_check: { reward_id: "${payload.reward_id}", status: "duplicate_ignored" }`);
   }
