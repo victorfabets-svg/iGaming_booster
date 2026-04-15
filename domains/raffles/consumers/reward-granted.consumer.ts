@@ -68,6 +68,22 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
 }
 
 async function processRewardGranted(payload: RewardGrantedPayload): Promise<void> {
+  // Step 0: Event-level idempotency check
+  // Use INSERT ON CONFLICT to guarantee exactly-once processing
+  const idempotencyResult = await db.query(
+    `INSERT INTO events.processed_events (event_id)
+     VALUES ($1)
+     ON CONFLICT (event_id) DO NOTHING
+     RETURNING event_id`,
+    [payload.reward_id]
+  );
+
+  // If event already processed, skip completely
+  if (idempotencyResult.rowCount === 0) {
+    console.log(`⏭️  Event for reward ${payload.reward_id} already processed, skipping`);
+    return;
+  }
+
   // Step 1: Validate reward exists
   const rewardResult = await db.query<{ id: string; user_id: string; proof_id: string }>(
     `SELECT id, user_id, proof_id
