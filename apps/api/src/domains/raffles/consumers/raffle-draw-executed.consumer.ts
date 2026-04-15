@@ -2,17 +2,17 @@ import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, 
 import { getRaffleById } from '../../application/get-active-raffle';
 import { executeRaffleDraw } from '../../application/execute-raffle-draw.use-case';
 
-const EVENT_TYPE = 'raffle_closed';
+const EVENT_TYPE = 'raffle_draw_executed';
 const EVENT_VERSION = 'v1';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
-interface RaffleClosedPayload {
+interface RaffleDrawExecutedPayload {
   raffle_id: string;
 }
 
-export async function startRaffleClosedConsumer(): Promise<void> {
-  console.log('🎰 Starting raffle_closed consumer for draw execution...');
+export async function startRaffleDrawExecutedConsumer(): Promise<void> {
+  console.log('🎰 Starting raffle_draw_executed consumer for draw execution...');
 
   await pollEvents();
 
@@ -36,13 +36,13 @@ async function pollEvents(): Promise<void> {
       await processEvent(event);
     }
   } catch (error) {
-    console.error('❌ Error polling raffle_closed events:', error);
+    console.error(`❌ Error polling ${EVENT_TYPE} events:`, error);
   }
 }
 
 async function processEvent(event: { event_id?: string; id?: string; event_type?: string; event_version?: string; version?: string; payload: unknown }): Promise<void> {
   const eventId = event.event_id || event.id || '';
-  const payload = event.payload as RaffleClosedPayload;
+  const payload = event.payload as RaffleDrawExecutedPayload;
   
   // STEP 1: Validate event type, version, and payload BEFORE processing
   const validationError = validateEvent(
@@ -67,12 +67,12 @@ async function processEvent(event: { event_id?: string; id?: string; event_type?
 
   const retryCount = await getRetryCount(eventId);
 
-  console.log(`🎰 Processing raffle_closed event: ${eventId} (retry: ${retryCount})`);
+  console.log(`🎰 Processing ${EVENT_TYPE} event: ${eventId} (retry: ${retryCount})`);
   console.log(`   Raffle: ${payload.raffle_id}`);
 
   // STEP 3: Wrap in transaction with idempotency record
   const result = await processEventExactlyOnce(eventId, async () => {
-    await handleRaffleClosed(payload);
+    await handleRaffleDrawExecuted(payload);
   });
 
   if (result.skipped) {
@@ -85,12 +85,12 @@ async function processEvent(event: { event_id?: string; id?: string; event_type?
 }
 
 /**
- * Handle raffle_closed event - TRIGGER ONLY.
+ * Handle raffle_draw_executed event - TRIGGER ONLY.
  * 
  * Idempotency and validation is handled by executeRaffleDraw.
  * This consumer is a thin trigger layer only.
  */
-async function handleRaffleClosed(payload: RaffleClosedPayload): Promise<void> {
+async function handleRaffleDrawExecuted(payload: RaffleDrawExecutedPayload): Promise<void> {
   const { raffle_id } = payload;
 
   // Thin trigger: only verify raffle is in closed state
@@ -111,7 +111,7 @@ async function handleRaffleClosed(payload: RaffleClosedPayload): Promise<void> {
 }
 
 if (require.main === module) {
-  startRaffleClosedConsumer().catch((error) => {
+  startRaffleDrawExecutedConsumer().catch((error) => {
     console.error('Fatal error:', error);
     process.exit(1);
   });

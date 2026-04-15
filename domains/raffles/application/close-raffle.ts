@@ -48,7 +48,7 @@ function generateSeed(raffleId: string, totalTickets: number): string {
  * 2. Close raffle (freeze ticket set)
  * 3. COUNT tickets AFTER close
  * 4. Generate & insert seed
- * 5. Emit raffle_closed event (outbox)
+ * 5. Emit raffle_draw_executed event (outbox)
  */
 export async function closeRaffle(raffleId: string): Promise<boolean> {
   const client = await getClient();
@@ -96,11 +96,11 @@ export async function closeRaffle(raffleId: string): Promise<boolean> {
       [raffleId, seed]
     );
     
-    // Step 5: Emit raffle_closed event (outbox pattern - same transaction)
+    // Step 5: Emit raffle_draw_executed event (outbox pattern - same transaction)
     await saveEventInTransaction(
       client,
       randomUUID(),
-      'raffle_closed',
+      'raffle_draw_executed',
       'v1',
       'raffles',
       randomUUID(),
@@ -109,7 +109,7 @@ export async function closeRaffle(raffleId: string): Promise<boolean> {
     
     await client.query('COMMIT');
     console.log(`🔐 Seed persisted for raffle ${raffleId}: ${seed} (${totalTickets} tickets)`);
-    console.log(`📤 Emitted raffle_closed event for ${raffleId}`);
+    console.log(`📤 Emitted raffle_draw_executed event for ${raffleId}`);
     return true;
   } catch (error) {
     await client.query('ROLLBACK');

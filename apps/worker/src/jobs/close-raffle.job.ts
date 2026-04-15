@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
  * 2. Close raffle (freeze ticket set)
  * 3. COUNT tickets AFTER close
  * 4. Generate & insert seed
- * 5. Emit raffle_closed event (outbox)
+ * 5. Emit raffle_draw_executed event (outbox)
  */
 async function closeRaffleInTx(raffleId: string, client: any): Promise<boolean> {
   // Step 1: LOCK raffle row to prevent race conditions
@@ -52,11 +52,11 @@ async function closeRaffleInTx(raffleId: string, client: any): Promise<boolean> 
     [raffleId, seed]
   );
   
-  // Step 5: Emit raffle_closed event (outbox pattern - same transaction)
+  // Step 5: Emit raffle_draw_executed event (outbox pattern - same transaction)
   await saveEventInTransaction(
     client,
     randomUUID(),
-    'raffle_closed',
+    'raffle_draw_executed',
     'v1',
     'raffles',
     randomUUID(),
@@ -64,7 +64,7 @@ async function closeRaffleInTx(raffleId: string, client: any): Promise<boolean> 
   );
   
   console.log(`🔐 Seed persisted for raffle ${raffleId}: ${seed} (${totalTickets} tickets)`);
-  console.log(`📤 Emitted raffle_closed event for ${raffleId}`);
+  console.log(`📤 Emitted raffle_draw_executed event for ${raffleId}`);
   return true;
 }
 
