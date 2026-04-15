@@ -772,3 +772,79 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   color: var(--text-primary);
   font-weight: 500;
 }
+
+/* === USER OUTCOME DISPLAY === */
+.outcome-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.outcome-display .outcome-emoji {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.outcome-display .outcome-message {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+/* Won state - green */
+.outcome-display.outcome-won {
+  background: rgba(34, 197, 94, 0.1);
+  border: 2px solid var(--color-success-primary);
+}
+
+.outcome-display.outcome-won .outcome-message {
+  color: var(--color-success-primary);
+}
+
+/* Lost state - red */
+.outcome-display.outcome-lost {
+  background: rgba(239, 68, 68, 0.1);
+  border: 2px solid var(--color-error-primary);
+}
+
+.outcome-display.outcome-lost .outcome-message {
+  color: var(--color-error-primary);
+}
+
+/* Completed state - blue */
+.outcome-display.outcome-completed {
+  background: rgba(59, 130, 246, 0.1);
+  border: 2px solid var(--color-primary-primary);
+}
+
+.outcome-display.outcome-completed .outcome-message {
+  color: var(--color-primary-primary);
+}
+
+/* Pending state - yellow */
+.outcome-display.outcome-pending {
+  background: rgba(234, 179, 8, 0.1);
+  border: 2px solid var(--color-warning-primary);
+}
+
+.outcome-display.outcome-pending .outcome-message {
+  color: var(--color-warning-primary);
+}
+
+/* Enhanced details */
+.winning-number-lg {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.prize-value-lg {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-success-primary);
+}
