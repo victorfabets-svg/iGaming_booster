@@ -1,13 +1,21 @@
 import { randomUUID } from 'crypto';
-import { db } from '../../../../../../shared/database/connection';
 import { Proof, ProofInput, ProofResult } from '../domain/proof';
 
-export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<ProofResult> {
+/**
+ * Create proof within a transaction - uses provided client for atomicity.
+ * This is the ONLY proof creation method - must be called within withTransactionalOutbox.
+ */
+export async function createProofInTransaction(
+  client: any,
+  proof: ProofInput,
+  fileUrl: string,
+  hash: string
+): Promise<ProofResult> {
   const id = randomUUID();
   const submitted_at = new Date().toISOString();
 
   try {
-    await db.query(
+    await client.query(
       `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
        VALUES ($1, $2, $3, $4, $5)`,
       [id, proof.user_id, fileUrl, hash, submitted_at]
@@ -24,9 +32,9 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
       isNew: true,
     };
   } catch (error: any) {
-    // Handle UNIQUE constraint violation - return existing proof
+    // Handle UNIQUE constraint violation - return existing proof (within same transaction)
     if (error.code === '23505' && error.constraint === 'validation_proofs_hash_key') {
-      const existing = await findByHash(hash);
+      const existing = await findByHashWithClient(client, hash);
       if (existing) {
         console.log('[PROOF] Duplicate detected at DB level, returning existing:', existing.id);
         return { proof: existing, isNew: false };
@@ -36,8 +44,11 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
   }
 }
 
-export async function findByHash(hash: string): Promise<Proof | null> {
-  const result = await db.query(
+/**
+ * Find proof by hash using provided client (for use within transaction).
+ */
+async function findByHashWithClient(client: any, hash: string): Promise<Proof | null> {
+  const result = await client.query(
     `SELECT id, user_id, file_url, hash, submitted_at FROM validation.proofs WHERE hash = $1`,
     [hash]
   );

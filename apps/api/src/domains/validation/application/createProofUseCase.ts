@@ -1,8 +1,8 @@
-import { emitEvent } from '../../../../../../shared/events/emitter';
-import { createProof } from '../infrastructure/proofRepository';
+import { createProofInTransaction } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
 import { generateSHA256 } from '../../../../../../shared/utils/hash';
 import { getStorageService } from '../../../infrastructure/storage';
+import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 
 /**
  * Determine content type from file extension
@@ -46,14 +46,50 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   const path = `proofs/${input.user_id}/${hash.substring(0, 8)}.${fileExt}`;
   const contentType = getContentType(fileExt);
 
-  // Upload file to storage and get storage key
+  // Upload file to storage and get storage key (outside transaction - not a DB op)
   const { key } = await storageService.upload(input.file_buffer, path, contentType);
   console.log('[PROOF] Storage key:', key);
 
-  // Insert proof - DB enforces idempotency via UNIQUE constraint
-  const result = await createProof(input, key, hash);
+  // Use transactional outbox to ensure atomicity: proof + event + audit in same tx
+  const result = await withTransactionalOutbox(async (client) => {
+    // Insert proof within transaction
+    const proofResult = await createProofInTransaction(client, input, key, hash);
+    console.log('[PROOF] Created proof:', proofResult.proof.id);
 
-  console.log('[PROOF] Created proof:', result.proof.id);
+    // Only insert event and audit for new proofs (not duplicates)
+    if (proofResult.isNew) {
+      // Insert event in same transaction
+      await insertEventInTransaction(
+        client,
+        'proof_submitted',
+        {
+          proof_id: proofResult.proof.id,
+          user_id: proofResult.proof.user_id,
+          hash: proofResult.proof.hash,
+        },
+        'validation'
+      );
+      console.log('[PROOF] Event proof_submitted inserted in transaction for:', proofResult.proof.id);
+
+      // Insert audit log in same transaction
+      await insertAuditInTransaction(
+        client,
+        'proof_submitted',
+        'proof',
+        proofResult.proof.id,
+        proofResult.proof.user_id,
+        {
+          action: 'proof_created',
+          file_url: proofResult.proof.file_url,
+          hash: proofResult.proof.hash,
+        }
+      );
+    } else {
+      console.log('[PROOF] Duplicate proof - skipping event insert');
+    }
+
+    return proofResult;
+  });
 
   // Generate signed URL for R2 (best effort - failures should not crash the response)
   let signedUrl: string | undefined;
@@ -70,22 +106,6 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   } catch (error) {
     // Signed URL is optional - log but don't fail
     console.error('[PROOF] Signed URL generation failed:', (error as Error).message);
-  }
-
-  // Only emit event for new proofs (not duplicates)
-  if (result.isNew) {
-    await emitEvent({
-      event_type: 'proof_submitted',
-      producer: 'validation',
-      payload: {
-        proof_id: result.proof.id,
-        user_id: result.proof.user_id,
-        hash: result.proof.hash,
-      },
-    });
-    console.log('[PROOF] Event proof_submitted emitted for:', result.proof.id);
-  } else {
-    console.log('[PROOF] Duplicate proof - skipping event emit');
   }
 
   return { 
