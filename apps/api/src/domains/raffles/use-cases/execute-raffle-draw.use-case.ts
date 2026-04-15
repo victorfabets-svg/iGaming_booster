@@ -130,11 +130,9 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
     // Emit raffle_completed event
     await queueEventInTransaction(client, 'raffle_completed', {
       raffle_id: raffle_id,
-      winner_user_id: winnerUserId,
-      winner_ticket_id: winnerTicketId,
+      winners: winnerUserId ? [{ ticket_id: winnerTicketId, user_id: winnerUserId }] : [],
       total_tickets: tickets.length,
       seed: seed,
-      algorithm: 'sha256_modulo',
     }, 'raffles');
 
     // Audit: Insert audit log for raffle executed
