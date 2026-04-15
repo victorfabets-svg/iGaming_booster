@@ -13,6 +13,7 @@ const IndexPage: React.FC = () => {
 
   const [health, setHealth] = useState<'healthy' | 'degraded' | 'unknown'>('unknown');
   const [latency, setLatency] = useState<number | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   // Health pulse
   useEffect(() => {
@@ -23,8 +24,14 @@ const IndexPage: React.FC = () => {
         if (cancelled) return;
         setHealth(h.status === 'ok' ? 'healthy' : 'degraded');
         setLatency(h.latencyMs ?? null);
-      } catch {
-        if (!cancelled) { setHealth('degraded'); setLatency(null); }
+        setHealthError(null); // Clear error on success
+      } catch (err) {
+        console.error('Health check failed:', err);
+        if (!cancelled) { 
+          setHealth('degraded'); 
+          setLatency(null);
+          setHealthError(err instanceof Error ? err.message : 'Falha na verificação de saúde');
+        }
       }
     };
     tick();
@@ -42,7 +49,7 @@ const IndexPage: React.FC = () => {
         onToggle={() => setExpanded(v => !v)}
       />
       <main className="main-content">
-        <Header health={health} latencyMs={latency} />
+        <Header health={health} latencyMs={latency} healthError={healthError} />
         {section === 'historico' && <HistoricoSection />}
         {section === 'systemflow' && <SystemFlow />}
       </main>
