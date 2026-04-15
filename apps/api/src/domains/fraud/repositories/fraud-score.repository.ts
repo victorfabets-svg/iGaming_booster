@@ -24,6 +24,23 @@ export async function createFraudScore(input: CreateFraudScoreInput): Promise<Fr
   return result.rows[0];
 }
 
+/**
+ * Create fraud score within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function createFraudScoreWithClient(
+  client: any,
+  input: CreateFraudScoreInput
+): Promise<FraudScore> {
+  const result = await client.query(
+    `INSERT INTO fraud.fraud_scores (proof_id, score, signals)
+     VALUES ($1, $2, $3)
+     RETURNING id, proof_id, score, signals, created_at`,
+    [input.proof_id, input.score, JSON.stringify(input.signals)]
+  );
+  return result.rows[0];
+}
+
 export async function findFraudScoreByProofId(proofId: string): Promise<FraudScore | null> {
   return await queryOne<FraudScore>(
     `SELECT id, proof_id, score, signals, created_at 

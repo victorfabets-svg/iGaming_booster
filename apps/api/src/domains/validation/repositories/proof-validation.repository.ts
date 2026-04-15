@@ -47,3 +47,21 @@ export async function updateValidationStatus(
     [status, confidenceScore ?? null, id]
   );
 }
+
+/**
+ * Update validation status within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function updateValidationStatusWithClient(
+  client: any,
+  id: string,
+  status: string,
+  confidenceScore?: number
+): Promise<void> {
+  await client.query(
+    `UPDATE validation.proof_validations
+     SET status = $1, confidence_score = $2, validated_at = NOW()
+     WHERE id = $3`,
+    [status, confidenceScore ?? null, id]
+  );
+}

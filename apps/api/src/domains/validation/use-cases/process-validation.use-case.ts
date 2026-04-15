@@ -1,17 +1,18 @@
 import { findProofById, findProofByHash } from '../repositories/proof.repository';
-import { findValidationByProofId, updateValidationStatus } from '../repositories/proof-validation.repository';
-import { createFraudScore } from '../../fraud/repositories/fraud-score.repository';
+import { findValidationByProofId } from '../repositories/proof-validation.repository';
+import { updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
+import { createFraudScoreWithClient } from '../../fraud/repositories/fraud-score.repository';
 import { extractTextFromImage, OcrResult } from '../services/ocr.service';
 import { validateWithHeuristics, HeuristicResult } from '../services/heuristic.service';
 import { calculateFraudScore } from '../../fraud/services/fraud-score.service';
-import { createPaymentSignal } from '../../payments/repositories/payment-signal.repository';
+import { createPaymentSignalWithClient } from '../../payments/repositories/payment-signal.repository';
 import { extractIdentifiers } from '../../payments/services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../../payments/services/identifier-validation.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
 import { isValidationEnabled, isAutomaticApprovalEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
-import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 
 export interface ProcessValidationInput {
   proof_id: string;
@@ -57,30 +58,43 @@ export async function processValidation(input: ProcessValidationInput): Promise<
   if (duplicateProof && duplicateProof.id !== proof_id) {
     console.log(`⚠️  Duplicate hash detected: ${proof.hash} (existing proof: ${duplicateProof.id})`);
     
-    // Update validation status to rejected
+    // Get validation record
     const validation = await findValidationByProofId(proof_id);
-    if (validation) {
-      await updateValidationStatus(validation.id, 'rejected', 0.0);
-    }
-
-    // Use transactional outbox for event
-    await withTransactionalOutbox(async (txnId) => {
-      // Domain write
+    
+    // Use transactional outbox - ALL domain writes inside transaction
+    await withTransactionalOutbox(async (client) => {
       if (validation) {
-        await updateValidationStatus(validation.id, 'rejected', 0.0);
+        await updateValidationStatusWithClient(client, validation.id, 'rejected', 0.0);
       }
       
-      // Queue event (committed with transaction)
-      queueEventInTransaction(txnId, 'proof_rejected', {
-        proof_id: proof_id,
-        user_id: proof.user_id,
-        file_url: proof.file_url,
-        submitted_at: proof.submitted_at,
-        validation_id: validation?.id,
-        reason: 'duplicate_hash',
-      }, 'validation');
+      // Insert event in same transaction
+      await insertEventInTransaction(
+        client,
+        'proof_rejected',
+        {
+          proof_id: proof_id,
+          user_id: proof.user_id,
+          file_url: proof.file_url,
+          submitted_at: proof.submitted_at,
+          validation_id: validation?.id,
+          reason: 'duplicate_hash',
+        },
+        'validation'
+      );
+      
+      // Insert audit in same transaction
+      if (validation) {
+        await insertAuditInTransaction(
+          client,
+          'proof_rejected',
+          'validation',
+          validation.id,
+          proof.user_id,
+          { reason: 'duplicate_hash', proof_id }
+        );
+      }
     });
-    console.log(`📢 Emitted proof_rejected event: duplicate hash`);
+    console.log(`📢 Emitted proof_rejected event: duplicate hash (transactional)`);
 
     return {
       validation_id: validation?.id || '',
@@ -111,23 +125,6 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     console.log(`   Valid: ${identifierValidationResult.valid_count}, Invalid: ${identifierValidationResult.invalid_count}`);
     console.log(`   Has valid identifiers: ${identifierValidationResult.has_valid_identifiers}`);
 
-    // Persist payment signals
-    console.log(`💾 Persisting payment signals...`);
-    for (const identifier of extractedIdentifiers) {
-      const validation = validateIdentifier(identifier.type, identifier.value);
-      await createPaymentSignal({
-        proof_id: proof_id,
-        type: identifier.type,
-        value: identifier.value,
-        confidence: validation.confidence,
-        metadata: {
-          source: identifier.source,
-          is_valid: validation.is_valid,
-          issues: validation.issues,
-        },
-      });
-    }
-
     // Run heuristic validation
     console.log(`⚙️  Running heuristic validation...`);
     const heuristicResult = validateWithHeuristics(ocrResult);
@@ -140,14 +137,6 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       : -0.1;
     const fraudScoreResult = calculateFraudScore(ocrResult, heuristicResult, risk_score_modifier, paymentModifier);
     console.log(`   Score: ${fraudScoreResult.score} (risk: ${risk_score_modifier}, payment: ${paymentModifier})`);
-
-    // Persist fraud score
-    console.log(`💾 Persisting fraud score...`);
-    await createFraudScore({
-      proof_id: proof_id,
-      score: fraudScoreResult.score,
-      signals: fraudScoreResult.signals,
-    });
 
     // Determine decision based on score thresholds
     let decision: ValidationDecision;
@@ -177,14 +166,37 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       throw new Error(`Validation not found for proof: ${proof_id}`);
     }
 
-    // Use transactional outbox - domain write + event in same transaction
-    await withTransactionalOutbox(async (txnId) => {
-      // Domain write
-      await updateValidationStatus(validation.id, decision, fraudScoreResult.score);
+    // Use transactional outbox - ALL domain writes inside single transaction
+    await withTransactionalOutbox(async (client) => {
+      // Domain write: Persist payment signals
+      for (const identifier of extractedIdentifiers) {
+        const identValidation = validateIdentifier(identifier.type, identifier.value);
+        await createPaymentSignalWithClient(client, {
+          proof_id: proof_id,
+          type: identifier.type,
+          value: identifier.value,
+          confidence: identValidation.confidence,
+          metadata: {
+            source: identifier.source,
+            is_valid: identValidation.is_valid,
+            issues: identValidation.issues,
+          },
+        });
+      }
       
-      // Emit events based on decision
+      // Domain write: Persist fraud score
+      await createFraudScoreWithClient(client, {
+        proof_id: proof_id,
+        score: fraudScoreResult.score,
+        signals: fraudScoreResult.signals,
+      });
+
+      // Domain write: Update validation status
+      await updateValidationStatusWithClient(client, validation.id, decision, fraudScoreResult.score);
+      
+      // Event: Insert based on decision
       if (decision === 'approved') {
-        queueEventInTransaction(txnId, 'proof_validated', {
+        await insertEventInTransaction(client, 'proof_validated', {
           proof_id: proof_id,
           user_id: proof.user_id,
           file_url: proof.file_url,
@@ -194,14 +206,14 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           confidence_score: fraudScoreResult.score,
         }, 'validation');
         
-        queueEventInTransaction(txnId, 'payment_identifier_extracted', {
+        await insertEventInTransaction(client, 'payment_identifier_extracted', {
           proof_id: proof_id,
           identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
           validation: identifierValidationResult,
         }, 'validation');
 
         if (identifierValidationResult.has_valid_identifiers) {
-          queueEventInTransaction(txnId, 'payment_signal_detected', {
+          await insertEventInTransaction(client, 'payment_signal_detected', {
             proof_id: proof_id,
             signal_type: 'valid_payment_identifiers',
             count: identifierValidationResult.valid_count,
@@ -209,7 +221,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           }, 'validation');
         }
       } else {
-        queueEventInTransaction(txnId, 'proof_rejected', {
+        await insertEventInTransaction(client, 'proof_rejected', {
           proof_id: proof_id,
           user_id: proof.user_id,
           file_url: proof.file_url,
@@ -217,9 +229,19 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           validation_id: validation.id,
           status: decision,
           confidence_score: fraudScoreResult.score,
-          reason: decision === 'rejected' ? 'duplicate_hash' : 'manual_review_required',
+          reason: decision === 'rejected' ? 'low_confidence' : 'manual_review_required',
         }, 'validation');
       }
+
+      // Audit: Insert audit log
+      await insertAuditInTransaction(
+        client,
+        'validation_completed',
+        'validation',
+        validation.id,
+        proof.user_id,
+        { decision, confidence_score: fraudScoreResult.score, proof_id }
+      );
     });
     console.log(`📢 Emitted ${decision} event (transactional)`);
 
@@ -235,18 +257,16 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     // FAILSAFE - Any error → manual_review
     console.error(`❌ Validation error: ${error}`);
     
+    // Get validation record
     const validation = await findValidationByProofId(proof_id);
-    if (validation) {
-      await updateValidationStatus(validation.id, 'manual_review');
-    }
-
-    // Use transactional outbox
-    await withTransactionalOutbox(async (txnId) => {
+    
+    // Use transactional outbox - ALL domain writes inside transaction
+    await withTransactionalOutbox(async (client) => {
       if (validation) {
-        await updateValidationStatus(validation.id, 'manual_review');
+        await updateValidationStatusWithClient(client, validation.id, 'manual_review');
       }
       
-      queueEventInTransaction(txnId, 'proof_rejected', {
+      await insertEventInTransaction(client, 'proof_rejected', {
         proof_id: proof_id,
         user_id: proof.user_id,
         file_url: proof.file_url,
@@ -255,8 +275,19 @@ export async function processValidation(input: ProcessValidationInput): Promise<
         reason: 'validation_error',
         error: error instanceof Error ? error.message : 'Unknown error',
       }, 'validation');
+
+      if (validation) {
+        await insertAuditInTransaction(
+          client,
+          'validation_error',
+          'validation',
+          validation.id,
+          proof.user_id,
+          { error: error instanceof Error ? error.message : 'Unknown error', proof_id }
+        );
+      }
     });
-    console.log(`📢 Emitted proof_rejected event: validation error → manual_review`);
+    console.log(`📢 Emitted proof_rejected event: validation error → manual_review (transactional)`);
 
     return {
       validation_id: validation?.id || '',
