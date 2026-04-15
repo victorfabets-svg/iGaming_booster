@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import ProofTable, { ProofRow } from '../../components/ProofTable';
+import ProofTable from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
 import { useSystemState } from '../../state/useSystemState';
 import createApiClient from '../../services/api';
@@ -7,17 +7,14 @@ import createApiClient from '../../services/api';
 const api = createApiClient('');
 
 const HistoricoSection: React.FC = () => {
-  const { proof, loading: globalLoading, loadProof } = useSystemState();
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [lastUploadId, setLastUploadId] = useState<string | null>(null);
-  const [lastUploadStatus, setLastUploadStatus] = useState<string | null>(null);
+  // Use ONLY global system state - no duplicate local state
+  const { proof, loading, error, loadProof } = useSystemState();
+  
+  // Keep UI-only state (filters are not data state)
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [campaignFilter, setCampaignFilter] = useState<string>('');
 
   const handleUpload = async (file: File) => {
-    setUploading(true);
-    setUploadError(null);
     try {
       // Step 1: Submit the file to backend
       const res = await api.submitProof(file);
@@ -26,14 +23,11 @@ const HistoricoSection: React.FC = () => {
       const { proof_id } = res;
       
       // Step 3: Load the proof using correct proof_id
+      // This updates global state (loading, error, proof)
       await loadProof(proof_id);
-      
-      setLastUploadId(proof_id);
-      setLastUploadStatus(res.status);
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'unknown');
-    } finally {
-      setUploading(false);
+      // Error is already set in global state via loadProof
+      console.error('Upload failed:', err);
     }
   };
 
@@ -50,7 +44,7 @@ const HistoricoSection: React.FC = () => {
 
   const showEmpty = hasFilter || filteredProofs.length === 0;
 
-  if (globalLoading) {
+  if (loading) {
     return (
       <section>
         <div className="loading-state">
@@ -65,11 +59,11 @@ const HistoricoSection: React.FC = () => {
       <div className="g-row">
         <div className="card g-col-12">
           <h3 className="card-title">Enviar Comprovante</h3>
-          <ProofUpload onSubmit={handleUpload} loading={uploading} />
-          {uploadError && <p style={{ color: 'var(--color-error-primary)', marginTop: 12 }}>Falha no envio: {uploadError}</p>}
-          {lastUploadId && (
+          <ProofUpload onSubmit={handleUpload} loading={loading} />
+          {error && <p style={{ color: 'var(--color-error-primary)', marginTop: 12 }}>Falha no envio: {error}</p>}
+          {proof && (
             <p style={{ color: 'var(--color-success-primary)', marginTop: 12, fontSize: 13 }}>
-              Comprovante enviado: <code>{lastUploadId}</code> — status: <b>{lastUploadStatus || 'pending'}</b>
+              Comprovante enviado: <code>{proof.id}</code> — status: <b>{proof.status || 'pending'}</b>
             </p>
           )}
         </div>
