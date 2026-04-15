@@ -77,7 +77,8 @@ id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 name TEXT NOT NULL,
 prize TEXT NOT NULL,
 total_numbers INT NOT NULL,
-draw_date TIMESTAMP NOT NULL,
+	start_at TIMESTAMP NOT NULL,
+	end_at TIMESTAMP NOT NULL,
 status TEXT NOT NULL
 );
 
