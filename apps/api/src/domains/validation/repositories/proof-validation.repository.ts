@@ -26,6 +26,23 @@ export async function createProofValidation(input: CreateProofValidationInput): 
   return result.rows[0];
 }
 
+/**
+ * Create proof validation within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function createProofValidationWithClient(
+  client: any,
+  input: CreateProofValidationInput
+): Promise<ProofValidation> {
+  const result = await client.query(
+    `INSERT INTO validation.proof_validations (proof_id, status, validation_version)
+     VALUES ($1, $2, $3)
+     RETURNING id, proof_id, status, confidence_score, validation_version, validated_at, created_at`,
+    [input.proof_id, input.status, input.validation_version]
+  );
+  return result.rows[0];
+}
+
 export async function findValidationByProofId(proofId: string): Promise<ProofValidation | null> {
   return await queryOne<ProofValidation>(
     `SELECT id, proof_id, status, confidence_score, validation_version, validated_at, created_at

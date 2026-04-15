@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
-import { createProof, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
-import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { createProofInTransaction, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
+import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -35,12 +35,17 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     logger.warn('rate_limit_exceeded', 'validation', rateLimitCheck.reason || 'Rate limit exceeded', input.user_id);
     
     // Emit rate_limit_exceeded event (transactional)
-    await withTransactionalOutbox(async (txnId) => {
-      queueEventInTransaction(txnId, 'rate_limit_exceeded', {
-        user_id: input.user_id,
-        limit_type: 'proofs_per_hour',
-        reason: rateLimitCheck.reason,
-      }, 'validation');
+    await withTransactionalOutbox(async (client) => {
+      await insertEventInTransaction(
+        client,
+        'rate_limit_exceeded',
+        {
+          user_id: input.user_id,
+          limit_type: 'proofs_per_hour',
+          reason: rateLimitCheck.reason,
+        },
+        'validation'
+      );
     });
     throw new Error(rateLimitCheck.reason);
   }
@@ -70,32 +75,56 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     hash: hash,
   };
 
-  // Persist proof first
-  const proof = await createProof(proofInput);
-  logger.info('proof_created', 'validation', 'Proof created successfully', input.user_id, { proof_id: proof.id });
+  // Use transactional outbox - ALL domain writes inside single transaction
+  let proofId: string;
+  await withTransactionalOutbox(async (client) => {
+    // Domain write: Create proof
+    const proof = await createProofInTransaction(client, proofInput);
+    proofId = proof.id;
+    logger.info('proof_created', 'validation', 'Proof created successfully', input.user_id, { proof_id: proof.id });
 
-  // Record rate limit after successful submission
-  await rateLimitService.recordProofSubmission(input.user_id);
-
-  // Emit events (transactional)
-  await withTransactionalOutbox(async (txnId) => {
-    queueEventInTransaction(txnId, 'proof_submitted', {
-      proof_id: proof.id,
-      user_id: proof.user_id,
-      file_url: proof.file_url,
-      submitted_at: proof.submitted_at,
-      behavior_signals: behaviorCheck.is_suspicious ? behaviorCheck.signals : null,
-    }, 'validation');
+    // Domain write: Record rate limit (if applicable)
+    await rateLimitService.recordProofSubmission(input.user_id);
     
+    // Event: Insert proof_submitted
+    await insertEventInTransaction(
+      client,
+      'proof_submitted',
+      {
+        proof_id: proof.id,
+        user_id: proof.user_id,
+        file_url: proof.file_url,
+        submitted_at: proof.submitted_at,
+        behavior_signals: behaviorCheck.is_suspicious ? behaviorCheck.signals : null,
+      },
+      'validation'
+    );
+    
+    // Event: Insert fraud flag if detected
     if (shouldFlagFraud) {
-      queueEventInTransaction(txnId, 'fraud_flag_detected', {
-        user_id: input.user_id,
-        file_url: input.file_url,
-        signals: behaviorCheck.signals,
-        risk_score_modifier: behaviorCheck.risk_score_modifier,
-      }, 'validation');
+      await insertEventInTransaction(
+        client,
+        'fraud_flag_detected',
+        {
+          user_id: input.user_id,
+          file_url: input.file_url,
+          signals: behaviorCheck.signals,
+          risk_score_modifier: behaviorCheck.risk_score_modifier,
+        },
+        'validation'
+      );
     }
+
+    // Audit: Insert audit log
+    await insertAuditInTransaction(
+      client,
+      'proof_submitted',
+      'proof',
+      proof.id,
+      input.user_id,
+      { file_url: input.file_url, hash }
+    );
   });
 
-  return { proof_id: proof.id };
+  return { proof_id: proofId! };
 }
