@@ -1,6 +1,12 @@
 import React, { useEffect } from 'react';
 import { useSystemState } from '../state/useSystemState';
 
+// Helper to display values - preserves null as "N/A"
+const displayValue = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return 'N/A';
+  return String(value);
+};
+
 const MetricsPanel: React.FC = () => {
   const { metrics, loading, error, loadMetrics } = useSystemState();
 
@@ -52,52 +58,52 @@ const MetricsPanel: React.FC = () => {
         {/* Proof Submissions */}
         <div className="metric-card">
           <span className="metric-label">Provas Enviadas</span>
-          <span className="metric-value">{summary.proof_submissions}</span>
+          <span className="metric-value">{displayValue(summary.proof_submissions)}</span>
         </div>
 
         {/* Validations */}
         <div className="metric-card">
           <span className="metric-label">Validações Aprovadas</span>
-          <span className="metric-value success">{summary.validations?.approved ?? 0}</span>
+          <span className="metric-value success">{displayValue(summary.validations?.approved)}</span>
         </div>
 
         <div className="metric-card">
           <span className="metric-label">Validações Rejeitadas</span>
-          <span className="metric-value error">{summary.validations?.rejected ?? 0}</span>
+          <span className="metric-value error">{displayValue(summary.validations?.rejected)}</span>
         </div>
 
         <div className="metric-card">
           <span className="metric-label">Validações em Revisão</span>
-          <span className="metric-value warning">{summary.validations?.manual_review ?? 0}</span>
+          <span className="metric-value warning">{displayValue(summary.validations?.manual_review)}</span>
         </div>
 
         {/* Rewards */}
         <div className="metric-card">
           <span className="metric-label">Recompensas Concedidas</span>
-          <span className="metric-value success">{summary.rewards?.granted ?? 0}</span>
+          <span className="metric-value success">{displayValue(summary.rewards?.granted)}</span>
         </div>
 
         <div className="metric-card">
           <span className="metric-label">Recompensas Bloqueadas</span>
-          <span className="metric-value error">{summary.rewards?.blocked ?? 0}</span>
+          <span className="metric-value error">{displayValue(summary.rewards?.blocked)}</span>
         </div>
 
         {/* Tickets */}
         <div className="metric-card">
           <span className="metric-label">Bilhetes Gerados</span>
-          <span className="metric-value">{summary.tickets_generated ?? 0}</span>
+          <span className="metric-value">{displayValue(summary.tickets_generated)}</span>
         </div>
 
         {/* Raffle */}
         <div className="metric-card">
           <span className="metric-label">Sorteios Executados</span>
-          <span className="metric-value">{summary.raffle_executions ?? 0}</span>
+          <span className="metric-value">{displayValue(summary.raffle_executions)}</span>
         </div>
 
         {/* Fraud */}
         <div className="metric-card">
           <span className="metric-label">Sinais de Fraude</span>
-          <span className="metric-value fraud">{summary.fraud_signals ?? 0}</span>
+          <span className="metric-value fraud">{displayValue(summary.fraud_signals)}</span>
         </div>
       </div>
     </div>
