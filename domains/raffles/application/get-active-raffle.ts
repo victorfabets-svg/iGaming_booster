@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
-import { db, getClient } from '../../../shared/database/connection';
+import { randomUUID } from 'crypto';
+import { db, getClient, saveEventInTransaction } from '../../../shared/database/connection';
 
 export interface Raffle {
   id: string;
@@ -106,8 +107,20 @@ export async function closeRaffle(raffleId: string): Promise<boolean> {
       [raffleId, seed]
     );
     
+    // Step 6: Emit raffle_closed event (outbox pattern - same transaction)
+    await saveEventInTransaction(
+      client,
+      randomUUID(),
+      'raffle_closed',
+      'v1',
+      'raffles',
+      randomUUID(),
+      { raffle_id: raffleId, seed, total_tickets: totalTickets }
+    );
+    
     await client.query('COMMIT');
     console.log(`🔐 Seed persisted for raffle ${raffleId}: ${seed} (${totalTickets} tickets)`);
+    console.log(`📤 Emitted raffle_closed event for ${raffleId}`);
     return true;
   } catch (error) {
     await client.query('ROLLBACK');
