@@ -115,7 +115,7 @@ export async function closeRaffle(raffleId: string): Promise<boolean> {
       'v1',
       'raffles',
       randomUUID(),
-      { raffle_id: raffleId, seed, total_tickets: totalTickets }
+      { raffle_id: raffleId }
     );
     
     await client.query('COMMIT');
