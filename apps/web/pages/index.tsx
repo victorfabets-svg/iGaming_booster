@@ -1,18 +1,48 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar, { SectionId } from '../components/Sidebar';
 import Header from '../components/Header';
+import OverviewSection from './sections/OverviewSection';
+import FunnelSection from './sections/FunnelSection';
+import PaymentsSection from './sections/PaymentsSection';
+import RiskSection from './sections/RiskSection';
+import CampaignsSection from './sections/CampaignsSection';
 import HistoricoSection from './sections/HistoricoSection';
 import SystemFlow from './SystemFlow';
-import createApiClient from '../services/api';
+import createApiClient, { MetricsResponse } from '../services/api';
+import type { ProofRow } from '../components/ProofTable';
+import type { StreamEvent } from '../components/EventStream';
 
 const api = createApiClient('');
 
+// Helper interfaces derived from MetricsResponse
+interface ValidationStats {
+  approved: number | null;
+  rejected: number | null;
+  manual_review: number | null;
+}
+
+interface FunnelStats {
+  clicks: number | null;
+  signups: number | null;
+  proofs_submitted: number | null;
+  proofs_validated: number | null;
+}
+
 const IndexPage: React.FC = () => {
-  const [section, setSection] = useState<SectionId>('systemflow');
+  const [section, setSection] = useState<SectionId>('overview');
   const [expanded, setExpanded] = useState<boolean>(false);
 
   const [health, setHealth] = useState<'healthy' | 'degraded' | 'unknown'>('unknown');
   const [latency, setLatency] = useState<number | null>(null);
+
+  const [validation, setValidation] = useState<ValidationStats>({ approved: null, rejected: null, manual_review: null });
+  const [funnel, setFunnel] = useState<FunnelStats>({ clicks: null, signups: null, proofs_submitted: null, proofs_validated: null });
+  const [proofs, setProofs] = useState<ProofRow[]>([]);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [lastUploadId, setLastUploadId] = useState<string | null>(null);
+  const [lastUploadStatus, setLastUploadStatus] = useState<string | null>(null);
 
   // Health pulse
   useEffect(() => {
@@ -32,6 +62,86 @@ const IndexPage: React.FC = () => {
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
+  // Initial data - get validation stats from metrics endpoint
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const metrics: MetricsResponse = await api.getMetrics();
+        setValidation({
+          approved: metrics.summary.validations.approved,
+          rejected: metrics.summary.validations.rejected,
+          manual_review: metrics.summary.validations.manual_review,
+        });
+        setFunnel({
+          clicks: null, // Not available in metrics
+          signups: null, // Not available in metrics
+          proofs_submitted: metrics.summary.proof_submissions,
+          proofs_validated: metrics.summary.validations.approved,
+        });
+      } catch {
+        // Metrics endpoint unavailable - set to null to indicate error
+        setValidation({ approved: null, rejected: null, manual_review: null });
+        setFunnel({ clicks: null, signups: null, proofs_submitted: null, proofs_validated: null });
+      }
+      try {
+        const recentProofs = await api.getRecentProofs();
+        setProofs(recentProofs.map(p => ({
+          id: p.id,
+          date: p.submitted_at ? p.submitted_at.replace('T', ' ').slice(0, 16) : '',
+          user: p.user_id,
+          amount: null,
+          status: (p.status as ProofRow['status']) || 'pending',
+          confidence: p.confidence_score,
+          risk: null,
+          campaign: null,
+          type: 'original',
+        })));
+      } catch {
+        // Proofs unavailable - table will be empty
+      }
+    };
+    fetchData();
+  }, []);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const res = await api.submitProof(file);
+      setLastUploadId(res.proof_id);
+      setLastUploadStatus(res.status);
+      // Optimistic insert at top of proofs table
+      setProofs(prev => [
+        {
+          id: res.proof_id,
+          date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+          user: 'test-user',
+          amount: null,
+          status: (res.status as ProofRow['status']) || 'pending',
+          confidence: null,
+          risk: null,
+          campaign: null,
+          type: 'original',
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'unknown');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const events = useMemo<StreamEvent[]>(() => {
+    return proofs.slice(0, 8).map(p => ({
+      type: p.status === 'approved' ? 'proof_validated'
+          : p.status === 'rejected' ? 'proof_rejected'
+          : 'proof_submitted',
+      user: p.user,
+      time: p.date.split(' ')[1],
+    }));
+  }, [proofs]);
+
   return (
     <div className={`app-shell${expanded ? ' expanded' : ''}`}>
       <div className="bg-image-container" />
@@ -43,7 +153,21 @@ const IndexPage: React.FC = () => {
       />
       <main className="main-content">
         <Header health={health} latencyMs={latency} />
-        {section === 'historico' && <HistoricoSection />}
+        {section === 'overview'  && <OverviewSection validation={validation} funnel={funnel} />}
+        {section === 'funnel'    && <FunnelSection validation={validation} funnel={funnel} />}
+        {section === 'payments'  && <PaymentsSection />}
+        {section === 'risk'      && <RiskSection />}
+        {section === 'campaigns' && <CampaignsSection events={events} />}
+        {section === 'historico' && (
+          <HistoricoSection
+            proofs={proofs}
+            onUpload={handleUpload}
+            uploading={uploading}
+            uploadError={uploadError}
+            lastUploadId={lastUploadId}
+            lastUploadStatus={lastUploadStatus}
+          />
+        )}
         {section === 'systemflow' && <SystemFlow />}
       </main>
     </div>
