@@ -253,19 +253,16 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     ticketsGenerated.push(ticketNumber);
   }
 
-  // Emit numbers_generated event
-  await createEvent({
-    event_type: 'numbers_generated',
-    version: 'v1',
-    payload: {
+  // Emit numbers_generated event (transactional)
+  await withTransactionalOutbox(async (txnId) => {
+    queueEventInTransaction(txnId, 'numbers_generated', {
       reward_id: reward.id,
       proof_id: payload.proof_id,
       user_id: payload.user_id,
       raffle_id: raffle.id,
       tickets: ticketsGenerated,
       count: ticketsGenerated.length,
-    },
-    producer: 'rewards',
+    }, 'rewards');
   });
 
   console.log(`🎫 Generated ${ticketsGenerated.length} tickets: ${ticketsGenerated.join(', ')}`);
