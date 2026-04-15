@@ -3,13 +3,15 @@
 
 BEGIN;
 
--- Processed events table for idempotency check
-CREATE TABLE IF NOT EXISTS events.processed_events (
-  event_id UUID PRIMARY KEY,
-  processed_at TIMESTAMP DEFAULT NOW()
-);
+-- Add consumer_name column first (if not exists)
+ALTER TABLE events.processed_events 
+ADD COLUMN IF NOT EXISTS consumer_name TEXT NOT NULL DEFAULT 'default_consumer';
 
-CREATE INDEX IF NOT EXISTS idx_processed_events_processed_at
-  ON events.processed_events(processed_at DESC);
+-- Drop old primary key
+ALTER TABLE events.processed_events DROP CONSTRAINT IF EXISTS processed_events_pkey;
+
+-- Add new composite primary key for (event_id, consumer_name)
+ALTER TABLE events.processed_events 
+ADD PRIMARY KEY (event_id, consumer_name);
 
 COMMIT;

@@ -56,7 +56,7 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
     eventId,
     payload,
     async () => {
-      await processRewardGranted(payload);
+      await processRewardGranted(eventId, payload);
     }
   );
 
@@ -67,20 +67,22 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
   }
 }
 
-async function processRewardGranted(payload: RewardGrantedPayload): Promise<void> {
-  // Step 0: Event-level idempotency check
+const CONSUMER_NAME = 'reward_granted_consumer';
+
+async function processRewardGranted(eventId: string, payload: RewardGrantedPayload): Promise<void> {
+  // Step 0: Event-level idempotency check with correct event_id + consumer_name
   // Use INSERT ON CONFLICT to guarantee exactly-once processing
   const idempotencyResult = await db.query(
-    `INSERT INTO events.processed_events (event_id)
-     VALUES ($1)
+    `INSERT INTO events.processed_events (event_id, consumer_name, processed_at)
+     VALUES ($1, $2, NOW())
      ON CONFLICT (event_id) DO NOTHING
      RETURNING event_id`,
-    [payload.reward_id]
+    [eventId, CONSUMER_NAME]
   );
 
   // If event already processed, skip completely
   if (idempotencyResult.rowCount === 0) {
-    console.log(`⏭️  Event for reward ${payload.reward_id} already processed, skipping`);
+    console.log(`⏭️  Event ${eventId} already processed by ${CONSUMER_NAME}, skipping`);
     return;
   }
 
