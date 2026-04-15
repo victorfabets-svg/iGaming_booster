@@ -9,6 +9,27 @@ import createApiClient from '../services/api';
 
 const api = createApiClient('');
 
+// Status mapping as per backend
+const STATUS_MAP: Record<string, string> = {
+  'submitted': 'Recebido',
+  'processing': 'Em análise',
+  'approved': 'Aprovado',
+  'rejected': 'Rejeitado',
+  'manual_review': 'Em revisão',
+};
+
+// Visual status mapping
+const STATUS_VISUAL: Record<string, { class: string; color: string }> = {
+  'submitted': { class: 'badge-gray', color: 'var(--text-secondary)' },
+  'processing': { class: 'badge-blue', color: 'var(--color-primary-primary)' },
+  'approved': { class: 'badge-success', color: 'var(--color-success-primary)' },
+  'rejected': { class: 'badge-error', color: 'var(--color-error-primary)' },
+  'manual_review': { class: 'badge-warning', color: 'var(--color-warning-primary)' },
+};
+
+// Timeline steps based on backend status
+const TIMELINE_STEPS = ['submitted', 'processing', 'approved', 'rejected', 'manual_review'];
+
 // Inner component that uses the system state
 const SystemFlowContent: React.FC = () => {
   const { proof, loading, error, loadProof } = useSystemState();
@@ -30,26 +51,24 @@ const SystemFlowContent: React.FC = () => {
     }
   };
 
-  const statusLabel = (status: string | null) => {
-    switch (status) {
-      case 'approved': return 'Aprovado';
-      case 'rejected': return 'Rejeitado';
-      case 'manual_review': return 'Revisão Manual';
-      case 'processing': return 'Em Análise';
-      case 'pending': return 'Pendente';
-      default: return status || 'Desconhecido';
-    }
+  // Get current step in timeline
+  const getCurrentStep = (status: string | null): number => {
+    if (!status) return 0;
+    const index = TIMELINE_STEPS.indexOf(status);
+    return index >= 0 ? index : 0;
   };
 
-  const statusBadgeClass = (status: string | null) => {
-    switch (status) {
-      case 'approved': return 'badge-success';
-      case 'rejected': return 'badge-error';
-      case 'manual_review': return 'badge-warning';
-      case 'processing': return 'badge-blue';
-      case 'pending': return 'badge-warning';
-      default: return 'badge-gray';
-    }
+  // Format confidence as percentage
+  const formatConfidence = (score: number | null): string => {
+    if (score === null || score === undefined) return 'N/A';
+    return `${Math.round(score * 100)}%`;
+  };
+
+  // Get status display info
+  const getStatusInfo = (status: string | null) => {
+    const mappedStatus = status ? STATUS_MAP[status] : 'Desconhecido';
+    const visual = status ? STATUS_VISUAL[status] : { class: 'badge-gray', color: 'var(--text-muted)' };
+    return { label: mappedStatus, ...visual };
   };
 
   return (
@@ -90,7 +109,7 @@ const SystemFlowContent: React.FC = () => {
           <div className="card">
             {loading ? (
               <div className="loading-state">
-                <p>Verificando status...</p>
+                <p>Processando...</p>
               </div>
             ) : error ? (
               <div className="alert-box alert-error">
@@ -98,19 +117,55 @@ const SystemFlowContent: React.FC = () => {
               </div>
             ) : proof ? (
               <div className="proof-status">
+                {/* ID */}
                 <div className="status-row">
                   <span className="status-label">ID:</span>
                   <span className="status-value mono">{proof.id}</span>
                 </div>
+                
+                {/* Status Badge */}
                 <div className="status-row">
                   <span className="status-label">Status:</span>
-                  <span className={`badge ${statusBadgeClass(proof.status)}`}>
-                    {statusLabel(proof.status)}
+                  <span className={`badge ${getStatusInfo(proof.status).class}`}>
+                    {getStatusInfo(proof.status).label}
                   </span>
                 </div>
+
+                {/* Confidence Score */}
+                {proof.confidence_score !== null && proof.confidence_score !== undefined && (
+                  <div className="status-row">
+                    <span className="status-label">Confiança:</span>
+                    <span className="status-value confidence-score">
+                      {formatConfidence(proof.confidence_score)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Submitted At */}
                 <div className="status-row">
                   <span className="status-label">Enviado em:</span>
-                  <span className="status-value">{new Date(proof.submitted_at).toLocaleString('pt-BR')}</span>
+                  <span className="status-value">
+                    {proof.submitted_at ? new Date(proof.submitted_at).toLocaleString('pt-BR') : 'N/A'}
+                  </span>
+                </div>
+
+                {/* Timeline */}
+                <div className="validation-timeline">
+                  <div className="timeline-label">Progresso da Validação</div>
+                  <div className="timeline-steps">
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 0 ? 'active' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Recebido</span>
+                    </div>
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 1 ? 'active' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Em análise</span>
+                    </div>
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 2 ? 'active' : ''} ${proof.status === 'approved' ? 'completed' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Resultado</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
