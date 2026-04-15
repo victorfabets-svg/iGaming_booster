@@ -115,7 +115,14 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
   );
 
   if (rewardResult.rows.length === 0) {
-    console.log(`⚠️  Reward ${payload.reward_id} not found, cannot create ticket`);
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'reward_not_found', 'reward', payload.reward_id, payload.user_id, JSON.stringify({
+        reward_id: payload.reward_id,
+        reason: 'reward_not_found'
+      })]
+    );
     return;
   }
 
@@ -133,13 +140,21 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
         reason: 'reward_status_not_granted'
       })]
     );
-    console.log(`⚠️  Reward ${reward.id} has invalid status: ${reward.status}, expected 'granted', cannot create ticket`);
     return;
   }
 
   // Validate user_id matches - prevent ticket creation for wrong user
   if (reward.user_id !== payload.user_id) {
-    console.log(`⚠️  Reward user_id mismatch: event=${payload.user_id}, reward=${reward.user_id}, cannot create ticket`);
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'user_id_mismatch', 'reward', reward.id, payload.user_id, JSON.stringify({
+        reward_id: reward.id,
+        event_user_id: payload.user_id,
+        reward_user_id: reward.user_id,
+        reason: 'user_id_mismatch'
+      })]
+    );
     return;
   }
 
@@ -150,7 +165,15 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
   );
 
   if (proofResult.rows.length === 0) {
-    console.log(`⚠️  Proof ${reward.proof_id} not found, cannot create ticket`);
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'proof_not_found', 'proof', reward.proof_id, payload.user_id, JSON.stringify({
+        reward_id: payload.reward_id,
+        proof_id: reward.proof_id,
+        reason: 'proof_not_found'
+      })]
+    );
     return;
   }
 
@@ -158,17 +181,33 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
   const raffle = await getActiveRaffle(new Date());
   
   if (!raffle) {
-    console.log(`⚠️  No active raffle found, skipping ticket creation`);
     return;
   }
 
-  console.log(`🎰 Using raffle: ${raffle.id}`);
-
-  // Step 4: Atomic ticket creation + audit in single transaction
-  // This guarantees: ticket + audit succeed together or rollback together
+  // Step 4: Full atomic transaction - validation + ticket + audit
+  // This guarantees: all succeed or all rollback
   const client = await db.connect();
   try {
     await client.query('BEGIN');
+
+    // Validate reward inside transaction (lock + check status)
+    const rewardCheck = await client.query<{ id: string; status: string; user_id: string }>(
+      `SELECT id, status, user_id FROM rewards.rewards WHERE id = $1 FOR UPDATE`,
+      [payload.reward_id]
+    );
+
+    if (rewardCheck.rows.length === 0 || rewardCheck.rows[0].status !== 'granted') {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'invalid_reward_state', 'reward', payload.reward_id, payload.user_id, JSON.stringify({
+          reward_id: payload.reward_id,
+          reason: rewardCheck.rows.length === 0 ? 'not_found' : 'invalid_status'
+        })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
 
     // Insert ticket with idempotent conflict handling
     const ticketResult = await client.query(
@@ -179,9 +218,8 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
       [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
     );
 
-    // Explicit idempotency check - insert audit in same transaction
+    // Audit in same transaction
     if (ticketResult.rowCount === 1) {
-      // Ticket created - insert success audit
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
@@ -191,9 +229,7 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
           raffle_id: raffle.id
         })]
       );
-      console.log(`🎫 Created new eligibility ticket for reward: ${payload.reward_id}`);
-    } else if (ticketResult.rowCount === 0) {
-      // Duplicate - insert idempotency audit in same transaction
+    } else {
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
@@ -202,8 +238,6 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
           reason: 'idempotency_conflict'
         })]
       );
-      console.log(`⚠️  Duplicate ticket ignored for reward: ${payload.reward_id} (already exists)`);
-      console.log(`   📋 idempotency_check: { reward_id: "${payload.reward_id}", status: "duplicate_ignored" }`);
     }
 
     await client.query('COMMIT');
