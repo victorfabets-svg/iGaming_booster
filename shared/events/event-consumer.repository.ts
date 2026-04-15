@@ -361,3 +361,91 @@ export async function processEventExactlyOnce(
     client.release();
   }
 }
+
+// ============================================================================
+// TASK 6: EVENT VALIDATION - Version enforcement and payload validation
+// ============================================================================
+
+export interface EventValidationError {
+  code: string;
+  message: string;
+}
+
+/**
+ * Validate event type matches expected type.
+ */
+export function validateEventType(event: Event, expectedType: string): EventValidationError | null {
+  if (!event.event_type || event.event_type !== expectedType) {
+    return {
+      code: 'INVALID_EVENT_TYPE',
+      message: `Invalid event type: expected '${expectedType}', got '${event.event_type}'`
+    };
+  }
+  return null;
+}
+
+/**
+ * Validate event version matches expected version.
+ */
+export function validateEventVersion(event: Event, expectedVersion: string): EventValidationError | null {
+  const version = event.event_version || event.version;
+  if (!version || version !== expectedVersion) {
+    return {
+      code: 'INVALID_EVENT_VERSION',
+      message: `Invalid event version: expected '${expectedVersion}', got '${version}'`
+    };
+  }
+  return null;
+}
+
+/**
+ * Validate required payload fields are present and non-empty.
+ */
+export function validatePayloadFields(
+  payload: Record<string, any>,
+  requiredFields: string[]
+): EventValidationError | null {
+  for (const field of requiredFields) {
+    if (!payload || payload[field] === undefined || payload[field] === null || payload[field] === '') {
+      return {
+        code: 'MISSING_PAYLOAD_FIELD',
+        message: `Missing required payload field: '${field}'`
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate entire event with type, version, and payload checks.
+ * Returns null if valid, or error object if invalid.
+ */
+export function validateEvent(
+  event: Event,
+  expectedType: string,
+  expectedVersion: string,
+  requiredPayloadFields: string[]
+): EventValidationError | null {
+  // Validate event type
+  const typeError = validateEventType(event, expectedType);
+  if (typeError) {
+    console.error(`❌ ${typeError.code}: ${typeError.message}`);
+    return typeError;
+  }
+
+  // Validate event version
+  const versionError = validateEventVersion(event, expectedVersion);
+  if (versionError) {
+    console.error(`❌ ${versionError.code}: ${versionError.message}`);
+    return versionError;
+  }
+
+  // Validate payload
+  const payloadError = validatePayloadFields(event.payload, requiredPayloadFields);
+  if (payloadError) {
+    console.error(`❌ ${payloadError.code}: ${payloadError.message}`);
+    return payloadError;
+  }
+
+  return null;
+}

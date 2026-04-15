@@ -1,8 +1,9 @@
-import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, markEventAsProcessed, processEventExactlyOnce } from '../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, markEventAsProcessed, processEventExactlyOnce, validateEvent } from '../../../../../shared/events/event-consumer.repository';
 import { getRaffleById } from '../../application/get-active-raffle';
 import { executeRaffleDraw } from '../../application/execute-raffle-draw.use-case';
 
 const EVENT_TYPE = 'raffle_closed';
+const EVENT_VERSION = 'v1';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
@@ -39,11 +40,25 @@ async function pollEvents(): Promise<void> {
   }
 }
 
-async function processEvent(event: { event_id?: string; id?: string; payload: unknown }): Promise<void> {
+async function processEvent(event: { event_id?: string; id?: string; event_type?: string; event_version?: string; version?: string; payload: unknown }): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as RaffleClosedPayload;
   
-  // EXACTLY-ONCE: Check if already processed before attempting
+  // STEP 1: Validate event type, version, and payload BEFORE processing
+  const validationError = validateEvent(
+    event as any,
+    EVENT_TYPE,
+    EVENT_VERSION,
+    ['raffle_id']
+  );
+  
+  if (validationError) {
+    console.log(`🚫 Invalid event ${eventId}: ${validationError.code} - ${validationError.message}`);
+    // Invalid events are skipped (not retried) to prevent poison messages
+    return;
+  }
+
+  // STEP 2: EXACTLY-ONCE: Check if already processed before attempting
   const alreadyProcessed = await isEventProcessed(eventId);
   if (alreadyProcessed) {
     console.log(`⏭️  Event ${eventId} already processed, skipping (exactly-once)`);
@@ -55,7 +70,7 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
   console.log(`🎰 Processing raffle_closed event: ${eventId} (retry: ${retryCount})`);
   console.log(`   Raffle: ${payload.raffle_id}`);
 
-  // Wrap in transaction with idempotency record
+  // STEP 3: Wrap in transaction with idempotency record
   const result = await processEventExactlyOnce(eventId, async () => {
     await handleRaffleClosed(payload);
   });
