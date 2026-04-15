@@ -27,6 +27,32 @@ export async function runEventMigrations(): Promise<void> {
     // Column may already exist - ignore errors
   });
 
+  // TASK 4: Add locked_at column for stuck event recovery
+  await db.query(`
+    ALTER TABLE events.events 
+    ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP
+  `).catch(() => {
+    // Column may already exist - ignore errors
+  });
+
+  // Create audit schema if not exists
+  await db.query(`
+    CREATE SCHEMA IF NOT EXISTS audit
+  `).catch(() => {});
+
+  // TASK 2: Create audit table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS audit.audit_logs (
+      id UUID PRIMARY KEY,
+      action TEXT,
+      entity_type TEXT,
+      entity_id UUID,
+      user_id TEXT,
+      metadata JSONB,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+
   // Create DLQ table
   await db.query(`
     CREATE TABLE IF NOT EXISTS events.dlq_events (
@@ -60,7 +86,7 @@ export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
 
   const result = await db.query<Event>(
     `SELECT id, event_type, version, producer, correlation_id, payload, 
-            retry_count, processed, timestamp
+            retry_count, processed, timestamp, locked_at
      FROM events.events
      WHERE processed = FALSE 
        AND retry_count < 3
@@ -71,6 +97,39 @@ export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
   );
 
   return result.rows;
+}
+
+/**
+ * Lock event when starting to process (set locked_at).
+ */
+export async function lockEvent(eventId: string): Promise<void> {
+  await db.query(
+    `UPDATE events.events 
+     SET locked_at = NOW() 
+     WHERE id = $1`,
+    [eventId]
+  );
+}
+
+// TASK 4: STUCK EVENT RECOVERY
+/**
+ * Release stuck events that have been locked for more than 5 minutes.
+ * These events were likely abandoned by crashed consumers.
+ */
+export async function recoverStuckEvents(): Promise<number> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE events.events 
+     SET locked_at = NULL
+     WHERE locked_at IS NOT NULL 
+       AND locked_at < NOW() - INTERVAL '5 minutes'
+     RETURNING id`
+  );
+  
+  const count = result.rows.length;
+  if (count > 0) {
+    console.log(`[RECOVERY] Released ${count} stuck events`);
+  }
+  return count;
 }
 
 /**

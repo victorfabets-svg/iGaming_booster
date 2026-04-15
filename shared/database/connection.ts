@@ -101,6 +101,8 @@ export async function initDb(connectionString?: string): Promise<void> {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
+    // TASK 3: STATEMENT TIMEOUT - 5 seconds
+    statement_timeout: 5000,
   });
 
   _db.on('error', (err: Error) => {

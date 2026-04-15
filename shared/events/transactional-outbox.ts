@@ -1,120 +1,130 @@
 import { randomUUID } from 'crypto';
-import { db } from '../database/connection';
-
-// Thread-local storage for pending operations in current transaction
-const pendingEvents = new Map<string, any[]>();
-const pendingAudits = new Map<string, any[]>();
+import { db, getDb } from '../database/connection';
 
 /**
- * Start a new transaction context.
- * Must be called before any domain operations.
+ * REAL transactional outbox using single DB client.
+ * All domain writes, events, and audit logs are committed in a single DB transaction.
  */
-export async function beginTransaction(): Promise<string> {
-  const id = randomUUID();
-  pendingEvents.set(id, []);
-  pendingAudits.set(id, []);
-  return id;
+
+// ============================================================================
+// TASK 1: REAL TRANSACTION with single client
+// ============================================================================
+
+interface QueuedEvent {
+  event_id: string;
+  event_type: string;
+  version: string;
+  payload: Record<string, any>;
+  producer: string;
+  correlation_id: string;
+}
+
+interface QueuedAudit {
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  user_id: string | null;
+  metadata: Record<string, any>;
 }
 
 /**
- * Queue an event to be committed within the current transaction.
+ * Execute callback within a REAL database transaction.
+ * Uses single DB client - all writes are atomic.
  */
-export function queueEventInTransaction(
-  txnId: string,
+export async function withTransactionalOutbox<T>(
+  callback: (client: any) => Promise<T>
+): Promise<T> {
+  const pool = getDb();
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Execute callback with the client (for domain writes + event/audit in same tx)
+    const result = await callback(client);
+    
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Insert event within transaction.
+ */
+export async function insertEventInTransaction(
+  client: any,
   event_type: string,
   payload: Record<string, any>,
   producer: string,
   version = 'v1'
-): void {
-  const events = pendingEvents.get(txnId) || [];
-  events.push({ 
-    event_id: randomUUID(),
-    event_type, 
-    version, 
-    payload, 
-    producer,
-    correlation_id: randomUUID() 
-  });
-  pendingEvents.set(txnId, events);
+): Promise<void> {
+  const event_id = randomUUID();
+  const correlation_id = randomUUID();
+  
+  await client.query(
+    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [event_id, event_type, version, producer, correlation_id, JSON.stringify(payload)]
+  );
 }
 
 /**
- * Queue an audit log to be committed within the current transaction.
+ * Insert audit log within transaction.
  */
-export function queueAuditInTransaction(
-  txnId: string,
+export async function insertAuditInTransaction(
+  client: any,
   action: string,
   entity_type: string,
   entity_id: string,
   user_id: string | null,
   metadata: Record<string, any>
-): void {
-  const audits = pendingAudits.get(txnId) || [];
-  audits.push({ action, entity_type, entity_id, user_id, metadata });
-  pendingAudits.set(txnId, audits);
+): Promise<void> {
+  await client.query(
+    `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [randomUUID(), action, entity_type, entity_id, user_id, JSON.stringify(metadata)]
+  );
 }
 
-/**
- * Commit all pending operations in a transaction.
- */
-export async function commitTransaction(txnId: string): Promise<void> {
-  const events = pendingEvents.get(txnId) || [];
-  const audits = pendingAudits.get(txnId) || [];
+// ============================================================================
+// BACKWARD COMPATIBILITY - wrap old API
+// ============================================================================
 
-  for (const evt of events) {
-    await db.query(
-      `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [evt.event_id, evt.event_type, evt.version, evt.producer, evt.correlation_id, JSON.stringify(evt.payload)]
-    );
+/**
+ * Legacy queue function - now inserts immediately in transaction.
+ * Kept for backward compatibility.
+ */
+export async function queueEventInTransaction(
+  txnId: any,
+  event_type: string,
+  payload: Record<string, any>,
+  producer: string,
+  version = 'v1'
+): Promise<void> {
+  if (typeof txnId?.query === 'function') {
+    // It's a client - insert directly
+    await insertEventInTransaction(txnId, event_type, payload, producer, version);
   }
-
-  for (const audit of audits) {
-    await db.query(
-      `INSERT INTO audit.audit_logs (action, entity_type, entity_id, user_id, metadata)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [audit.action, audit.entity_type, audit.entity_id, audit.user_id, JSON.stringify(audit.metadata)]
-    );
-  }
-
-  pendingEvents.delete(txnId);
-  pendingAudits.delete(txnId);
 }
 
 /**
- * Rollback pending operations.
+ * Legacy queue function - now inserts immediately in transaction.
  */
-export async function rollbackTransaction(txnId: string): Promise<void> {
-  pendingEvents.delete(txnId);
-  pendingAudits.delete(txnId);
-}
-
-/**
- * Execute a use case with transactional outbox pattern.
- * All domain writes, events, and audit logs are committed in a single transaction.
- * 
- * @example
- * ```ts
- * await withTransactionalOutbox(async (txnId) => {
- *   // Domain writes
- *   await updateValidationStatus(validation.id, decision, fraudScoreResult.score);
- *   
- *   // Queue event (not committed yet)
- *   queueEventInTransaction(txnId, 'proof_validated', payload, 'validation');
- * });
- * ```
- */
-export async function withTransactionalOutbox<T>(
-  callback: (txnId: string) => Promise<T>
-): Promise<T> {
-  const txnId = await beginTransaction();
-  
-  try {
-    const result = await callback(txnId);
-    await commitTransaction(txnId);
-    return result;
-  } catch (error) {
-    await rollbackTransaction(txnId);
-    throw error;
+export async function queueAuditInTransaction(
+  txnId: any,
+  action: string,
+  entity_type: string,
+  entity_id: string,
+  user_id: string | null,
+  metadata: Record<string, any>
+): Promise<void> {
+  if (typeof txnId?.query === 'function') {
+    // It's a client - insert directly
+    await insertAuditInTransaction(txnId, action, entity_type, entity_id, user_id, metadata);
   }
 }
