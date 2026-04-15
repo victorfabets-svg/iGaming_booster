@@ -209,6 +209,25 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
       return;
     }
 
+    // Validate and lock raffle inside transaction
+    const raffleCheck = await client.query<{ id: string; status: string }>(
+      `SELECT id, status FROM raffles.raffles WHERE id = $1 FOR UPDATE`,
+      [raffle.id]
+    );
+
+    if (raffleCheck.rows.length === 0 || raffleCheck.rows[0].status !== 'active') {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'invalid_raffle_state', 'raffle', raffle.id, payload.user_id, JSON.stringify({
+          raffle_id: raffle.id,
+          reason: raffleCheck.rows.length === 0 ? 'not_found' : 'raffle_not_active'
+        })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
     // Insert ticket with idempotent conflict handling
     const ticketResult = await client.query(
       `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
