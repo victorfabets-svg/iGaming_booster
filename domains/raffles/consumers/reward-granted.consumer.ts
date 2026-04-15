@@ -117,8 +117,8 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
   // Step 5: Idempotent insert - exactly one ticket per reward
   // UNIQUE constraint on reward_id ensures idempotency
   await db.query(
-    `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id, status)
-     VALUES ($1, $2, $3, $4, 'active')
+    `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (reward_id) DO NOTHING`,
     [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
   );
