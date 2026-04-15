@@ -1,8 +1,7 @@
 import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createRewardTx } from '../repositories/reward.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
-import { withTransactionalOutbox, queueEventInTransaction, insertAuditInTransaction, insertEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
-import { getDb } from '../../../../../../shared/database/connection';
+import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -136,14 +135,14 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   console.log(`📋 Using benefit rule: ${effectiveNumbers} numbers (base: ${benefitRule.numbers_generated}, multiplier: ${benefitRule.risk_multiplier || 1}), ${benefitRule.access_days} days`);
 
-  // Step 7: Create reward with transaction safety
+  // Step 7: Create reward with transactional outbox pattern
   const REWARD_VALUE = 10;
   const REWARD_TYPE = 'approval';
 
-  // PERSIST FIRST: Create reward in a transaction and commit
-  // Only after successful commit, emit the event
+  // TRANSACTIONAL OUTBOX: reward + event in SAME transaction
+  // This guarantees atomicity: if reward exists, event also exists
   const reward = await withTransactionalOutbox(async (client) => {
-    // Create reward - MUST succeed before event can be emitted
+    // Step 1: Create reward (persist first)
     const createdReward = await createRewardTx({
       user_id: payload.user_id,
       proof_id: payload.proof_id,
@@ -151,7 +150,21 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       value: REWARD_VALUE,
     }, client);
 
-    // Audit: Insert audit log for reward granted (within same transaction)
+    // Step 2: Insert event in outbox (same transaction - not published yet)
+    await insertEventInTransaction(
+      client,
+      'reward_granted',
+      {
+        reward_id: createdReward.id,
+        proof_id: payload.proof_id,
+        user_id: payload.user_id,
+        reward_type: createdReward.reward_type,
+        value: createdReward.value,
+      },
+      'rewards'
+    );
+
+    // Step 3: Audit log (same transaction)
     await insertAuditInTransaction(
       client,
       'reward_granted',
@@ -166,33 +179,9 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       }
     );
 
-    console.log(`✅ Created reward: ${createdReward.id} (persisted and committed)`);
+    console.log(`✅ Created reward: ${createdReward.id} + event in same transaction (outbox pattern)`);
     return createdReward;
   });
-
-  // CRITICAL: Event is emitted ONLY AFTER successful commit
-  // This guarantees: persist → commit → emit (strict order)
-  const eventClient = await getDb().connect();
-  try {
-    await insertEventInTransaction(
-      eventClient,
-      'reward_granted',
-      {
-        reward_id: reward.id,
-        proof_id: payload.proof_id,
-        user_id: payload.user_id,
-        reward_type: reward.reward_type,
-        value: reward.value,
-      },
-      'rewards'
-    );
-    await eventClient.query('COMMIT');
-  } catch (error) {
-    await eventClient.query('ROLLBACK');
-    throw error;
-  } finally {
-    eventClient.release();
-  }
   // Note: Only reward_granted event - reward_created is NOT part of contract
 
   // Record metrics (outside transaction but after persist)
