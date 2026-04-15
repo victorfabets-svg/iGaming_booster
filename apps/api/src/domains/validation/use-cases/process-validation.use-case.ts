@@ -149,20 +149,16 @@ export async function processValidation(input: ProcessValidationInput): Promise<
       signals: fraudScoreResult.signals,
     });
 
-    // Determine decision
+    // Determine decision based on score thresholds
     let decision: ValidationDecision;
     
-    if (isAutomaticApprovalEnabled()) {
-      if (fraudScoreResult.score >= approvalThreshold) {
-        decision = 'approved';
-        alertMonitor.recordApproved();
-      } else if (fraudScoreResult.score >= manualReviewThreshold) {
-        decision = 'approved';
-      } else {
-        decision = 'approved';
-      }
-    } else {
+    if (fraudScoreResult.score >= approvalThreshold) {
+      decision = 'approved';
+      alertMonitor.recordApproved();
+    } else if (fraudScoreResult.score >= manualReviewThreshold) {
       decision = 'manual_review';
+    } else {
+      decision = 'rejected';
     }
     console.log(`📊 Decision: ${decision} (ENABLE_AUTOMATIC_APPROVAL: ${isAutomaticApprovalEnabled()}, confidence: ${fraudScoreResult.score})`);
 

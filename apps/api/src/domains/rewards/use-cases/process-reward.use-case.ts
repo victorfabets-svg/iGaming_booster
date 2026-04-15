@@ -4,9 +4,7 @@ import { findRewardByProofId, createReward, createRewardTx, findRewardById } fro
 import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } from '../repositories/ticket.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
-import { createRewardEconomics } from '../repositories/reward-economics.repository';
 import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
-import { withTransaction } from '../../../../../../shared/database/connection';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -154,8 +152,8 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const totalCost = effectiveNumbers * costPerTicket;
   const estimatedRevenue = effectiveNumbers * estimatedRevenuePerTicket;
 
-  // AUDIT FIX: TRANSACTION - Wrap core DB operations in single transaction
-  const reward = await withTransaction(async (client) => {
+  // Use transactional outbox for atomic reward creation + event emission
+  const reward = await withTransactionalOutbox(async (client) => {
     // Create reward
     const createdReward = await createRewardTx({
       user_id: payload.user_id,
@@ -171,7 +169,16 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       [createdReward.id, totalCost, estimatedRevenue]
     );
 
-    console.log(`✅ Created reward: ${createdReward.id} (within transaction)`);
+    // Emit reward_granted event within the same transaction
+    await queueEventInTransaction(client, 'reward_granted', {
+      reward_id: createdReward.id,
+      proof_id: payload.proof_id,
+      user_id: payload.user_id,
+      reward_type: createdReward.reward_type,
+      value: createdReward.value,
+    }, 'rewards');
+
+    console.log(`✅ Created reward: ${createdReward.id} (within transactional outbox)`);
     return createdReward;
   });
   // Note: Only reward_granted event - reward_created is NOT part of contract
@@ -188,17 +195,6 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   // Record reward in rate limit (outside transaction)
   await rateLimitService.recordRewardGranted(payload.user_id);
-
-  // Emit reward_granted event ONLY after successful DB persist (within transaction)
-  await withTransactionalOutbox(async (txnId) => {
-    queueEventInTransaction(txnId, 'reward_granted', {
-      reward_id: reward.id,
-      proof_id: payload.proof_id,
-      user_id: payload.user_id,
-      reward_type: reward.reward_type,
-      value: reward.value,
-    }, 'rewards');
-  });
 
   // Step 8: Get or create active raffle
   let raffle = await findActiveRaffle();
