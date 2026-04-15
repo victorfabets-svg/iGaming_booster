@@ -121,12 +121,16 @@ export function useSystemState() {
   const loadEvents = useCallback(async () => {
     try {
       const response = await fetch('/events');
-      if (response.ok) {
-        const events = await response.json();
-        setState(prev => ({ ...prev, events }));
+      if (!response.ok) {
+        throw new Error(`Events endpoint not available: ${response.status}`);
       }
+      const events = await response.json();
+      setState(prev => ({ ...prev, events }));
     } catch (err) {
-      console.error('Failed to load events:', err);
+      // Explicit error - do not fail silently
+      const message = err instanceof Error ? err.message : 'Failed to load events';
+      console.error('[loadEvents]', message);
+      throw new Error(message);
     }
   }, []);
 
@@ -139,14 +143,9 @@ export function useSystemState() {
     };
   }, [loadMetrics]);
 
-  // Load events on mount and poll every 8 seconds (optional)
-  useEffect(() => {
-    loadEvents();
-    const eventsInterval = window.setInterval(loadEvents, 8000);
-    return () => {
-      window.clearInterval(eventsInterval);
-    };
-  }, [loadEvents]);
+  // NOTE: Events must be explicitly triggered - no automatic polling
+  // The /events endpoint must be implemented on backend first
+  // Use loadEvents() manually when needed
 
   // Cleanup on unmount
   useEffect(() => {
