@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import ProofTable, { ProofRow } from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
 import { useSystemState } from '../../state/useSystemState';
+import createApiClient from '../../services/api';
+
+const api = createApiClient('');
 
 const HistoricoSection: React.FC = () => {
-  const { proof, loading: globalLoading, error, loadProof } = useSystemState();
+  const { proof, loading: globalLoading, loadProof } = useSystemState();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [lastUploadId, setLastUploadId] = useState<string | null>(null);
@@ -16,8 +19,16 @@ const HistoricoSection: React.FC = () => {
     setUploading(true);
     setUploadError(null);
     try {
-      const res = await loadProof(file.name);
-      setLastUploadId(res.proof_id);
+      // Step 1: Submit the file to backend
+      const res = await api.submitProof(file);
+      
+      // Step 2: Extract proof_id from backend response
+      const { proof_id } = res;
+      
+      // Step 3: Load the proof using correct proof_id
+      await loadProof(proof_id);
+      
+      setLastUploadId(proof_id);
       setLastUploadStatus(res.status);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'unknown');
