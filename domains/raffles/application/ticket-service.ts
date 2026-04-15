@@ -5,17 +5,22 @@ export interface Raffle {
   name: string;
   prize: string;
   total_numbers: number;
-  draw_date: Date;
-  status: string;
+  start_at: Date;
+  end_at: Date;
+  status: 'pending' | 'active' | 'closed' | 'completed';
 }
 
+/**
+ * Get active raffle - FREEZE RULE: status='active' AND now within time window
+ */
 export async function getActiveRaffle(now: Date): Promise<Raffle | null> {
   const result = await db.query<Raffle>(
-    `SELECT id, name, prize, total_numbers, draw_date, status
+    `SELECT id, name, prize, total_numbers, start_at, end_at, status
      FROM raffles.raffles
      WHERE status = 'active'
-     AND draw_date > $1
-     ORDER BY draw_date ASC
+       AND $1 >= start_at
+       AND $1 <= end_at
+     ORDER BY end_at ASC
      LIMIT 1`,
     [now]
   );
@@ -26,21 +31,22 @@ export async function createRaffle(input: {
   name: string;
   prize: string;
   total_numbers: number;
-  draw_date: Date;
+  start_at: Date;
+  end_at: Date;
   status: string;
 }): Promise<Raffle> {
   const result = await db.query<Raffle>(
-    `INSERT INTO raffles.raffles (name, prize, total_numbers, draw_date, status)
+    `INSERT INTO raffles.raffles (name, prize, total_numbers, start_at, end_at, status)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, name, prize, total_numbers, draw_date, status`,
-    [input.name, input.prize, input.total_numbers, input.draw_date, input.status]
+     RETURNING id, name, prize, total_numbers, start_at, end_at, status`,
+    [input.name, input.prize, input.total_numbers, input.start_at, input.end_at, input.status]
   );
   return result.rows[0];
 }
 
 export async function findRaffleById(id: string): Promise<Raffle | null> {
   const result = await db.query<Raffle>(
-    `SELECT id, name, prize, total_numbers, draw_date, status
+    `SELECT id, name, prize, total_numbers, start_at, end_at, status
      FROM raffles.raffles
      WHERE id = $1`,
     [id]
@@ -48,19 +54,24 @@ export async function findRaffleById(id: string): Promise<Raffle | null> {
   return result.rows[0] || null;
 }
 
+/**
+ * Get or create active raffle using time window.
+ */
 export async function getOrCreateActiveRaffle(): Promise<Raffle> {
   const now = new Date();
   let raffle = await getActiveRaffle(now);
   
   if (!raffle) {
-    const drawDate = new Date();
-    drawDate.setDate(drawDate.getDate() + 30);
+    const startAt = new Date();
+    const endAt = new Date();
+    endAt.setDate(endAt.getDate() + 30);
     
     raffle = await createRaffle({
       name: 'Default Raffle',
       prize: 'Grand Prize',
       total_numbers: 1000,
-      draw_date: drawDate,
+      start_at: startAt,
+      end_at: endAt,
       status: 'active',
     });
     console.log(`🎰 Created new raffle: ${raffle.id}`);
@@ -75,7 +86,6 @@ export interface RaffleTicket {
   proof_id: string;
   reward_id: string;
   raffle_id: string;
-  number?: number; // for backward compatibility with draw logic
   created_at: Date;
 }
 
