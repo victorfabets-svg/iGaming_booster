@@ -209,6 +209,22 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
       return;
     }
 
+    // Validate user ownership - fail-safe: reject mismatched user
+    if (rewardCheck.rows[0].user_id !== payload.user_id) {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'user_mismatch', 'reward', payload.reward_id, payload.user_id, JSON.stringify({
+          reward_id: payload.reward_id,
+          reward_user_id: rewardCheck.rows[0].user_id,
+          payload_user_id: payload.user_id,
+          reason: 'user_id_mismatch'
+        })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
     // Validate and lock raffle inside transaction
     const raffleCheck = await client.query<{ id: string; status: string }>(
       `SELECT id, status FROM raffles.raffles WHERE id = $1 FOR UPDATE`,
