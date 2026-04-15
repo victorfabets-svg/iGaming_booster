@@ -34,6 +34,8 @@ export async function withTransaction<T>(
   const client = await getClient();
   
   try {
+    // TASK 2: ENFORCE TIMEOUT - Set statement timeout before BEGIN
+    await client.query('SET statement_timeout = 5000');
     await client.query('BEGIN');
     const result = await callback(client);
     await client.query('COMMIT');

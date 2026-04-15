@@ -6,6 +6,7 @@ import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
 import { createRewardEconomics } from '../repositories/reward-economics.repository';
 import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransaction } from '../../../../../../shared/database/connection';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -13,7 +14,6 @@ import { recordReward, recordTicketGenerated } from '../../../../../../shared/ob
 import { isRewardsEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
 import { experimentService } from '../services/experiment.service';
-import { withTransaction } from '../../../lib/database';
 
 export interface ProofValidatedEventPayload {
   proof_id: string;

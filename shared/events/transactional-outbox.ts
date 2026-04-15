@@ -38,6 +38,8 @@ export async function withTransactionalOutbox<T>(
   const client = await pool.connect();
   
   try {
+    // TASK 2: ENFORCE TIMEOUT - Set statement timeout before BEGIN
+    await client.query('SET statement_timeout = 5000');
     await client.query('BEGIN');
     
     // Execute callback with the client (for domain writes + event/audit in same tx)
