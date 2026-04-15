@@ -3,85 +3,124 @@ import { Event } from './types';
 export { Event };
 
 // ============================================================================
-// TASK 1: EVENT LOCK - ensure no duplicate processing
+// TASK 0: MIGRATIONS - Add columns and create tables
 // ============================================================================
 
-export async function ensureProcessedEventsTable(): Promise<void> {
+/**
+ * Run migrations to set up required columns and tables.
+ * Must be called once on startup.
+ */
+export async function runEventMigrations(): Promise<void> {
+  // Add retry_count column if not exists
   await db.query(`
-    CREATE TABLE IF NOT EXISTS events.processed_events (
-      event_id TEXT PRIMARY KEY,
-      processed_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-}
+    ALTER TABLE events.events 
+    ADD COLUMN IF NOT EXISTS retry_count INT DEFAULT 0
+  `).catch(() => {
+    // Column may already exist - ignore errors
+  });
 
-/**
- * Check if event has already been processed.
- * Uses the event lock pattern to prevent duplicate processing.
- */
-export async function isEventProcessed(eventId: string): Promise<boolean> {
-  await ensureProcessedEventsTable();
-  
-  const result = await db.query<{ event_id: string }>(
-    `SELECT event_id FROM events.processed_events WHERE event_id = $1`,
-    [eventId]
-  );
-  
-  return result.rows.length > 0;
-}
+  // Add processed column if not exists (for row-level locking)
+  await db.query(`
+    ALTER TABLE events.events 
+    ADD COLUMN IF NOT EXISTS processed BOOLEAN DEFAULT FALSE
+  `).catch(() => {
+    // Column may already exist - ignore errors
+  });
 
-/**
- * Acquire event lock - insert event_id to mark it as being processed.
- * Returns true if lock acquired (event not previously processed).
- * Returns false if event already being processed or was processed.
- */
-export async function acquireEventLock(eventId: string): Promise<boolean> {
-  await ensureProcessedEventsTable();
-  
-  try {
-    await db.query(
-      `INSERT INTO events.processed_events (event_id, processed_at) 
-       VALUES ($1, NOW())`,
-      [eventId]
-    );
-    return true;
-  } catch (error: any) {
-    // If duplicate key error, event was already processed or being processed
-    if (error.code === '23505') {
-      return false;
-    }
-    throw error;
-  }
-}
-
-// Alias for backward compatibility (no-op - ensureProcessedEventsTable is already exported)
-
-// ============================================================================
-// TASK 2: DEAD LETTER QUEUE (DLQ)
-// ============================================================================
-
-export async function ensureDlqTable(): Promise<void> {
+  // Create DLQ table
   await db.query(`
     CREATE TABLE IF NOT EXISTS events.dlq_events (
       event_id TEXT PRIMARY KEY,
       payload JSONB NOT NULL,
       error TEXT,
-      retries INTEGER DEFAULT 0,
+      retries INT DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  // Create index for dlq_events if not exists
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_dlq_events_created_at 
+    ON events.dlq_events(created_at DESC)
+  `).catch(() => {});
+
+  console.log('[MIGRATIONS] Event tables and columns ready');
+}
+
+// ============================================================================
+// TASK 1: ROW LOCK - Ensure atomic event fetching with FOR UPDATE SKIP LOCKED
+// ============================================================================
+
+/**
+ * Fetch unprocessed events with row-level locking (FOR UPDATE SKIP LOCKED).
+ * This prevents multiple consumers from processing the same event.
+ */
+export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
+  await runEventMigrations();
+
+  const result = await db.query<Event>(
+    `SELECT id, event_type, version, producer, correlation_id, payload, 
+            retry_count, processed, timestamp
+     FROM events.events
+     WHERE processed = FALSE 
+       AND retry_count < 3
+     ORDER BY timestamp ASC
+     LIMIT $1
+     FOR UPDATE SKIP LOCKED`,
+    [limit]
+  );
+
+  return result.rows;
 }
 
 /**
- * Add failed event to Dead Letter Queue after max retries exhausted.
+ * Mark event as processed (success).
+ */
+export async function markEventProcessed(eventId: string): Promise<void> {
+  await db.query(
+    `UPDATE events.events 
+     SET processed = TRUE, processed_at = NOW() 
+     WHERE id = $1`,
+    [eventId]
+  );
+}
+
+/**
+ * Increment retry count when processing fails.
+ * This controls retry attempts and prevents infinite loops.
+ */
+export async function incrementRetryCount(eventId: string): Promise<void> {
+  await db.query(
+    `UPDATE events.events 
+     SET retry_count = retry_count + 1 
+     WHERE id = $1`,
+    [eventId]
+  );
+}
+
+/**
+ * Get current retry count for an event.
+ */
+export async function getRetryCount(eventId: string): Promise<number> {
+  const result = await db.query<{ retry_count: number }>(
+    `SELECT retry_count FROM events.events WHERE id = $1`,
+    [eventId]
+  );
+  return result.rows[0]?.retry_count ?? 0;
+}
+
+// ============================================================================
+// TASK 2: DLQ - Dead Letter Queue for failed events
+// ============================================================================
+
+/**
+ * Add failed event to Dead Letter Queue.
  */
 export async function addToDlq(
   eventId: string,
   payload: Record<string, any>,
   error: string
 ): Promise<void> {
-  await ensureDlqTable();
-  
   await db.query(
     `INSERT INTO events.dlq_events (event_id, payload, error, retries)
      VALUES ($1, $2, $3, 1)
@@ -93,96 +132,134 @@ export async function addToDlq(
 }
 
 /**
- * Get retry count for a DLQ event.
+ * Check if event is in DLQ.
  */
-export async function getDlqRetryCount(eventId: string): Promise<number> {
-  await ensureDlqTable();
-  
-  const result = await db.query<{ retries: number }>(
-    `SELECT retries FROM events.dlq_events WHERE event_id = $1`,
+export async function isInDlq(eventId: string): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 FROM events.dlq_events WHERE event_id = $1`,
     [eventId]
   );
-  
-  return result.rows.length > 0 ? result.rows[0].retries : 0;
+  return result.rows.length > 0;
+}
+
+/**
+ * Get all DLQ events.
+ */
+export async function getDlqEvents(limit: number = 100): Promise<any[]> {
+  const result = await db.query(
+    `SELECT * FROM events.dlq_events 
+     ORDER BY created_at DESC 
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
+
+/**
+ * Reprocess DLQ event (reset retry state).
+ */
+export async function reprocessDlqEvent(eventId: string): Promise<void> {
+  // Remove from DLQ and reset retry count
+  await db.query(
+    `DELETE FROM events.dlq_events WHERE event_id = $1`,
+    [eventId]
+  );
+  await db.query(
+    `UPDATE events.events SET retry_count = 0 WHERE id = $1`,
+    [eventId]
+  );
 }
 
 // ============================================================================
-// TASK 3: RETRY STRATEGY
+// TASK 3: RETRY LOGIC - Proper retry with backoff
 // ============================================================================
 
 const MAX_RETRIES = 3;
 
 /**
- * Calculate backoff delay: 1s, 2s, 3s (simple backoff)
+ * Get backoff delay (exponential: 1s, 2s, 3s).
  */
-export function getBackoffDelay(retryAttempt: number): number {
-  return retryAttempt * 1000; // 1s, 2s, 3s
+export function getBackoffDelay(retryCount: number): number {
+  return (retryCount + 1) * 1000;
 }
 
 /**
- * Process event with retry logic and DLQ fallback.
+ * Process event with proper retry logic.
  * Returns true if successfully processed, false if sent to DLQ.
  */
-export async function processEventWithRetry(
+export async function processWithRetry(
   eventId: string,
   payload: Record<string, any>,
   processFn: () => Promise<void>
 ): Promise<boolean> {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const currentRetry = await getRetryCount(eventId);
+
+  for (let attempt = currentRetry + 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      console.log(`[RETRY] Attempt ${attempt}/${MAX_RETRIES} for event ${eventId}`);
-      
+      console.log(`[PROCESS] Attempt ${attempt}/${MAX_RETRIES} for event ${eventId}`);
       await processFn();
       
-      // Success - mark as processed
+      // Mark as processed on success
       await markEventProcessed(eventId);
-      console.log(`[RETRY] Event ${eventId} processed successfully on attempt ${attempt}`);
+      console.log(`✅ Event ${eventId} processed successfully on attempt ${attempt}`);
       return true;
     } catch (error: any) {
-      lastError = error;
-      console.error(`[RETRY] Attempt ${attempt} failed for event ${eventId}:`, error.message);
+      console.error(`❌ Attempt ${attempt} failed for ${eventId}:`, error.message);
+      
+      // Increment retry count after each failure
+      await incrementRetryCount(eventId);
       
       if (attempt < MAX_RETRIES) {
         const delay = getBackoffDelay(attempt);
-        console.log(`[RETRY] Waiting ${delay}ms before retry...`);
+        console.log(`⏳ Waiting ${delay}ms before next attempt...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   // All retries exhausted - send to DLQ
-  console.log(`[DLQ] Max retries (${MAX_RETRIES}) exhausted for event ${eventId}`);
-  await addToDlq(eventId, payload, lastError?.message || 'Unknown error');
+  console.error(`[DLQ] Event ${eventId} failed after ${MAX_RETRIES} attempts`);
+  await addToDlq(eventId, payload, `Failed after ${MAX_RETRIES} attempts`);
   return false;
 }
 
 // ============================================================================
-// EXISTING FUNCTIONS (unchanged)
+// LEGACY: Backward compatibility functions
 // ============================================================================
 
-export async function fetchUnprocessedEvents(limit: number = 100): Promise<Event[]> {
-  await ensureProcessedEventsTable();
-  
-  const result = await db.query<Event>(
-    `SELECT e.* 
-     FROM events.events e
-     LEFT JOIN events.processed_events pe ON e.id = pe.event_id
-     WHERE pe.event_id IS NULL
-     ORDER BY e.timestamp ASC
-     LIMIT $1`,
-    [limit]
-  );
-  
-  return result.rows;
+export async function ensureProcessedEventsTable(): Promise<void> {
+  await runEventMigrations();
 }
 
-export async function markEventProcessed(eventId: string): Promise<void> {
-  await db.query(
-    `INSERT INTO events.processed_events (event_id, processed_at) 
-     VALUES ($1, NOW()) 
-     ON CONFLICT (event_id) DO UPDATE SET processed_at = NOW()`,
+export async function fetchUnprocessedEvents(limit: number = 100): Promise<Event[]> {
+  return fetchAndLockEvents(limit);
+}
+
+export async function acquireEventLock(eventId: string): Promise<boolean> {
+  // Row locking handles this - just check if already processed
+  const result = await db.query<{ id: string }>(
+    `SELECT id FROM events.events WHERE id = $1 AND processed = TRUE`,
     [eventId]
   );
+  return result.rows.length === 0;
+}
+
+export async function ensureDlqTable(): Promise<void> {
+  await runEventMigrations();
+}
+
+export async function markEventProcessedLegacy(eventId: string): Promise<void> {
+  await markEventProcessed(eventId);
+}
+
+export async function processEventWithRetryLegacy(
+  eventId: string,
+  payload: Record<string, any>,
+  processFn: () => Promise<void>
+): Promise<boolean> {
+  return processWithRetry(eventId, payload, processFn);
+}
+
+export function getBackoffDelayLegacy(retryAttempt: number): number {
+  return getBackoffDelay(retryAttempt);
 }

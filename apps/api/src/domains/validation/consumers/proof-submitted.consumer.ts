@@ -1,4 +1,4 @@
-import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable, acquireEventLock, processEventWithRetry, ensureDlqTable, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processWithRetry, runEventMigrations, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
@@ -8,10 +8,9 @@ const BATCH_SIZE = 10;
 export async function startProofSubmittedConsumer(): Promise<void> {
   console.log('🔄 Starting proof_submitted consumer...');
 
-  // Ensure processed_events table exists
-  await ensureProcessedEventsTable();
-  await ensureDlqTable();
-  console.log('✅ Processed events & DLQ tables ready');
+  // Run migrations to create tables and columns
+  await runEventMigrations();
+  console.log('✅ Event migrations complete');
 
   // Initial poll
   await pollEvents();
@@ -24,7 +23,8 @@ export async function startProofSubmittedConsumer(): Promise<void> {
 
 async function pollEvents(): Promise<void> {
   try {
-    const allEvents = await fetchUnprocessedEvents(BATCH_SIZE);
+    // Use row-level locking - FOR UPDATE SKIP LOCKED
+    const allEvents = await fetchAndLockEvents(BATCH_SIZE);
     
     // Filter by event type
     const events = allEvents.filter(e => e.event_type === EVENT_TYPE);
@@ -33,7 +33,7 @@ async function pollEvents(): Promise<void> {
       return;
     }
 
-    console.log(`📬 Found ${events.length} unprocessed ${EVENT_TYPE} events`);
+    console.log(`📬 Found ${events.length} ${EVENT_TYPE} events (with row lock)`);
 
     for (const event of events) {
       await processEvent(event);
@@ -46,32 +46,17 @@ async function pollEvents(): Promise<void> {
 async function processEvent(event: Event): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as ProofSubmittedEventPayload;
+  const retryCount = await getRetryCount(eventId);
 
-  console.log(`\n🔔 Processing event: ${eventId}`);
-  console.log(`   Type: ${EVENT_TYPE}`);
-  console.log(`   Proof ID: ${payload.proof_id}`);
+  console.log(`\n🔔 Processing event: ${eventId} (retry: ${retryCount})`);
+  console.log(`   Type: ${EVENT_TYPE}, Proof ID: ${payload.proof_id}`);
 
-  // ============================================================================
-  // TASK 1: EVENT LOCK - Check if already processed, if yes → SKIP
-  // ============================================================================
-  
-  // Try to acquire lock - if fails, event was already processed
-  const lockAcquired = await acquireEventLock(eventId);
-  
-  if (!lockAcquired) {
-    console.log(`⏭️ Event ${eventId} already processed - skipping`);
-    return;
-  }
-
-  // ============================================================================
-  // TASK 3: RETRY STRATEGY - With DLQ fallback
-  // ============================================================================
-  
-  const success = await processEventWithRetry(
+  // Use retry logic - increments retry_count on each failure
+  // After 3 retries → goes to DLQ
+  const success = await processWithRetry(
     eventId,
     payload,
     async () => {
-      // This is the actual business logic - wrapped with retry
       await processProofSubmitted(payload);
     }
   );
@@ -79,7 +64,7 @@ async function processEvent(event: Event): Promise<void> {
   if (success) {
     console.log(`✅ Event ${eventId} processed successfully`);
   } else {
-    console.log(`📬 Event ${eventId} sent to DLQ after max retries`);
+    console.log(`📬 Event ${eventId} sent to DLQ after 3 retries`);
   }
 }
 
