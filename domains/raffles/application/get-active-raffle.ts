@@ -5,21 +5,23 @@ export interface Raffle {
   name: string;
   prize: string;
   total_numbers: number;
-  draw_date: Date;
+  start_at: Date;
+  end_at: Date;
   status: 'pending' | 'active' | 'closed' | 'completed';
 }
 
 /**
  * Get active raffle for ticket creation.
- * FREEZE RULE: Only raffles with status='active' AND draw_date in future accept tickets.
+ * FREEZE RULE: Only raffles with status='active' AND now within time window.
  */
 export async function getActiveRaffle(now: Date): Promise<Raffle | null> {
   const result = await db.query<Raffle>(
-    `SELECT id, name, prize, total_numbers, draw_date, status
+    `SELECT id, name, prize, total_numbers, start_at, end_at, status
      FROM raffles.raffles
      WHERE status = 'active'
-       AND draw_date > $1
-     ORDER BY draw_date ASC
+       AND $1 >= start_at
+       AND $1 <= end_at
+     ORDER BY end_at ASC
      LIMIT 1`,
     [now]
   );
@@ -31,7 +33,7 @@ export async function getActiveRaffle(now: Date): Promise<Raffle | null> {
  */
 export async function getRaffleById(raffleId: string): Promise<Raffle | null> {
   const result = await db.query<Raffle>(
-    `SELECT id, name, prize, total_numbers, draw_date, status
+    `SELECT id, name, prize, total_numbers, start_at, end_at, status
      FROM raffles.raffles
      WHERE id = $1`,
     [raffleId]
@@ -40,7 +42,7 @@ export async function getRaffleById(raffleId: string): Promise<Raffle | null> {
 }
 
 /**
- * Close raffle after draw date passes.
+ * Close raffle after end_at passes.
  * Transitions: active -> closed
  */
 export async function closeRaffle(raffleId: string): Promise<boolean> {
@@ -49,7 +51,7 @@ export async function closeRaffle(raffleId: string): Promise<boolean> {
      SET status = 'closed' 
      WHERE id = $1 
        AND status = 'active' 
-       AND draw_date <= NOW()
+       AND end_at <= NOW()
      RETURNING id`,
     [raffleId]
   );
