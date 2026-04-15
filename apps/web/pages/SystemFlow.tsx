@@ -4,50 +4,53 @@ import RewardPanel from '../components/RewardPanel';
 import TicketList from '../components/TicketList';
 import RafflePanel from '../components/RafflePanel';
 import RaffleResult from '../components/RaffleResult';
-import { SystemStateProvider, useSystemState } from '../hooks/useSystemState';
+import MetricsPanel from '../components/MetricsPanel';
+import EventTimeline from '../components/EventTimeline';
+import { useSystemState } from '../state/useSystemState';
 import createApiClient from '../services/api';
 
 const api = createApiClient('');
 
+// Status mapping as per backend
+const STATUS_MAP: Record<string, string> = {
+  'submitted': 'Recebido',
+  'processing': 'Em análise',
+  'approved': 'Aprovado',
+  'rejected': 'Rejeitado',
+  'manual_review': 'Em revisão',
+};
+
+// Visual status mapping
+const STATUS_VISUAL: Record<string, { class: string; color: string }> = {
+  'submitted': { class: 'badge-gray', color: 'var(--text-secondary)' },
+  'processing': { class: 'badge-blue', color: 'var(--color-primary-primary)' },
+  'approved': { class: 'badge-success', color: 'var(--color-success-primary)' },
+  'rejected': { class: 'badge-error', color: 'var(--color-error-primary)' },
+  'manual_review': { class: 'badge-warning', color: 'var(--color-warning-primary)' },
+};
+
+// Timeline steps based on backend status
+const TIMELINE_STEPS = ['submitted', 'processing', 'approved', 'rejected', 'manual_review'];
+
 // Inner component that uses the system state
 const SystemFlowContent: React.FC = () => {
-  const { currentProof, setCurrentProof, rewards, setRewards, tickets, setTickets, raffles, setRaffles, results, setResults } = useSystemState();
+  const { proof, loading, error, loadProof, loadEvents } = useSystemState();
   
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [proofStatusLoading, setProofStatusLoading] = useState(false);
-  const [proofStatusError, setProofStatusError] = useState<string | null>(null);
 
-  // Load initial data from API
+  // Load events once on page load
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch rewards
-        setRewards([]);
-        // Fetch tickets
-        setTickets([]);
-        // Fetch raffles
-        setRaffles([]);
-        // Fetch results
-        setResults([]);
-      } catch (err) {
-        console.error('Error fetching system data:', err);
-      }
-    };
-    fetchData();
-  }, [setRewards, setTickets, setRaffles, setResults]);
+    loadEvents();
+  }, [loadEvents]);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
     setUploadError(null);
     try {
       const res = await api.submitProof(file);
-      setCurrentProof({
-        id: res.proof_id,
-        user_id: 'test-user',
-        status: res.status,
-        created_at: new Date().toISOString(),
-      });
+      // Load the proof to get full details and start polling
+      loadProof(res.proof_id);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'unknown');
     } finally {
@@ -55,56 +58,24 @@ const SystemFlowContent: React.FC = () => {
     }
   };
 
-  // Fetch proof status if there's a current proof
-  useEffect(() => {
-    if (!currentProof) return;
-    
-    const checkProofStatus = async () => {
-      setProofStatusLoading(true);
-      setProofStatusError(null);
-      try {
-        const proofs = await api.getRecentProofs();
-        const proof = proofs.find(p => p.id === currentProof.id);
-        if (proof) {
-          setCurrentProof({
-            ...currentProof,
-            status: proof.status,
-          });
-        }
-      } catch (err) {
-        setProofStatusError(err instanceof Error ? err.message : 'unknown');
-      } finally {
-        setProofStatusLoading(false);
-      }
-    };
-
-    // Check status every 5 seconds if proof is pending
-    if (currentProof.status === 'pending' || currentProof.status === 'processing') {
-      const interval = setInterval(checkProofStatus, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [currentProof?.id]);
-
-  const statusLabel = (status: string) => {
-    switch (status) {
-      case 'approved': return 'Aprovado';
-      case 'rejected': return 'Rejeitado';
-      case 'manual_review': return 'Revisão Manual';
-      case 'processing': return 'Em Análise';
-      case 'pending': return 'Pendente';
-      default: return status;
-    }
+  // Get current step in timeline
+  const getCurrentStep = (status: string | null): number => {
+    if (!status) return 0;
+    const index = TIMELINE_STEPS.indexOf(status);
+    return index >= 0 ? index : 0;
   };
 
-  const statusBadgeClass = (status: string) => {
-    switch (status) {
-      case 'approved': return 'badge-success';
-      case 'rejected': return 'badge-error';
-      case 'manual_review': return 'badge-warning';
-      case 'processing': return 'badge-blue';
-      case 'pending': return 'badge-warning';
-      default: return 'badge-gray';
-    }
+  // Format confidence as percentage
+  const formatConfidence = (score: number | null): string => {
+    if (score === null || score === undefined) return 'N/A';
+    return `${Math.round(score * 100)}%`;
+  };
+
+  // Get status display info
+  const getStatusInfo = (status: string | null) => {
+    const mappedStatus = status ? STATUS_MAP[status] : 'Desconhecido';
+    const visual = status ? STATUS_VISUAL[status] : { class: 'badge-gray', color: 'var(--text-muted)' };
+    return { label: mappedStatus, ...visual };
   };
 
   return (
@@ -143,35 +114,70 @@ const SystemFlowContent: React.FC = () => {
         </div>
         <div className="step-content">
           <div className="card">
-            {proofStatusLoading ? (
+            {loading ? (
               <div className="loading-state">
-                <p>Verificando status...</p>
+                <p>Processando...</p>
               </div>
-            ) : currentProof ? (
+            ) : error ? (
+              <div className="alert-box alert-error">
+                <p>Erro: {error}</p>
+              </div>
+            ) : proof ? (
               <div className="proof-status">
+                {/* ID */}
                 <div className="status-row">
                   <span className="status-label">ID:</span>
-                  <span className="status-value mono">{currentProof.id}</span>
+                  <span className="status-value mono">{proof.id}</span>
                 </div>
+                
+                {/* Status Badge */}
                 <div className="status-row">
                   <span className="status-label">Status:</span>
-                  <span className={`badge ${statusBadgeClass(currentProof.status)}`}>
-                    {statusLabel(currentProof.status)}
+                  <span className={`badge ${getStatusInfo(proof.status).class}`}>
+                    {getStatusInfo(proof.status).label}
                   </span>
                 </div>
+
+                {/* Confidence Score */}
+                {proof.confidence_score !== null && proof.confidence_score !== undefined && (
+                  <div className="status-row">
+                    <span className="status-label">Confiança:</span>
+                    <span className="status-value confidence-score">
+                      {formatConfidence(proof.confidence_score)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Submitted At */}
                 <div className="status-row">
                   <span className="status-label">Enviado em:</span>
-                  <span className="status-value">{new Date(currentProof.created_at).toLocaleString('pt-BR')}</span>
+                  <span className="status-value">
+                    {proof.submitted_at ? new Date(proof.submitted_at).toLocaleString('pt-BR') : 'N/A'}
+                  </span>
+                </div>
+
+                {/* Timeline */}
+                <div className="validation-timeline">
+                  <div className="timeline-label">Progresso da Validação</div>
+                  <div className="timeline-steps">
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 0 ? 'active' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Recebido</span>
+                    </div>
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 1 ? 'active' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Em análise</span>
+                    </div>
+                    <div className={`timeline-step ${getCurrentStep(proof.status) >= 2 ? 'active' : ''} ${proof.status === 'approved' ? 'completed' : ''}`}>
+                      <span className="step-dot"></span>
+                      <span className="step-text">Resultado</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="empty-state">
                 <p>Nenhuma prova enviada ainda</p>
-              </div>
-            )}
-            {proofStatusError && (
-              <div className="alert-box alert-error" style={{ marginTop: 12 }}>
-                <p>Erro: {proofStatusError}</p>
               </div>
             )}
           </div>
@@ -230,7 +236,35 @@ const SystemFlowContent: React.FC = () => {
           <span className="step-label">Resultado</span>
         </div>
         <div className="step-content">
-          <RaffleResult userId={currentProof?.user_id} />
+          <RaffleResult userId={proof?.user_id} />
+        </div>
+      </div>
+
+      {/* Arrow */}
+      <div className="flow-arrow">↓</div>
+
+      {/* Step 7: Metrics Panel */}
+      <div className="flow-step">
+        <div className="step-indicator">
+          <span className="step-number">7</span>
+          <span className="step-label">Métricas</span>
+        </div>
+        <div className="step-content">
+          <MetricsPanel />
+        </div>
+      </div>
+
+      {/* Arrow */}
+      <div className="flow-arrow">↓</div>
+
+      {/* Step 8: Event Timeline */}
+      <div className="flow-step">
+        <div className="step-indicator">
+          <span className="step-number">8</span>
+          <span className="step-label">Eventos</span>
+        </div>
+        <div className="step-content">
+          <EventTimeline />
         </div>
       </div>
     </section>
@@ -238,11 +272,7 @@ const SystemFlowContent: React.FC = () => {
 };
 
 const SystemFlow: React.FC = () => {
-  return (
-    <SystemStateProvider>
-      <SystemFlowContent />
-    </SystemStateProvider>
-  );
+  return <SystemFlowContent />;
 };
 
 export default SystemFlow;

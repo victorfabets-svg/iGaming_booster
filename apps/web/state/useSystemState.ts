@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import createApiClient, { Proof, Reward, Raffle, RaffleResult } from '../services/api';
+import createApiClient, { Proof, Reward, Raffle, RaffleResult, MetricsResponse, SystemEvent } from '../services/api';
 
 const api = createApiClient('');
 
@@ -8,6 +8,8 @@ export interface SystemState {
   rewards: Reward[];
   raffles: Raffle[];
   raffleResult: RaffleResult | null;
+  metrics: MetricsResponse | null;
+  events: SystemEvent[];
   loading: boolean;
   error: string | null;
 }
@@ -17,6 +19,8 @@ const initialState: SystemState = {
   rewards: [],
   raffles: [],
   raffleResult: null,
+  metrics: null,
+  events: [],
   loading: false,
   error: null,
 };
@@ -105,6 +109,44 @@ export function useSystemState() {
     }
   }, []);
 
+  const loadMetrics = useCallback(async () => {
+    try {
+      const metrics = await api.getMetrics();
+      setState(prev => ({ ...prev, metrics }));
+    } catch (err) {
+      console.error('Failed to load metrics:', err);
+    }
+  }, []);
+
+  const loadEvents = useCallback(async () => {
+    try {
+      const response = await fetch('/events');
+      if (!response.ok) {
+        throw new Error(`Events endpoint not available: ${response.status}`);
+      }
+      const events = await response.json();
+      setState(prev => ({ ...prev, events }));
+    } catch (err) {
+      // Explicit error - do not fail silently
+      const message = err instanceof Error ? err.message : 'Failed to load events';
+      console.error('[loadEvents]', message);
+      throw new Error(message);
+    }
+  }, []);
+
+  // Load metrics on mount and poll every 10 seconds
+  useEffect(() => {
+    loadMetrics();
+    const metricsInterval = window.setInterval(loadMetrics, 10000);
+    return () => {
+      window.clearInterval(metricsInterval);
+    };
+  }, [loadMetrics]);
+
+  // NOTE: Events must be explicitly triggered - no automatic polling
+  // The /events endpoint must be implemented on backend first
+  // Use loadEvents() manually when needed
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -118,6 +160,8 @@ export function useSystemState() {
     loadRewards,
     loadRaffles,
     loadRaffleResult,
+    loadMetrics,
+    loadEvents,
     clearError,
   };
 }

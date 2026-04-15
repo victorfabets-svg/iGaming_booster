@@ -1,26 +1,9 @@
 // API client.
-// - Real endpoints: POST /proofs, GET /health/db
-// - Mocked aggregations (validation summary, funnel, recent proofs):
-//   not yet exposed by the backend; return seed data so the UI is usable
-//   while those endpoints are designed.
-
-import type { ProofRow } from '../components/ProofTable';
+// - All endpoints call real backend APIs
+// - No mock or seed data
 
 export interface SubmitProofResponse { proof_id: string; status: string; }
 export interface HealthResponse { status: 'ok' | 'degraded'; db?: 'ok' | 'down'; latencyMs?: number; }
-
-export interface ValidationStats {
-  approved: number;
-  rejected: number;
-  manual_review: number;
-}
-
-export interface FunnelStats {
-  clicks: number;
-  signups: number;
-  proofs_submitted: number;
-  proofs_validated: number;
-}
 
 // Proof types
 export interface Proof {
@@ -65,14 +48,38 @@ export interface RaffleResult {
   executed_at: string;
 }
 
-const SEED_PROOFS: ProofRow[] = [
-  { id: 'PRF-0042', date: '2026-04-14 09:12', user: 'user_123', amount: 250,  status: 'approved',      confidence: 0.94, risk: 'low',    campaign: 'FB-23',    type: 'original' },
-  { id: 'PRF-0043', date: '2026-04-14 08:47', user: 'user_456', amount: 100,  status: 'rejected',      confidence: 0.31, risk: 'high',   campaign: 'FB-23',    type: 'original' },
-  { id: 'PRF-0044', date: '2026-04-14 08:55', user: 'user_456', amount: 100,  status: 'manual_review', confidence: 0.87, risk: 'low',    campaign: 'FB-23',    type: 'revisao' },
-  { id: 'PRF-0045', date: '2026-04-13 17:30', user: 'user_789', amount: 500,  status: 'processing',    confidence: 0.58, risk: 'medium', campaign: 'TT-Promo', type: 'original' },
-  { id: 'PRF-0046', date: '2026-04-13 15:22', user: 'user_321', amount: 75,   status: 'approved',      confidence: 0.98, risk: 'low',    campaign: 'TT-Promo', type: 'original' },
-  { id: 'PRF-0047', date: '2026-04-13 12:05', user: 'user_654', amount: 200,  status: 'pending',       confidence: null, risk: null,     campaign: 'GG-Slot',  type: 'original' },
-];
+// Metrics types
+export interface MetricsSummary {
+  proof_submissions: number;
+  validations: {
+    approved: number;
+    rejected: number;
+    manual_review: number;
+  };
+  rewards: {
+    granted: number;
+    blocked: number;
+  };
+  tickets_generated: number;
+  raffle_executions: number;
+  fraud_signals: number;
+}
+
+export interface MetricsResponse {
+  metrics: string;
+  summary: MetricsSummary;
+}
+
+// Event types
+export interface SystemEvent {
+  id: string;
+  event_type: string;
+  version: string;
+  timestamp: string;
+  producer: string;
+  correlation_id: string;
+  payload: Record<string, unknown>;
+}
 
 const createApiClient = (baseUrl: string) => {
   const url = (path: string) => `${baseUrl}${path}`;
@@ -101,16 +108,6 @@ const createApiClient = (baseUrl: string) => {
         throw new Error(`HTTP ${response.status}`);
       }
       return response.json();
-    },
-
-    async getValidationStats(): Promise<ValidationStats> {
-      // TODO: replace with GET /validation/stats once backend exposes it
-      return { approved: 704, rejected: 420, manual_review: 156 };
-    },
-
-    async getFunnelStats(): Promise<FunnelStats> {
-      // TODO: replace with GET /analytics/funnel once backend exposes it
-      return { clicks: 10000, signups: 3200, proofs_submitted: 1280, proofs_validated: 704 };
     },
 
     async getRecentProofs(): Promise<Proof[]> {
@@ -157,6 +154,14 @@ const createApiClient = (baseUrl: string) => {
       const response = await fetch(url(`/raffles/${id}/result`));
       if (!response.ok) {
         throw new Error(`Failed to fetch raffle result: ${response.status}`);
+      }
+      return response.json();
+    },
+
+    async getMetrics(): Promise<MetricsResponse> {
+      const response = await fetch(url('/metrics'));
+      if (!response.ok) {
+        throw new Error(`Failed to fetch metrics: ${response.status}`);
       }
       return response.json();
     },

@@ -1,36 +1,69 @@
-import React, { useMemo, useState } from 'react';
-import ProofTable, { ProofRow } from '../../components/ProofTable';
+import React, { useState } from 'react';
+import ProofTable from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
+import { useSystemState } from '../../state/useSystemState';
+import createApiClient from '../../services/api';
 
-interface Props {
-  proofs: ProofRow[];
-  onUpload: (file: File) => void;
-  uploading: boolean;
-  uploadError: string | null;
-  lastUploadId?: string | null;
-  lastUploadStatus?: string | null;
-}
+const api = createApiClient('');
 
-const HistoricoSection: React.FC<Props> = ({ proofs, onUpload, uploading, uploadError, lastUploadId, lastUploadStatus }) => {
+const HistoricoSection: React.FC = () => {
+  // Use ONLY global system state - no duplicate local state
+  const { proof, loading, error, loadProof } = useSystemState();
+  
+  // Keep UI-only state (filters are not data state)
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [campaignFilter, setCampaignFilter] = useState<string>('');
 
-  const filtered = useMemo(() => proofs.filter(p => {
+  const handleUpload = async (file: File) => {
+    try {
+      // Step 1: Submit the file to backend
+      const res = await api.submitProof(file);
+      
+      // Step 2: Extract proof_id from backend response
+      const { proof_id } = res;
+      
+      // Step 3: Load the proof using correct proof_id
+      // This updates global state (loading, error, proof)
+      await loadProof(proof_id);
+    } catch (err) {
+      // Error is already set in global state via loadProof
+      console.error('Upload failed:', err);
+    }
+  };
+
+  // Show single proof from global state or empty state if no proof exists
+  const proofsToShow = proof ? [proof] : [];
+  const hasFilter = statusFilter || campaignFilter;
+  
+  // Apply filters if they exist
+  const filteredProofs = proofsToShow.filter(p => {
     if (statusFilter && p.status !== statusFilter) return false;
     if (campaignFilter && p.campaign !== campaignFilter) return false;
     return true;
-  }), [proofs, statusFilter, campaignFilter]);
+  });
+
+  const showEmpty = hasFilter || filteredProofs.length === 0;
+
+  if (loading) {
+    return (
+      <section>
+        <div className="loading-state">
+          <p>Carregando dados...</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section>
       <div className="g-row">
         <div className="card g-col-12">
           <h3 className="card-title">Enviar Comprovante</h3>
-          <ProofUpload onSubmit={onUpload} loading={uploading} />
-          {uploadError && <p style={{ color: 'var(--color-error-primary)', marginTop: 12 }}>Falha no envio: {uploadError}</p>}
-          {lastUploadId && (
+          <ProofUpload onSubmit={handleUpload} loading={loading} />
+          {error && <p style={{ color: 'var(--color-error-primary)', marginTop: 12 }}>Falha no envio: {error}</p>}
+          {proof && (
             <p style={{ color: 'var(--color-success-primary)', marginTop: 12, fontSize: 13 }}>
-              Comprovante enviado: <code>{lastUploadId}</code> — status: <b>{lastUploadStatus || 'pending'}</b>
+              Comprovante enviado: <code>{proof.id}</code> — status: <b>{proof.status || 'pending'}</b>
             </p>
           )}
         </div>
@@ -71,7 +104,15 @@ const HistoricoSection: React.FC<Props> = ({ proofs, onUpload, uploading, upload
       </div>
 
       <div className="g-row">
-        <ProofTable rows={filtered} />
+        {showEmpty ? (
+          <div className="card g-col-12">
+            <div className="empty-state">
+              <p>Nenhum comprovante encontrado</p>
+            </div>
+          </div>
+        ) : (
+          <ProofTable rows={filteredProofs} />
+        )}
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
-import React from 'react';
-import { useSystemState } from '../hooks/useSystemState';
+import React, { useEffect } from 'react';
+import { useSystemState } from '../state/useSystemState';
 
 const statusBadgeClass = (status: string) => {
   switch (status) {
@@ -28,9 +28,13 @@ const statusLabel = (status: string) => {
 };
 
 const RafflePanel: React.FC = () => {
-  const { raffles, rafflesLoading, rafflesError } = useSystemState();
+  const { raffles, loading, error, loadRaffles } = useSystemState();
 
-  if (rafflesLoading) {
+  useEffect(() => {
+    loadRaffles();
+  }, [loadRaffles]);
+
+  if (loading) {
     return (
       <div className="card">
         <h3 className="card-title">Sorteio</h3>
@@ -41,13 +45,13 @@ const RafflePanel: React.FC = () => {
     );
   }
 
-  if (rafflesError) {
+  if (error) {
     return (
       <div className="card">
         <h3 className="card-title">Sorteio</h3>
         <div className="alert-box alert-error">
           <h4>Erro</h4>
-          <p>{rafflesError}</p>
+          <p>{error}</p>
         </div>
       </div>
     );

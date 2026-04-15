@@ -1,16 +1,11 @@
 import React from 'react';
 import Icon from './Icon';
 
-export type SectionId = 'overview' | 'funnel' | 'payments' | 'risk' | 'campaigns' | 'historico' | 'systemflow';
+export type SectionId = 'historico' | 'systemflow';
 
 interface NavItem { id: SectionId; label: string; icon: React.ComponentProps<typeof Icon>['name']; }
 
 const NAV: NavItem[] = [
-  { id: 'overview', label: 'Visão Geral', icon: 'dashboard' },
-  { id: 'funnel', label: 'Funil e Validação', icon: 'filter' },
-  { id: 'payments', label: 'Pagamentos', icon: 'card' },
-  { id: 'risk', label: 'Risco e Fraude', icon: 'shield' },
-  { id: 'campaigns', label: 'Campanhas', icon: 'target' },
   { id: 'historico', label: 'Histórico', icon: 'history' },
   { id: 'systemflow', label: 'Fluxo Sistema', icon: 'flow' },
 ];
