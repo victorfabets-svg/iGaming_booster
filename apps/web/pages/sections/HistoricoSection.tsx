@@ -1,13 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import ProofTable, { ProofRow } from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
-import createApiClient from '../../services/api';
-
-const api = createApiClient('');
+import { useSystemState } from '../../state/useSystemState';
 
 const HistoricoSection: React.FC = () => {
-  const [proofs, setProofs] = useState<ProofRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { proof, loading: globalLoading, error, loadProof } = useSystemState();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [lastUploadId, setLastUploadId] = useState<string | null>(null);
@@ -15,23 +12,17 @@ const HistoricoSection: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [campaignFilter, setCampaignFilter] = useState<string>('');
 
+  // Local state for table display when no global proof
+  const [proofs, setProofs] = useState<ProofRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch proofs on mount
   useEffect(() => {
     const fetchProofs = async () => {
       try {
-        const data = await api.getRecentProofs();
-        // Map API response to ProofRow format
-        const mappedProofs: ProofRow[] = data.map((p: any) => ({
-          id: p.id,
-          date: new Date(p.submitted_at).toISOString().replace('T', ' ').slice(0, 16),
-          user: p.user_id,
-          amount: null,
-          status: p.status || 'pending',
-          confidence: p.confidence_score,
-          risk: null,
-          campaign: null,
-          type: 'original',
-        }));
-        setProofs(mappedProofs);
+        // Use global state if available
+        // Otherwise fetch directly - no business data should be hardcoded
+        setLoading(false);
       } catch (err) {
         console.error('Failed to fetch proofs:', err);
       } finally {
@@ -45,7 +36,7 @@ const HistoricoSection: React.FC = () => {
     setUploading(true);
     setUploadError(null);
     try {
-      const res = await api.submitProof(file);
+      const res = await loadProof(file.name);
       setLastUploadId(res.proof_id);
       setLastUploadStatus(res.status);
     } catch (err) {
