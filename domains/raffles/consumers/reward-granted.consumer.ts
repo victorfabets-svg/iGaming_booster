@@ -112,41 +112,54 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   console.log(`🎰 Using raffle: ${raffle.id}`);
 
-// Step 4: Idempotent insert with explicit result tracking
-  // UNIQUE constraint on reward_id ensures idempotency
-  const ticketResult = await db.query(
-    `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (reward_id) DO NOTHING
-     RETURNING id`,
-    [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
-  );
+  // Step 4: Atomic ticket creation + audit in single transaction
+  // This guarantees: ticket + audit succeed together or rollback together
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
 
-  // Explicit idempotency check - insert audit log for both cases
-  if (ticketResult.rowCount === 1) {
-    // Ticket created - insert success audit
-    await db.query(
-      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [randomUUID(), 'ticket_created', 'ticket', ticketResult.rows[0].id, payload.user_id, JSON.stringify({
-        reward_id: payload.reward_id,
-        proof_id: payload.proof_id,
-        raffle_id: raffle.id
-      })]
+    // Insert ticket with idempotent conflict handling
+    const ticketResult = await client.query(
+      `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (reward_id) DO NOTHING
+       RETURNING id`,
+      [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
     );
-    console.log(`🎫 Created new eligibility ticket for reward: ${payload.reward_id}`);
-  } else if (ticketResult.rowCount === 0) {
-    // Duplicate - insert idempotency audit
-    await db.query(
-      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [randomUUID(), 'ticket_duplicate_ignored', 'ticket', null, payload.user_id, JSON.stringify({
-        reward_id: payload.reward_id,
-        reason: 'idempotency_conflict'
-      })]
-    );
-    console.log(`⚠️  Duplicate ticket ignored for reward: ${payload.reward_id} (already exists)`);
-    console.log(`   📋 idempotency_check: { reward_id: "${payload.reward_id}", status: "duplicate_ignored" }`);
+
+    // Explicit idempotency check - insert audit in same transaction
+    if (ticketResult.rowCount === 1) {
+      // Ticket created - insert success audit
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'ticket_created', 'ticket', ticketResult.rows[0].id, payload.user_id, JSON.stringify({
+          reward_id: payload.reward_id,
+          proof_id: payload.proof_id,
+          raffle_id: raffle.id
+        })]
+      );
+      console.log(`🎫 Created new eligibility ticket for reward: ${payload.reward_id}`);
+    } else if (ticketResult.rowCount === 0) {
+      // Duplicate - insert idempotency audit in same transaction
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'ticket_duplicate_ignored', 'ticket', null, payload.user_id, JSON.stringify({
+          reward_id: payload.reward_id,
+          reason: 'idempotency_conflict'
+        })]
+      );
+      console.log(`⚠️  Duplicate ticket ignored for reward: ${payload.reward_id} (already exists)`);
+      console.log(`   📋 idempotency_check: { reward_id: "${payload.reward_id}", status: "duplicate_ignored" }`);
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
