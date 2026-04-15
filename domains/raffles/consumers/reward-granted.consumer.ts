@@ -111,16 +111,24 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   console.log(`🎰 Using raffle: ${raffle.id}`);
 
-  // Step 4: Idempotent insert - exactly one ticket per reward
+  // Step 4: Idempotent insert with explicit result tracking
   // UNIQUE constraint on reward_id ensures idempotency
-  await db.query(
+  const ticketResult = await db.query(
     `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (reward_id) DO NOTHING`,
+     ON CONFLICT (reward_id) DO NOTHING
+     RETURNING id`,
     [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
   );
 
-  console.log(`🎫 Created eligibility ticket for reward: ${payload.reward_id}`);
+  // Explicit idempotency check - no silent paths
+  if (ticketResult.rowCount === 1) {
+    console.log(`🎫 Created new eligibility ticket for reward: ${payload.reward_id}`);
+  } else if (ticketResult.rowCount === 0) {
+    // Duplicate - already exists
+    console.log(`⚠️  Duplicate ticket ignored for reward: ${payload.reward_id} (already exists)`);
+    console.log(`   📋 idempotency_check: { reward_id: "${payload.reward_id}", status: "duplicate_ignored" }`);
+  }
 }
 
 if (require.main === module) {
