@@ -65,6 +65,28 @@ export interface RaffleResult {
   executed_at: string;
 }
 
+// Metrics types
+export interface MetricsSummary {
+  proof_submissions: number;
+  validations: {
+    approved: number;
+    rejected: number;
+    manual_review: number;
+  };
+  rewards: {
+    granted: number;
+    blocked: number;
+  };
+  tickets_generated: number;
+  raffle_executions: number;
+  fraud_signals: number;
+}
+
+export interface MetricsResponse {
+  metrics: string;
+  summary: MetricsSummary;
+}
+
 const SEED_PROOFS: ProofRow[] = [
   { id: 'PRF-0042', date: '2026-04-14 09:12', user: 'user_123', amount: 250,  status: 'approved',      confidence: 0.94, risk: 'low',    campaign: 'FB-23',    type: 'original' },
   { id: 'PRF-0043', date: '2026-04-14 08:47', user: 'user_456', amount: 100,  status: 'rejected',      confidence: 0.31, risk: 'high',   campaign: 'FB-23',    type: 'original' },
@@ -157,6 +179,14 @@ const createApiClient = (baseUrl: string) => {
       const response = await fetch(url(`/raffles/${id}/result`));
       if (!response.ok) {
         throw new Error(`Failed to fetch raffle result: ${response.status}`);
+      }
+      return response.json();
+    },
+
+    async getMetrics(): Promise<MetricsResponse> {
+      const response = await fetch(url('/metrics'));
+      if (!response.ok) {
+        throw new Error(`Failed to fetch metrics: ${response.status}`);
       }
       return response.json();
     },

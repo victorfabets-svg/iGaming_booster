@@ -4,6 +4,7 @@ import { db } from '../../../../shared/database/connection';
 import { proofRoutes } from './routes/proofs';
 import { rewardRoutes } from './routes/rewards';
 import { raffleRoutes } from './routes/raffles';
+import { getMetrics } from '../../shared/observability/metrics.controller';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -33,6 +34,11 @@ export function buildApp(): FastifyInstance {
     } catch (error) {
       return { status: 'error' };
     }
+  });
+
+  // Metrics endpoint
+  app.get('/metrics', async () => {
+    return await getMetrics();
   });
 
   return app;

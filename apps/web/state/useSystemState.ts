@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import createApiClient, { Proof, Reward, Raffle, RaffleResult } from '../services/api';
+import createApiClient, { Proof, Reward, Raffle, RaffleResult, MetricsResponse } from '../services/api';
 
 const api = createApiClient('');
 
@@ -8,6 +8,7 @@ export interface SystemState {
   rewards: Reward[];
   raffles: Raffle[];
   raffleResult: RaffleResult | null;
+  metrics: MetricsResponse | null;
   loading: boolean;
   error: string | null;
 }
@@ -17,6 +18,7 @@ const initialState: SystemState = {
   rewards: [],
   raffles: [],
   raffleResult: null,
+  metrics: null,
   loading: false,
   error: null,
 };
@@ -105,6 +107,24 @@ export function useSystemState() {
     }
   }, []);
 
+  const loadMetrics = useCallback(async () => {
+    try {
+      const metrics = await api.getMetrics();
+      setState(prev => ({ ...prev, metrics }));
+    } catch (err) {
+      console.error('Failed to load metrics:', err);
+    }
+  }, []);
+
+  // Load metrics on mount and poll every 10 seconds
+  useEffect(() => {
+    loadMetrics();
+    const metricsInterval = window.setInterval(loadMetrics, 10000);
+    return () => {
+      window.clearInterval(metricsInterval);
+    };
+  }, [loadMetrics]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -118,6 +138,7 @@ export function useSystemState() {
     loadRewards,
     loadRaffles,
     loadRaffleResult,
+    loadMetrics,
     clearError,
   };
 }
