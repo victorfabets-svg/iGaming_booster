@@ -67,9 +67,9 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
 }
 
 async function processRewardGranted(payload: RewardGrantedPayload): Promise<void> {
-  // Step 1: Validate reward exists and is granted
-  const rewardResult = await db.query<{ id: string; user_id: string; proof_id: string; status: string }>(
-    `SELECT id, user_id, proof_id, status
+  // Step 1: Validate reward exists
+  const rewardResult = await db.query<{ id: string; user_id: string; proof_id: string }>(
+    `SELECT id, user_id, proof_id
      FROM rewards.rewards
      WHERE id = $1`,
     [payload.reward_id]
@@ -82,18 +82,15 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   const reward = rewardResult.rows[0];
 
-  // Step 2: Validate reward status is 'granted'
-  if (reward.status !== 'granted') {
-    console.log(`⚠️  Reward ${payload.reward_id} has invalid status: ${reward.status}, cannot create ticket`);
-    return;
-  }
+  // Backend decides everything - no guard checks needed
+  // If reward exists, we proceed to create ticket
 
   if (reward.user_id !== payload.user_id) {
     console.log(`⚠️  Reward user_id mismatch: event=${payload.user_id}, reward=${reward.user_id}, cannot create ticket`);
     return;
   }
 
-  // Step 3: Validate proof exists
+  // Step 2: Validate proof exists
   const proofResult = await db.query<{ id: string }>(
     `SELECT id FROM validation.proofs WHERE id = $1`,
     [reward.proof_id]
@@ -104,7 +101,7 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
     return;
   }
 
-  // Step 4: Get active raffle - FREEZE RULE: do nothing if none exists
+  // Step 3: Get active raffle - FREEZE RULE: do nothing if none exists
   const raffle = await getActiveRaffle(new Date());
   
   if (!raffle) {
@@ -114,7 +111,7 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   console.log(`🎰 Using raffle: ${raffle.id}`);
 
-  // Step 5: Idempotent insert - exactly one ticket per reward
+  // Step 4: Idempotent insert - exactly one ticket per reward
   // UNIQUE constraint on reward_id ensures idempotency
   await db.query(
     `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
