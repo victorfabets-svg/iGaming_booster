@@ -1,4 +1,4 @@
-import { fetchAndLockEvents, getRetryCount, processWithRetry } from '../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, markEventAsProcessed, processEventExactlyOnce } from '../../../../../shared/events/event-consumer.repository';
 import { getRaffleById } from '../../application/get-active-raffle';
 import { executeRaffleDraw } from '../../application/execute-raffle-draw.use-case';
 
@@ -42,23 +42,30 @@ async function pollEvents(): Promise<void> {
 async function processEvent(event: { event_id?: string; id?: string; payload: unknown }): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as RaffleClosedPayload;
+  
+  // EXACTLY-ONCE: Check if already processed before attempting
+  const alreadyProcessed = await isEventProcessed(eventId);
+  if (alreadyProcessed) {
+    console.log(`⏭️  Event ${eventId} already processed, skipping (exactly-once)`);
+    return;
+  }
+
   const retryCount = await getRetryCount(eventId);
 
   console.log(`🎰 Processing raffle_closed event: ${eventId} (retry: ${retryCount})`);
   console.log(`   Raffle: ${payload.raffle_id}`);
 
-  const success = await processWithRetry(
-    eventId,
-    payload,
-    async () => {
-      await handleRaffleClosed(payload);
-    }
-  );
+  // Wrap in transaction with idempotency record
+  const result = await processEventExactlyOnce(eventId, async () => {
+    await handleRaffleClosed(payload);
+  });
 
-  if (success) {
-    console.log(`✅ Event ${eventId} processed successfully`);
+  if (result.skipped) {
+    console.log(`⏭️  Event ${eventId} skipped - already processed`);
+  } else if (result.success) {
+    console.log(`✅ Event ${eventId} processed exactly-once`);
   } else {
-    console.log(`📬 Event ${eventId} sent to DLQ after 3 retries`);
+    console.log(`📬 Event ${eventId} failed after retries`);
   }
 }
 

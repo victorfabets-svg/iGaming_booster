@@ -290,3 +290,74 @@ export async function processEventWithRetryLegacy(
 export function getBackoffDelayLegacy(retryAttempt: number): number {
   return getBackoffDelay(retryAttempt);
 }
+
+// ============================================================================
+// TASK 5: EXACTLY-ONCE PROCESSING - Idempotency for event processing
+// ============================================================================
+
+/**
+ * Check if event was already processed (idempotency check).
+ * Returns true if event exists in processed_events table.
+ */
+export async function isEventProcessed(eventId: string): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 FROM events.processed_events WHERE event_id = $1`,
+    [eventId]
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * Mark event as processed in the idempotency table.
+ * Should be called AFTER successful processing within a transaction.
+ */
+export async function markEventAsProcessed(eventId: string): Promise<void> {
+  await db.query(
+    `INSERT INTO events.processed_events (event_id) VALUES ($1)
+     ON CONFLICT (event_id) DO NOTHING`,
+    [eventId]
+  );
+}
+
+/**
+ * Process event with exactly-once guarantee using transaction.
+ * - Checks if already processed (skip if yes)
+ * - Wraps processing + idempotency record in single transaction
+ * 
+ * Returns: { success: boolean, skipped: boolean }
+ */
+export async function processEventExactlyOnce(
+  eventId: string,
+  processFn: () => Promise<void>
+): Promise<{ success: boolean; skipped: boolean }> {
+  // Step 1: Check if already processed (skip duplicate)
+  const alreadyProcessed = await isEventProcessed(eventId);
+  if (alreadyProcessed) {
+    console.log(`⏭️  Event ${eventId} already processed, skipping`);
+    return { success: true, skipped: true };
+  }
+
+  // Step 2: Process event within transaction with idempotency record
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Execute the business logic
+    await processFn();
+    
+    // Record successful processing (idempotency key)
+    await client.query(
+      `INSERT INTO events.processed_events (event_id) VALUES ($1)`,
+      [eventId]
+    );
+    
+    await client.query('COMMIT');
+    console.log(`✅ Event ${eventId} processed exactly-once`);
+    return { success: true, skipped: false };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
