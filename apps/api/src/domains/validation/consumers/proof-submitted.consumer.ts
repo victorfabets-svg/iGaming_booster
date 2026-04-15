@@ -1,4 +1,4 @@
-import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable, acquireEventLock, processEventWithRetry, ensureDlqTable, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
@@ -10,7 +10,8 @@ export async function startProofSubmittedConsumer(): Promise<void> {
 
   // Ensure processed_events table exists
   await ensureProcessedEventsTable();
-  console.log('✅ Processed events tracking ready');
+  await ensureDlqTable();
+  console.log('✅ Processed events & DLQ tables ready');
 
   // Initial poll
   await pollEvents();
@@ -50,16 +51,35 @@ async function processEvent(event: Event): Promise<void> {
   console.log(`   Type: ${EVENT_TYPE}`);
   console.log(`   Proof ID: ${payload.proof_id}`);
 
-  try {
-    await processProofSubmitted(payload);
+  // ============================================================================
+  // TASK 1: EVENT LOCK - Check if already processed, if yes → SKIP
+  // ============================================================================
+  
+  // Try to acquire lock - if fails, event was already processed
+  const lockAcquired = await acquireEventLock(eventId);
+  
+  if (!lockAcquired) {
+    console.log(`⏭️ Event ${eventId} already processed - skipping`);
+    return;
+  }
 
-    // Mark event as processed after successful handling
-    await markEventProcessed(eventId);
+  // ============================================================================
+  // TASK 3: RETRY STRATEGY - With DLQ fallback
+  // ============================================================================
+  
+  const success = await processEventWithRetry(
+    eventId,
+    payload,
+    async () => {
+      // This is the actual business logic - wrapped with retry
+      await processProofSubmitted(payload);
+    }
+  );
 
-    console.log(`✅ Event ${eventId} processed and marked`);
-  } catch (error) {
-    console.error(`❌ Failed to process event ${eventId}:`, error);
-    // Do not mark as processed on failure - will retry
+  if (success) {
+    console.log(`✅ Event ${eventId} processed successfully`);
+  } else {
+    console.log(`📬 Event ${eventId} sent to DLQ after max retries`);
   }
 }
 
