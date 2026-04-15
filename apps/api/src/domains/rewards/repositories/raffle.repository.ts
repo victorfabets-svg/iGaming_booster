@@ -51,3 +51,12 @@ export async function updateRaffleStatus(id: string, status: string): Promise<vo
     [status, id]
   );
 }
+
+export async function findAllRaffles(): Promise<Raffle[]> {
+  const result = await pool.query(
+    `SELECT id, name, prize, total_numbers, draw_date, status
+     FROM raffles.raffles
+     ORDER BY draw_date DESC`
+  );
+  return result.rows;
+}
