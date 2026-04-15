@@ -105,9 +105,10 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
     client.release();
   }
 
-  // Step 1: Validate reward exists
-  const rewardResult = await db.query<{ id: string; user_id: string; proof_id: string }>(
-    `SELECT id, user_id, proof_id
+  // Step 1: Validate reward exists and has valid status
+  // DB is source of truth - validate status before ticket creation
+  const rewardResult = await db.query<{ id: string; user_id: string; proof_id: string; status: string }>(
+    `SELECT id, user_id, proof_id, status
      FROM rewards.rewards
      WHERE id = $1`,
     [payload.reward_id]
@@ -120,9 +121,23 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
 
   const reward = rewardResult.rows[0];
 
-  // Backend decides everything - no guard checks needed
-  // If reward exists, we proceed to create ticket
+  // Validate reward status is 'granted' - fail-safe default
+  if (reward.status !== 'granted') {
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'invalid_reward_state', 'reward', reward.id, payload.user_id, JSON.stringify({
+        reward_id: reward.id,
+        expected_status: 'granted',
+        actual_status: reward.status,
+        reason: 'reward_status_not_granted'
+      })]
+    );
+    console.log(`⚠️  Reward ${reward.id} has invalid status: ${reward.status}, expected 'granted', cannot create ticket`);
+    return;
+  }
 
+  // Validate user_id matches - prevent ticket creation for wrong user
   if (reward.user_id !== payload.user_id) {
     console.log(`⚠️  Reward user_id mismatch: event=${payload.user_id}, reward=${reward.user_id}, cannot create ticket`);
     return;
