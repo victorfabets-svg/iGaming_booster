@@ -34,10 +34,15 @@ const TIMELINE_STEPS = ['submitted', 'processing', 'approved', 'rejected', 'manu
 
 // Inner component that uses the system state
 const SystemFlowContent: React.FC = () => {
-  const { proof, loading, error, loadProof } = useSystemState();
+  const { proof, loading, error, loadProof, loadEvents } = useSystemState();
   
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Load events once on page load
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
