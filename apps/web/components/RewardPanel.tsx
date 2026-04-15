@@ -1,5 +1,5 @@
-import React from 'react';
-import { useSystemState } from '../hooks/useSystemState';
+import React, { useEffect } from 'react';
+import { useSystemState } from '../state/useSystemState';
 
 const statusBadgeClass = (status: string) => {
   switch (status) {
@@ -14,10 +14,27 @@ const statusBadgeClass = (status: string) => {
   }
 };
 
-const RewardPanel: React.FC = () => {
-  const { rewards, rewardsLoading, rewardsError } = useSystemState();
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'granted':
+      return 'Concedida';
+    case 'pending':
+      return 'Pendente';
+    case 'expired':
+      return 'Expirada';
+    default:
+      return status;
+  }
+};
 
-  if (rewardsLoading) {
+const RewardPanel: React.FC = () => {
+  const { rewards, loading, error, loadRewards } = useSystemState();
+
+  useEffect(() => {
+    loadRewards();
+  }, [loadRewards]);
+
+  if (loading) {
     return (
       <div className="card">
         <h3 className="card-title">Recompensa</h3>
@@ -28,13 +45,13 @@ const RewardPanel: React.FC = () => {
     );
   }
 
-  if (rewardsError) {
+  if (error) {
     return (
       <div className="card">
         <h3 className="card-title">Recompensa</h3>
         <div className="alert-box alert-error">
           <h4>Erro</h4>
-          <p>{rewardsError}</p>
+          <p>{error}</p>
         </div>
       </div>
     );
@@ -60,7 +77,7 @@ const RewardPanel: React.FC = () => {
             <div className="reward-header">
               <span className="badge">{reward.id}</span>
               <span className={`badge ${statusBadgeClass(reward.status)}`}>
-                {reward.status === 'granted' ? 'Concedida' : reward.status === 'pending' ? 'Pendente' : 'Expirada'}
+                {statusLabel(reward.status)}
               </span>
             </div>
             <div className="reward-details">

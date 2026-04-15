@@ -4,50 +4,25 @@ import RewardPanel from '../components/RewardPanel';
 import TicketList from '../components/TicketList';
 import RafflePanel from '../components/RafflePanel';
 import RaffleResult from '../components/RaffleResult';
-import { SystemStateProvider, useSystemState } from '../hooks/useSystemState';
+import { useSystemState } from '../state/useSystemState';
 import createApiClient from '../services/api';
 
 const api = createApiClient('');
 
 // Inner component that uses the system state
 const SystemFlowContent: React.FC = () => {
-  const { currentProof, setCurrentProof, rewards, setRewards, tickets, setTickets, raffles, setRaffles, results, setResults } = useSystemState();
+  const { proof, loading, error, loadProof } = useSystemState();
   
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [proofStatusLoading, setProofStatusLoading] = useState(false);
-  const [proofStatusError, setProofStatusError] = useState<string | null>(null);
-
-  // Load initial data from API
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch rewards
-        setRewards([]);
-        // Fetch tickets
-        setTickets([]);
-        // Fetch raffles
-        setRaffles([]);
-        // Fetch results
-        setResults([]);
-      } catch (err) {
-        console.error('Error fetching system data:', err);
-      }
-    };
-    fetchData();
-  }, [setRewards, setTickets, setRaffles, setResults]);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
     setUploadError(null);
     try {
       const res = await api.submitProof(file);
-      setCurrentProof({
-        id: res.proof_id,
-        user_id: 'test-user',
-        status: res.status,
-        created_at: new Date().toISOString(),
-      });
+      // Load the proof to get full details and start polling
+      loadProof(res.proof_id);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'unknown');
     } finally {
@@ -55,48 +30,18 @@ const SystemFlowContent: React.FC = () => {
     }
   };
 
-  // Fetch proof status if there's a current proof
-  useEffect(() => {
-    if (!currentProof) return;
-    
-    const checkProofStatus = async () => {
-      setProofStatusLoading(true);
-      setProofStatusError(null);
-      try {
-        const proofs = await api.getRecentProofs();
-        const proof = proofs.find(p => p.id === currentProof.id);
-        if (proof) {
-          setCurrentProof({
-            ...currentProof,
-            status: proof.status,
-          });
-        }
-      } catch (err) {
-        setProofStatusError(err instanceof Error ? err.message : 'unknown');
-      } finally {
-        setProofStatusLoading(false);
-      }
-    };
-
-    // Check status every 5 seconds if proof is pending
-    if (currentProof.status === 'pending' || currentProof.status === 'processing') {
-      const interval = setInterval(checkProofStatus, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [currentProof?.id]);
-
-  const statusLabel = (status: string) => {
+  const statusLabel = (status: string | null) => {
     switch (status) {
       case 'approved': return 'Aprovado';
       case 'rejected': return 'Rejeitado';
       case 'manual_review': return 'Revisão Manual';
       case 'processing': return 'Em Análise';
       case 'pending': return 'Pendente';
-      default: return status;
+      default: return status || 'Desconhecido';
     }
   };
 
-  const statusBadgeClass = (status: string) => {
+  const statusBadgeClass = (status: string | null) => {
     switch (status) {
       case 'approved': return 'badge-success';
       case 'rejected': return 'badge-error';
@@ -143,35 +88,34 @@ const SystemFlowContent: React.FC = () => {
         </div>
         <div className="step-content">
           <div className="card">
-            {proofStatusLoading ? (
+            {loading ? (
               <div className="loading-state">
                 <p>Verificando status...</p>
               </div>
-            ) : currentProof ? (
+            ) : error ? (
+              <div className="alert-box alert-error">
+                <p>Erro: {error}</p>
+              </div>
+            ) : proof ? (
               <div className="proof-status">
                 <div className="status-row">
                   <span className="status-label">ID:</span>
-                  <span className="status-value mono">{currentProof.id}</span>
+                  <span className="status-value mono">{proof.id}</span>
                 </div>
                 <div className="status-row">
                   <span className="status-label">Status:</span>
-                  <span className={`badge ${statusBadgeClass(currentProof.status)}`}>
-                    {statusLabel(currentProof.status)}
+                  <span className={`badge ${statusBadgeClass(proof.status)}`}>
+                    {statusLabel(proof.status)}
                   </span>
                 </div>
                 <div className="status-row">
                   <span className="status-label">Enviado em:</span>
-                  <span className="status-value">{new Date(currentProof.created_at).toLocaleString('pt-BR')}</span>
+                  <span className="status-value">{new Date(proof.submitted_at).toLocaleString('pt-BR')}</span>
                 </div>
               </div>
             ) : (
               <div className="empty-state">
                 <p>Nenhuma prova enviada ainda</p>
-              </div>
-            )}
-            {proofStatusError && (
-              <div className="alert-box alert-error" style={{ marginTop: 12 }}>
-                <p>Erro: {proofStatusError}</p>
               </div>
             )}
           </div>
@@ -230,7 +174,7 @@ const SystemFlowContent: React.FC = () => {
           <span className="step-label">Resultado</span>
         </div>
         <div className="step-content">
-          <RaffleResult userId={currentProof?.user_id} />
+          <RaffleResult userId={proof?.user_id} />
         </div>
       </div>
     </section>
@@ -238,11 +182,7 @@ const SystemFlowContent: React.FC = () => {
 };
 
 const SystemFlow: React.FC = () => {
-  return (
-    <SystemStateProvider>
-      <SystemFlowContent />
-    </SystemStateProvider>
-  );
+  return <SystemFlowContent />;
 };
 
 export default SystemFlow;

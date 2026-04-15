@@ -1,10 +1,12 @@
 import React from 'react';
-import { useSystemState } from '../hooks/useSystemState';
+import { useSystemState } from '../state/useSystemState';
 
+// TicketList displays tickets - currently using rewards as data source
+// since tickets are linked to rewards in the backend
 const TicketList: React.FC = () => {
-  const { tickets, ticketsLoading, ticketsError } = useSystemState();
+  const { rewards, loading, error } = useSystemState();
 
-  if (ticketsLoading) {
+  if (loading) {
     return (
       <div className="card">
         <h3 className="card-title">Bilhetes</h3>
@@ -15,19 +17,19 @@ const TicketList: React.FC = () => {
     );
   }
 
-  if (ticketsError) {
+  if (error) {
     return (
       <div className="card">
         <h3 className="card-title">Bilhetes</h3>
         <div className="alert-box alert-error">
           <h4>Erro</h4>
-          <p>{ticketsError}</p>
+          <p>{error}</p>
         </div>
       </div>
     );
   }
 
-  if (tickets.length === 0) {
+  if (rewards.length === 0) {
     return (
       <div className="card">
         <h3 className="card-title">Bilhetes</h3>
@@ -44,21 +46,25 @@ const TicketList: React.FC = () => {
       <table className="table-engine">
         <thead>
           <tr>
-            <th>Número</th>
-            <th>Raffle ID</th>
-            <th>Criado em</th>
+            <th>ID</th>
+            <th>Reward ID</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {tickets.map((ticket) => (
-            <tr key={ticket.id}>
+          {rewards.map((reward) => (
+            <tr key={reward.id}>
               <td>
-                <span className="mono ticket-number">#{ticket.number.toString().padStart(4, '0')}</span>
+                <span className="mono ticket-number">#{reward.id}</span>
               </td>
               <td>
-                <span className="mono">{ticket.raffle_id}</span>
+                <span className="mono">{reward.proof_id}</span>
               </td>
-              <td>{new Date(ticket.created_at).toLocaleString('pt-BR')}</td>
+              <td>
+                <span className={`badge badge-${reward.status === 'granted' ? 'success' : 'warning'}`}>
+                  {reward.status}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>
