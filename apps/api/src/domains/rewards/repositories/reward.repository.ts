@@ -50,3 +50,12 @@ export async function updateRewardStatus(id: string, status: string): Promise<vo
     [status, id]
   );
 }
+
+export async function findAllRewards(): Promise<Reward[]> {
+  const result = await pool.query(
+    `SELECT id, user_id, proof_id, type, status, created_at
+     FROM rewards.rewards
+     ORDER BY created_at DESC`
+  );
+  return result.rows;
+}

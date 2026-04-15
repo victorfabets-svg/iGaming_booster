@@ -349,3 +349,246 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   background: rgba(255,255,255,0.02);
 }
 .upload-dropzone input { display: block; margin: 12px auto 0; color: var(--text-primary); }
+
+/* === SYSTEM FLOW === */
+.system-flow {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.flow-header {
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.flow-header h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.flow-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.flow-step {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.step-number {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-primary-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  box-shadow: 0 0 15px var(--color-primary-glow);
+}
+
+.step-label {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+.step-content {
+  flex-grow: 1;
+}
+
+.flow-arrow {
+  text-align: center;
+  font-size: 24px;
+  color: var(--text-muted);
+  padding: 16px 0;
+}
+
+/* Proof Status */
+.proof-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+
+.status-value {
+  font-size: 14px;
+}
+
+/* Reward List */
+.reward-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reward-item {
+  padding: 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+.reward-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.reward-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 100px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-value {
+  font-size: 14px;
+}
+
+.detail-value.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.prize-value {
+  color: var(--color-success-primary);
+  font-weight: 600;
+}
+
+/* Ticket Number */
+.ticket-number {
+  color: var(--color-primary-primary);
+  font-weight: 600;
+}
+
+/* Raffle List */
+.raffle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.raffle-item {
+  padding: 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+.raffle-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.raffle-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Result List */
+.result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-item {
+  padding: 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.result-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.winning-number {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  color: var(--color-success-primary);
+  text-align: center;
+  padding: 16px 0;
+  text-shadow: 0 0 20px var(--color-success-glow);
+}
+
+/* Loading/Empty States */
+.loading-state,
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.loading-state::before {
+  content: '';
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--color-primary-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

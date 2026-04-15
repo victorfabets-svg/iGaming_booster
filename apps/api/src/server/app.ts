@@ -2,6 +2,8 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import { db } from '../../../../shared/database/connection';
 import { proofRoutes } from './routes/proofs';
+import { rewardRoutes } from './routes/rewards';
+import { raffleRoutes } from './routes/raffles';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -17,6 +19,8 @@ export function buildApp(): FastifyInstance {
 
   // Register routes
   app.register(proofRoutes);
+  app.register(rewardRoutes);
+  app.register(raffleRoutes);
 
   app.get('/health', async () => {
     return { status: 'ok' };

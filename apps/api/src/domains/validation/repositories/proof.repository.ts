@@ -41,3 +41,14 @@ export async function findProofById(id: string): Promise<Proof | null> {
     [id]
   );
 }
+
+export async function findAllProofs(limit: number = 50): Promise<Proof[]> {
+  const result = await pool.query(
+    `SELECT id, user_id, file_url, hash, submitted_at 
+     FROM validation.proofs 
+     ORDER BY submitted_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
