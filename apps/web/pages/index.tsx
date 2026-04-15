@@ -7,6 +7,7 @@ import PaymentsSection from './sections/PaymentsSection';
 import RiskSection from './sections/RiskSection';
 import CampaignsSection from './sections/CampaignsSection';
 import HistoricoSection from './sections/HistoricoSection';
+import SystemFlow from './SystemFlow';
 import createApiClient, { ValidationStats, FunnelStats } from '../services/api';
 import type { ProofRow } from '../components/ProofTable';
 import type { StreamEvent } from '../components/EventStream';
@@ -119,6 +120,7 @@ const IndexPage: React.FC = () => {
             lastUploadStatus={lastUploadStatus}
           />
         )}
+        {section === 'systemflow' && <SystemFlow />}
       </main>
     </div>
   );

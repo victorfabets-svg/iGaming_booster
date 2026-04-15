@@ -5,7 +5,7 @@ type IconName =
   | 'history' | 'settings' | 'logout' | 'chevron-right'
   | 'calendar' | 'link' | 'pin' | 'activity' | 'layers'
   | 'eye' | 'refresh' | 'x' | 'file' | 'upload' | 'check'
-  | 'alert' | 'arrow-up' | 'arrow-down';
+  | 'alert' | 'arrow-up' | 'arrow-down' | 'flow';
 
 interface IconProps { name: IconName; size?: number; color?: string; }
 
@@ -33,6 +33,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   'alert': <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
   'arrow-up': <polyline points="18 15 12 9 6 15"/>,
   'arrow-down': <polyline points="6 9 12 15 18 9"/>,
+  'flow': <><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/><path d="M12 15v6"/><path d="M9 9l3-3 3 3"/><path d="M15 15l3 3-3 3"/><path d="M5 12h6"/><path d="M13 12h6"/></>,
 };
 
 const Icon: React.FC<IconProps> = ({ name, size = 18, color = 'currentColor' }) => (
