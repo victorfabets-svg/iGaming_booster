@@ -14,15 +14,23 @@ export interface Raffle {
 
 /**
  * Get raffle by ID with strict status check.
+ * Uses FOR SHARE to prevent race conditions while allowing concurrent reads.
  */
 export async function getRaffleById(raffleId: string): Promise<Raffle | null> {
-  const result = await db.query<Raffle>(
-    `SELECT id, name, prize, total_numbers, start_at, end_at, status
-     FROM raffles.raffles
-     WHERE id = $1`,
-    [raffleId]
-  );
-  return result.rows[0] || null;
+  const client = await getClient();
+  try {
+    // FOR SHARE: prevents concurrent FOR UPDATE, but allows other SHARED reads
+    const result = await client.query<Raffle>(
+      `SELECT id, name, prize, total_numbers, start_at, end_at, status
+       FROM raffles.raffles
+       WHERE id = $1
+       FOR SHARE`,
+      [raffleId]
+    );
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
 }
 
 /**

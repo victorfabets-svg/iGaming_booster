@@ -12,6 +12,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1029.0",
     "@aws-sdk/s3-request-presigner": "^3.1029.0",
+    "@fastify/jwt": "^8.0.0",
     "@fastify/multipart": "^8.1.0",
     "@supabase/supabase-js": "^2.103.0",
     "fastify": "^4.25.0",

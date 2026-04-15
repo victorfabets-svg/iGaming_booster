@@ -1,3 +1,4 @@
+-- Migration: 008b_validation_engine.sql
 -- VALIDATION ENGINE MIGRATION
 -- Adds unique constraint on proof_id for idempotency
 

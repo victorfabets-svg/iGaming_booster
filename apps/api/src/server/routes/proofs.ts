@@ -1,14 +1,24 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
+  // Apply auth middleware to all routes in this plugin
+  fastify.addHook('preHandler', authMiddleware);
+
   fastify.post(
     '/proofs',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Zero trust: user_id extracted from token, NOT from body
+      const user_id = (request as any).userId;
+      
+      if (!user_id) {
+        return reply.status(401).send({ error: 'Unauthorized: valid token required' });
+      }
+
       // Use parts() iterator to handle multipart form data
       const parts = request.parts();
 
-      let user_id: string | null = null;
       let fileBuffer: Buffer | null = null;
       let filename: string | null = null;
 
@@ -19,15 +29,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           fileBuffer = await part.toBuffer();
           filename = part.filename;
         }
-
-        if (part.type === 'field' && part.fieldname === 'user_id') {
-          user_id = part.value as string;
-        }
-      }
-
-      // Validate user_id
-      if (!user_id) {
-        return reply.status(400).send({ error: 'Missing required field: user_id' });
+        // NOTE: user_id no longer accepted from body - extracted from token only
       }
 
       // Validate file
@@ -35,7 +37,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Missing required file upload or file is empty' });
       }
 
-      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes`);
+      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
 
       const result = await createProofUseCase({
         user_id,
