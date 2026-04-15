@@ -4,6 +4,7 @@ import RewardPanel from '../components/RewardPanel';
 import TicketList from '../components/TicketList';
 import RafflePanel from '../components/RafflePanel';
 import RaffleResult from '../components/RaffleResult';
+import MetricsPanel from '../components/MetricsPanel';
 import { useSystemState } from '../state/useSystemState';
 import createApiClient from '../services/api';
 
@@ -230,6 +231,20 @@ const SystemFlowContent: React.FC = () => {
         </div>
         <div className="step-content">
           <RaffleResult userId={proof?.user_id} />
+        </div>
+      </div>
+
+      {/* Arrow */}
+      <div className="flow-arrow">↓</div>
+
+      {/* Step 7: Metrics Panel */}
+      <div className="flow-step">
+        <div className="step-indicator">
+          <span className="step-number">7</span>
+          <span className="step-label">Métricas</span>
+        </div>
+        <div className="step-content">
+          <MetricsPanel />
         </div>
       </div>
     </section>
