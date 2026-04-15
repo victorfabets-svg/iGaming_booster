@@ -1,4 +1,5 @@
-import { db } from '../../../shared/database/connection';
+import * as crypto from 'crypto';
+import { db, getClient } from '../../../shared/database/connection';
 
 export interface Raffle {
   id: string;
@@ -42,20 +43,78 @@ export async function getRaffleById(raffleId: string): Promise<Raffle | null> {
 }
 
 /**
+ * Deterministic seed generation: sha256(raffle_id + total_tickets)
+ * Ensures seed is based on raffle ID and final ticket count for reproducibility.
+ */
+function generateSeed(raffleId: string, totalTickets: number): string {
+  return crypto.createHash('sha256').update(raffleId + totalTickets).digest('hex');
+}
+
+/**
  * Close raffle after end_at passes.
  * Transitions: active -> closed
+ * 
+ * RACE-SAFE flow:
+ * 1. LOCK raffle row (FOR UPDATE)
+ * 2. Close raffle (freeze ticket set)
+ * 3. COUNT tickets AFTER close
+ * 4. Generate & insert seed
  */
 export async function closeRaffle(raffleId: string): Promise<boolean> {
-  const result = await db.query(
-    `UPDATE raffles.raffles 
-     SET status = 'closed' 
-     WHERE id = $1 
-       AND status = 'active' 
-       AND end_at <= NOW()
-     RETURNING id`,
-    [raffleId]
-  );
-  return result.rows.length > 0;
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Step 1: LOCK raffle row to prevent race conditions
+    await client.query(
+      `SELECT id FROM raffles.raffles WHERE id = $1 FOR UPDATE`,
+      [raffleId]
+    );
+    
+    // Step 2: Close raffle FIRST (freezes ticket set)
+    const closeResult = await client.query(
+      `UPDATE raffles.raffles 
+       SET status = 'closed' 
+       WHERE id = $1 
+         AND status = 'active' 
+         AND end_at <= NOW()
+       RETURNING id`,
+      [raffleId]
+    );
+    
+    if (closeResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    
+    // Step 3: COUNT after close (race-safe - no new tickets can be added)
+    const ticketCountResult = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text as count FROM raffles.tickets WHERE raffle_id = $1`,
+      [raffleId]
+    );
+    const totalTickets = parseInt(ticketCountResult.rows[0]?.count ?? '0', 10);
+    
+    // Step 4: Generate deterministic seed
+    const seed = generateSeed(raffleId, totalTickets);
+    
+    // Step 5: Insert with correct schema (algorithm_version, no result_number)
+    await client.query(
+      `INSERT INTO raffles.raffle_draws (raffle_id, seed, algorithm_version)
+       VALUES ($1, $2, 'v1')
+       ON CONFLICT (raffle_id) DO NOTHING`,
+      [raffleId, seed]
+    );
+    
+    await client.query('COMMIT');
+    console.log(`🔐 Seed persisted for raffle ${raffleId}: ${seed} (${totalTickets} tickets)`);
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
