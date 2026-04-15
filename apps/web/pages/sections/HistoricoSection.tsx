@@ -1,32 +1,84 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import ProofTable, { ProofRow } from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
+import createApiClient from '../../services/api';
 
-interface Props {
-  proofs: ProofRow[];
-  onUpload: (file: File) => void;
-  uploading: boolean;
-  uploadError: string | null;
-  lastUploadId?: string | null;
-  lastUploadStatus?: string | null;
-}
+const api = createApiClient('');
 
-const HistoricoSection: React.FC<Props> = ({ proofs, onUpload, uploading, uploadError, lastUploadId, lastUploadStatus }) => {
+const HistoricoSection: React.FC = () => {
+  const [proofs, setProofs] = useState<ProofRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [lastUploadId, setLastUploadId] = useState<string | null>(null);
+  const [lastUploadStatus, setLastUploadStatus] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [campaignFilter, setCampaignFilter] = useState<string>('');
 
-  const filtered = useMemo(() => proofs.filter(p => {
-    if (statusFilter && p.status !== statusFilter) return false;
-    if (campaignFilter && p.campaign !== campaignFilter) return false;
-    return true;
-  }), [proofs, statusFilter, campaignFilter]);
+  useEffect(() => {
+    const fetchProofs = async () => {
+      try {
+        const data = await api.getRecentProofs();
+        // Map API response to ProofRow format
+        const mappedProofs: ProofRow[] = data.map((p: any) => ({
+          id: p.id,
+          date: new Date(p.submitted_at).toISOString().replace('T', ' ').slice(0, 16),
+          user: p.user_id,
+          amount: null,
+          status: p.status || 'pending',
+          confidence: p.confidence_score,
+          risk: null,
+          campaign: null,
+          type: 'original',
+        }));
+        setProofs(mappedProofs);
+      } catch (err) {
+        console.error('Failed to fetch proofs:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProofs();
+  }, []);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const res = await api.submitProof(file);
+      setLastUploadId(res.proof_id);
+      setLastUploadStatus(res.status);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'unknown');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const filtered = useMemo(() => {
+    return proofs.filter(p => {
+      if (statusFilter && p.status !== statusFilter) return false;
+      if (campaignFilter && p.campaign !== campaignFilter) return false;
+      return true;
+    });
+  }, [proofs, statusFilter, campaignFilter]);
+
+  if (loading) {
+    return (
+      <section>
+        <div className="loading-state">
+          <p>Carregando dados...</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section>
       <div className="g-row">
         <div className="card g-col-12">
           <h3 className="card-title">Enviar Comprovante</h3>
-          <ProofUpload onSubmit={onUpload} loading={uploading} />
+          <ProofUpload onSubmit={handleUpload} loading={uploading} />
           {uploadError && <p style={{ color: 'var(--color-error-primary)', marginTop: 12 }}>Falha no envio: {uploadError}</p>}
           {lastUploadId && (
             <p style={{ color: 'var(--color-success-primary)', marginTop: 12, fontSize: 13 }}>
@@ -71,7 +123,15 @@ const HistoricoSection: React.FC<Props> = ({ proofs, onUpload, uploading, upload
       </div>
 
       <div className="g-row">
-        <ProofTable rows={filtered} />
+        {filtered.length > 0 ? (
+          <ProofTable rows={filtered} />
+        ) : (
+          <div className="card g-col-12">
+            <div className="empty-state">
+              <p>Nenhum comprovante encontrado</p>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
