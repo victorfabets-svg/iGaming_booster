@@ -23,15 +23,37 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
   console.log(`🎰 Executing raffle draw for raffle: ${raffle_id}`);
   logger.info('raffle_execution_started', 'raffles', `Executing raffle draw: ${raffle_id}`, undefined, { raffle_id });
 
-  // Step 1: Get seed from raffle_draws - FAILSAFE
-  let seed = await getSeedForDraw(raffle_id);
+  // Step 1: Check if draw already has winner (IDEMPOTENCY GUARD)
+  const existingDraw = await db.query<{ raffle_id: string; winner_ticket_id: string; winner_user_id: string; seed: string }>(
+    `SELECT raffle_id, winner_ticket_id, winner_user_id, seed 
+     FROM raffles.raffle_draws 
+     WHERE raffle_id = $1`,
+    [raffle_id]
+  );
+
+  // If winner already exists, return early (idempotent)
+  if (existingDraw.rows[0]?.winner_ticket_id) {
+    const existing = existingDraw.rows[0];
+    console.log(`♻️  Draw already executed for raffle: ${raffle_id}, returning existing winner`);
+    logger.info('raffle_already_executed', 'raffles', `Draw already executed: ${raffle_id}`, undefined, { raffle_id });
+    return {
+      raffle_id: existing.raffle_id,
+      winning_ticket_id: existing.winner_ticket_id,
+      user_id: existing.winner_user_id,
+      seed: existing.seed,
+      total_tickets: 0, // Not known from this query, but idempotent result
+    };
+  }
+
+  // Step 2: Get seed from raffle_draws - FAILSAFE
+  let seed = existingDraw.rows[0]?.seed ?? await getSeedForDraw(raffle_id);
   if (!seed) {
     console.log(`⚠️  No seed found for raffle: ${raffle_id}, cannot execute draw`);
     throw new Error(`Seed not found for raffle: ${raffle_id}. Draw requires seed.`);
   }
   console.log(`🔐 Using seed: ${seed}`);
 
-  // Step 2: Validate raffle is closed
+  // Step 3: Validate raffle is closed
   const raffle = await getRaffleById(raffle_id);
   if (!raffle) {
     throw new Error(`Raffle not found: ${raffle_id}`);
@@ -41,11 +63,11 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
   }
   console.log(`📋 Raffle: ${raffle.name}, status: ${raffle.status}`);
 
-  // Step 3: Fetch tickets - FAILSAFE
+  // Step 4: Fetch tickets - FAILSAFE
   const tickets = await fetchTicketsForDraw(raffle_id);
   console.log(`🎫 Found ${tickets.length} tickets in raffle`);
 
-  // Step 4: Exit if no tickets
+  // Step 5: Exit if no tickets
   if (tickets.length === 0) {
     console.log(`⚠️  No tickets in raffle, exiting draw`);
     
@@ -64,7 +86,7 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
     };
   }
 
-  // Step 5-6: Run deterministic draw + state update + event in SINGLE TRANSACTION
+  // Step 6: Run deterministic draw + state update + event in SINGLE TRANSACTION
   const winners = selectWinner(tickets, seed);
   const winnerTicketId = winners?.ticket_id ?? null;
   const winnerUserId = winners?.user_id ?? null;
