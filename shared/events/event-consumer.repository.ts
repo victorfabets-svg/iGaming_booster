@@ -3,87 +3,17 @@ import { Event } from './types';
 export { Event };
 
 // ============================================================================
-// TASK 0: MIGRATIONS - Add columns and create tables
-// ============================================================================
-
-/**
- * Run migrations to set up required columns and tables.
- * Must be called once on startup.
- */
-export async function runEventMigrations(): Promise<void> {
-  // Add retry_count column if not exists
-  await db.query(`
-    ALTER TABLE events.events 
-    ADD COLUMN IF NOT EXISTS retry_count INT DEFAULT 0
-  `).catch(() => {
-    // Column may already exist - ignore errors
-  });
-
-  // Add processed column if not exists (for row-level locking)
-  await db.query(`
-    ALTER TABLE events.events 
-    ADD COLUMN IF NOT EXISTS processed BOOLEAN DEFAULT FALSE
-  `).catch(() => {
-    // Column may already exist - ignore errors
-  });
-
-  // TASK 4: Add locked_at column for stuck event recovery
-  await db.query(`
-    ALTER TABLE events.events 
-    ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP
-  `).catch(() => {
-    // Column may already exist - ignore errors
-  });
-
-  // Create audit schema if not exists
-  await db.query(`
-    CREATE SCHEMA IF NOT EXISTS audit
-  `).catch(() => {});
-
-  // TASK 2: Create audit table
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS audit.audit_logs (
-      id UUID PRIMARY KEY,
-      action TEXT,
-      entity_type TEXT,
-      entity_id UUID,
-      user_id TEXT,
-      metadata JSONB,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `).catch(() => {});
-
-  // Create DLQ table
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS events.dlq_events (
-      event_id TEXT PRIMARY KEY,
-      payload JSONB NOT NULL,
-      error TEXT,
-      retries INT DEFAULT 0,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  // Create index for dlq_events if not exists
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_dlq_events_created_at 
-    ON events.dlq_events(created_at DESC)
-  `).catch(() => {});
-
-  console.log('[MIGRATIONS] Event tables and columns ready');
-}
-
-// ============================================================================
-// TASK 1: ROW LOCK - Ensure atomic event fetching with FOR UPDATE SKIP LOCKED
+// ROW LOCK - Ensure atomic event fetching with FOR UPDATE SKIP LOCKED
 // ============================================================================
 
 /**
  * Fetch unprocessed events with row-level locking (FOR UPDATE SKIP LOCKED).
  * This prevents multiple consumers from processing the same event.
+ * 
+ * NOTE: Schema must exist via migration (009_hardening_layer.sql).
+ * If tables/columns are missing, this will fail fast - which is correct behavior.
  */
 export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
-  await runEventMigrations();
-
   const result = await db.query<Event>(
     `SELECT id, event_type, version, producer, correlation_id, payload, 
             retry_count, processed, timestamp, locked_at
@@ -325,7 +255,7 @@ export async function processWithRetry(
 // ============================================================================
 
 export async function ensureProcessedEventsTable(): Promise<void> {
-  await runEventMigrations();
+  // Schema now must exist via migration - fail fast if missing
 }
 
 export async function fetchUnprocessedEvents(limit: number = 100): Promise<Event[]> {
@@ -342,7 +272,7 @@ export async function acquireEventLock(eventId: string): Promise<boolean> {
 }
 
 export async function ensureDlqTable(): Promise<void> {
-  await runEventMigrations();
+  // Schema now must exist via migration - fail fast if missing
 }
 
 export async function markEventProcessedLegacy(eventId: string): Promise<void> {
