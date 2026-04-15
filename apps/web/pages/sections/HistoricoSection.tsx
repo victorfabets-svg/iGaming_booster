@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import ProofTable, { ProofRow } from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
 import { useSystemState } from '../../state/useSystemState';
@@ -11,26 +11,6 @@ const HistoricoSection: React.FC = () => {
   const [lastUploadStatus, setLastUploadStatus] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [campaignFilter, setCampaignFilter] = useState<string>('');
-
-  // Local state for table display when no global proof
-  const [proofs, setProofs] = useState<ProofRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Fetch proofs on mount
-  useEffect(() => {
-    const fetchProofs = async () => {
-      try {
-        // Use global state if available
-        // Otherwise fetch directly - no business data should be hardcoded
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to fetch proofs:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProofs();
-  }, []);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
@@ -46,15 +26,20 @@ const HistoricoSection: React.FC = () => {
     }
   };
 
-  const filtered = useMemo(() => {
-    return proofs.filter(p => {
-      if (statusFilter && p.status !== statusFilter) return false;
-      if (campaignFilter && p.campaign !== campaignFilter) return false;
-      return true;
-    });
-  }, [proofs, statusFilter, campaignFilter]);
+  // Show single proof from global state or empty state if no proof exists
+  const proofsToShow = proof ? [proof] : [];
+  const hasFilter = statusFilter || campaignFilter;
+  
+  // Apply filters if they exist
+  const filteredProofs = proofsToShow.filter(p => {
+    if (statusFilter && p.status !== statusFilter) return false;
+    if (campaignFilter && p.campaign !== campaignFilter) return false;
+    return true;
+  });
 
-  if (loading) {
+  const showEmpty = hasFilter || filteredProofs.length === 0;
+
+  if (globalLoading) {
     return (
       <section>
         <div className="loading-state">
@@ -114,14 +99,14 @@ const HistoricoSection: React.FC = () => {
       </div>
 
       <div className="g-row">
-        {filtered.length > 0 ? (
-          <ProofTable rows={filtered} />
-        ) : (
+        {showEmpty ? (
           <div className="card g-col-12">
             <div className="empty-state">
               <p>Nenhum comprovante encontrado</p>
             </div>
           </div>
+        ) : (
+          <ProofTable rows={filteredProofs} />
         )}
       </div>
     </section>
