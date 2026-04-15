@@ -76,6 +76,7 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
 
   // Step 7: Execute draw with full transactional atomicity
   let winnerUserId: string | null = null;
+  let winnerTicketId: string | null = null;
   let winnerTicketNumber: number | null = null;
 
   const result = await withTransactionalOutbox(async (client) => {
@@ -105,7 +106,8 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
 
       if (selectedTicket) {
         winnerUserId = selectedTicket.user_id;
-        winnerTicketNumber = selectedTicket.number;
+        winnerTicketId = selectedTicket.id;
+        winnerTicketNumber = selectedTicket.number ?? null;
 
         // Update draw with winner
         await client.query(
@@ -120,18 +122,19 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
 
     // Update raffle status
     await client.query(
-      `UPDATE raffles.raffles SET status = 'executed' WHERE id = $1`,
+      `UPDATE raffles.raffles SET status = 'completed' WHERE id = $1`,
       [raffle_id]
     );
-    console.log(`✅ Raffle status updated to: executed`);
+    console.log(`✅ Raffle status updated to: completed`);
 
-    // Emit raffle_draw_executed event
-    await queueEventInTransaction(client, 'raffle_draw_executed', {
+    // Emit raffle_completed event
+    await queueEventInTransaction(client, 'raffle_completed', {
       raffle_id: raffle_id,
-      winning_number: winnerTicketNumber || resultNumber,
-      user_id: winnerUserId,
+      winner_user_id: winnerUserId,
+      winner_ticket_id: winnerTicketId,
+      total_tickets: tickets.length,
       seed: seed,
-      ticket_count: tickets.length,
+      algorithm: 'sha256_modulo',
     }, 'raffles');
 
     // Audit: Insert audit log for raffle executed
