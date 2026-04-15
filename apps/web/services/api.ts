@@ -87,6 +87,17 @@ export interface MetricsResponse {
   summary: MetricsSummary;
 }
 
+// Event types
+export interface SystemEvent {
+  id: string;
+  event_type: string;
+  version: string;
+  timestamp: string;
+  producer: string;
+  correlation_id: string;
+  payload: Record<string, unknown>;
+}
+
 const SEED_PROOFS: ProofRow[] = [
   { id: 'PRF-0042', date: '2026-04-14 09:12', user: 'user_123', amount: 250,  status: 'approved',      confidence: 0.94, risk: 'low',    campaign: 'FB-23',    type: 'original' },
   { id: 'PRF-0043', date: '2026-04-14 08:47', user: 'user_456', amount: 100,  status: 'rejected',      confidence: 0.31, risk: 'high',   campaign: 'FB-23',    type: 'original' },

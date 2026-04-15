@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import createApiClient, { Proof, Reward, Raffle, RaffleResult, MetricsResponse } from '../services/api';
+import createApiClient, { Proof, Reward, Raffle, RaffleResult, MetricsResponse, SystemEvent } from '../services/api';
 
 const api = createApiClient('');
 
@@ -9,6 +9,7 @@ export interface SystemState {
   raffles: Raffle[];
   raffleResult: RaffleResult | null;
   metrics: MetricsResponse | null;
+  events: SystemEvent[];
   loading: boolean;
   error: string | null;
 }
@@ -19,6 +20,7 @@ const initialState: SystemState = {
   raffles: [],
   raffleResult: null,
   metrics: null,
+  events: [],
   loading: false,
   error: null,
 };
@@ -116,6 +118,18 @@ export function useSystemState() {
     }
   }, []);
 
+  const loadEvents = useCallback(async () => {
+    try {
+      const response = await fetch('/events');
+      if (response.ok) {
+        const events = await response.json();
+        setState(prev => ({ ...prev, events }));
+      }
+    } catch (err) {
+      console.error('Failed to load events:', err);
+    }
+  }, []);
+
   // Load metrics on mount and poll every 10 seconds
   useEffect(() => {
     loadMetrics();
@@ -124,6 +138,15 @@ export function useSystemState() {
       window.clearInterval(metricsInterval);
     };
   }, [loadMetrics]);
+
+  // Load events on mount and poll every 8 seconds (optional)
+  useEffect(() => {
+    loadEvents();
+    const eventsInterval = window.setInterval(loadEvents, 8000);
+    return () => {
+      window.clearInterval(eventsInterval);
+    };
+  }, [loadEvents]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -139,6 +162,7 @@ export function useSystemState() {
     loadRaffles,
     loadRaffleResult,
     loadMetrics,
+    loadEvents,
     clearError,
   };
 }
