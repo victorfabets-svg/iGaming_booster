@@ -13,6 +13,76 @@ export function getDb(): pg.Pool {
   return _db;
 }
 
+/**
+ * Get a client from the pool for transactional operations.
+ * Caller MUST release the client (even on error).
+ */
+export async function getClient(): Promise<pg.PoolClient> {
+  if (!_db) {
+    throw new Error('Database not initialized. Call initDb() first.');
+  }
+  return _db.connect();
+}
+
+/**
+ * Execute a callback within a transaction.
+ * Automatically commits on success, rolls back on error.
+ */
+export async function withTransaction<T>(
+  callback: (client: pg.PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Save event within a transaction.
+ */
+export async function saveEventInTransaction(
+  client: pg.PoolClient,
+  event_id: string,
+  event_type: string,
+  version: string,
+  producer: string,
+  correlation_id: string,
+  payload: Record<string, any>
+): Promise<void> {
+  await client.query(
+    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [event_id, event_type, version, producer, correlation_id, JSON.stringify(payload)]
+  );
+}
+
+/**
+ * Log audit entry within a transaction.
+ */
+export async function logAuditInTransaction(
+  client: pg.PoolClient,
+  action: string,
+  entity_type: string,
+  entity_id: string,
+  user_id: string | null,
+  metadata: Record<string, any>
+): Promise<void> {
+  await client.query(
+    `INSERT INTO audit.audit_logs (action, entity_type, entity_id, user_id, metadata)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [action, entity_type, entity_id, user_id, JSON.stringify(metadata)]
+  );
+}
+
 export async function initDb(connectionString?: string): Promise<void> {
   const dbUrl = connectionString || process.env.DATABASE_URL;
   

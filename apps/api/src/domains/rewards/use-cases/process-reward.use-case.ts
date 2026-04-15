@@ -5,7 +5,7 @@ import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } fro
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
 import { createRewardEconomics } from '../repositories/reward-economics.repository';
-import { createEvent } from '../../../../../../shared/events/event.repository';
+import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -60,16 +60,13 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const rewardLimitCheck = await rateLimitService.checkRewardLimit(payload.user_id);
   if (!rewardLimitCheck.allowed) {
     console.log(`⚠️  Reward rate limit exceeded for user: ${payload.user_id}`);
-    await createEvent({
-      event_type: 'fraud_flag_detected',
-      version: 'v1',
-      payload: {
+    await withTransactionalOutbox(async (txnId) => {
+      queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
         proof_id: payload.proof_id,
         signal_type: 'reward_limit_exceeded',
         reason: rewardLimitCheck.reason,
-      },
-      producer: 'rewards',
+      }, 'rewards');
     });
     return;
   }
@@ -85,17 +82,14 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     downgradeReason = `High risk behavior: ${behaviorCheck.signals.join(', ')}`;
     console.log(`⚠️  High risk detected, not granting reward: ${downgradeReason}`);
     
-    await createEvent({
-      event_type: 'fraud_flag_detected',
-      version: 'v1',
-      payload: {
+    await withTransactionalOutbox(async (txnId) => {
+      queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
         proof_id: payload.proof_id,
         signal_type: 'high_risk_behavior',
         signals: behaviorCheck.signals,
         risk_score_modifier: behaviorCheck.risk_score_modifier,
-      },
-      producer: 'rewards',
+      }, 'rewards');
     });
   }
 
@@ -195,18 +189,15 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   // Record reward in rate limit (outside transaction)
   await rateLimitService.recordRewardGranted(payload.user_id);
 
-  // Emit reward_granted event ONLY after successful DB persist
-  await createEvent({
-    event_type: 'reward_granted',
-    version: 'v1',
-    payload: {
+  // Emit reward_granted event ONLY after successful DB persist (within transaction)
+  await withTransactionalOutbox(async (txnId) => {
+    queueEventInTransaction(txnId, 'reward_granted', {
       reward_id: reward.id,
       proof_id: payload.proof_id,
       user_id: payload.user_id,
       reward_type: reward.reward_type,
       value: reward.value,
-    },
-    producer: 'rewards',
+    }, 'rewards');
   });
 
   // Step 8: Get or create active raffle
