@@ -80,9 +80,16 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
     [eventId, CONSUMER_NAME]
   );
 
-  // If event already processed, skip completely
+  // If event already processed, log audit and skip
   if (idempotencyResult.rowCount === 0) {
-    console.log(`⏭️  Event ${eventId} already processed by ${CONSUMER_NAME}, skipping`);
+    await db.query(
+      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [randomUUID(), 'event_duplicate_ignored', 'event', eventId, payload.user_id, JSON.stringify({
+        consumer: CONSUMER_NAME,
+        reason: 'event_already_processed'
+      })]
+    );
     return;
   }
 
