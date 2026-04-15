@@ -70,27 +70,39 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
 const CONSUMER_NAME = 'reward_granted_consumer';
 
 async function processRewardGranted(eventId: string, payload: RewardGrantedPayload): Promise<void> {
-  // Step 0: Event-level idempotency check with correct event_id + consumer_name
-  // Use INSERT ON CONFLICT to guarantee exactly-once processing
-  const idempotencyResult = await db.query(
-    `INSERT INTO events.processed_events (event_id, consumer_name, processed_at)
-     VALUES ($1, $2, NOW())
-     ON CONFLICT (event_id) DO NOTHING
-     RETURNING event_id`,
-    [eventId, CONSUMER_NAME]
-  );
+  // Step 0: Atomic idempotency check + audit in single transaction
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
 
-  // If event already processed, log audit and skip
-  if (idempotencyResult.rowCount === 0) {
-    await db.query(
-      `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [randomUUID(), 'event_duplicate_ignored', 'event', eventId, payload.user_id, JSON.stringify({
-        consumer: CONSUMER_NAME,
-        reason: 'event_already_processed'
-      })]
+    const idempotencyResult = await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name, processed_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING event_id`,
+      [eventId, CONSUMER_NAME]
     );
-    return;
+
+    // If already processed, log audit in same transaction
+    if (idempotencyResult.rowCount === 0) {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'event_duplicate_ignored', 'event', eventId, payload.user_id, JSON.stringify({
+          consumer: CONSUMER_NAME,
+          reason: 'event_already_processed'
+        })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 
   // Step 1: Validate reward exists
