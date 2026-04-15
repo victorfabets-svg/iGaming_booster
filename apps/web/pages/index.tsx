@@ -8,11 +8,25 @@ import RiskSection from './sections/RiskSection';
 import CampaignsSection from './sections/CampaignsSection';
 import HistoricoSection from './sections/HistoricoSection';
 import SystemFlow from './SystemFlow';
-import createApiClient, { ValidationStats, FunnelStats } from '../services/api';
+import createApiClient, { MetricsResponse } from '../services/api';
 import type { ProofRow } from '../components/ProofTable';
 import type { StreamEvent } from '../components/EventStream';
 
 const api = createApiClient('');
+
+// Helper interfaces derived from MetricsResponse
+interface ValidationStats {
+  approved: number;
+  rejected: number;
+  manual_review: number;
+}
+
+interface FunnelStats {
+  clicks: number;
+  signups: number;
+  proofs_submitted: number;
+  proofs_validated: number;
+}
 
 const IndexPage: React.FC = () => {
   const [section, setSection] = useState<SectionId>('overview');
@@ -48,11 +62,43 @@ const IndexPage: React.FC = () => {
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
 
-  // Initial data
+  // Initial data - get validation stats from metrics endpoint
   useEffect(() => {
-    api.getValidationStats().then(setValidation).catch(() => {});
-    api.getFunnelStats().then(setFunnel).catch(() => {});
-    api.getRecentProofs().then(setProofs).catch(() => {});
+    const fetchData = async () => {
+      try {
+        const metrics: MetricsResponse = await api.getMetrics();
+        setValidation({
+          approved: metrics.summary.validations.approved,
+          rejected: metrics.summary.validations.rejected,
+          manual_review: metrics.summary.validations.manual_review,
+        });
+        setFunnel({
+          clicks: 0,
+          signups: 0,
+          proofs_submitted: metrics.summary.proof_submissions,
+          proofs_validated: metrics.summary.validations.approved,
+        });
+      } catch {
+        // Metrics endpoint unavailable - data will show as 0
+      }
+      try {
+        const recentProofs = await api.getRecentProofs();
+        setProofs(recentProofs.map(p => ({
+          id: p.id,
+          date: p.submitted_at ? p.submitted_at.replace('T', ' ').slice(0, 16) : '',
+          user: p.user_id,
+          amount: null,
+          status: (p.status as ProofRow['status']) || 'pending',
+          confidence: p.confidence_score,
+          risk: null,
+          campaign: null,
+          type: 'original',
+        })));
+      } catch {
+        // Proofs unavailable - table will be empty
+      }
+    };
+    fetchData();
   }, []);
 
   const handleUpload = async (file: File) => {
