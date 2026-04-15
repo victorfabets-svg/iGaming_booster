@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import { findRaffleById, updateRaffleStatus } from '../../rewards/repositories/raffle.repository';
 import { findTicketsByRaffleId } from '../../rewards/repositories/ticket.repository';
 import { createRaffleDraw, findRaffleDrawByRaffleId, updateRaffleDrawWinner } from '../repositories/raffle-draw.repository';
-import { createEvent } from '../../../../../../shared/events/event.repository';
+import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { logger } from '../../../../../../shared/observability/logger';
 import { recordRaffleExecution } from '../../../../../../shared/observability/metrics.service';
 
@@ -88,18 +88,15 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
     // Update raffle status anyway
     await updateRaffleStatus(raffle_id, 'executed');
     
-    // Emit raffle_draw_executed event
-    await createEvent({
-      event_type: 'raffle_draw_executed',
-      version: 'v1',
-      payload: {
+    // Emit raffle_draw_executed event (transactional)
+    await withTransactionalOutbox(async (txnId) => {
+      queueEventInTransaction(txnId, 'raffle_draw_executed', {
         raffle_id: raffle_id,
         winning_number: resultNumber,
         user_id: null,
         seed: seed,
         ticket_count: 0,
-      },
-      producer: 'raffles',
+      }, 'raffles');
     });
 
     return {
@@ -126,18 +123,15 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
     // Update raffle status
     await updateRaffleStatus(raffle_id, 'executed');
 
-    // Emit raffle_draw_executed event
-    await createEvent({
-      event_type: 'raffle_draw_executed',
-      version: 'v1',
-      payload: {
+    // Emit raffle_draw_executed event (transactional)
+    await withTransactionalOutbox(async (txnId) => {
+      queueEventInTransaction(txnId, 'raffle_draw_executed', {
         raffle_id: raffle_id,
         winning_number: selectedTicket.number,
         user_id: selectedTicket.user_id,
         seed: seed,
         ticket_count: tickets.length,
-      },
-      producer: 'raffles',
+      }, 'raffles');
     });
 
     return {
@@ -156,18 +150,15 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
   await updateRaffleStatus(raffle_id, 'executed');
   console.log(`✅ Raffle status updated to: executed`);
 
-  // Step 9: Emit raffle_draw_executed event
-  await createEvent({
-    event_type: 'raffle_draw_executed',
-    version: 'v1',
-    payload: {
+  // Step 9: Emit raffle_draw_executed event (transactional)
+  await withTransactionalOutbox(async (txnId) => {
+    queueEventInTransaction(txnId, 'raffle_draw_executed', {
       raffle_id: raffle_id,
       winning_number: winningTicket.number,
       user_id: winningTicket.user_id,
       seed: seed,
       ticket_count: tickets.length,
-    },
-    producer: 'raffles',
+    }, 'raffles');
   });
 
   console.log(`✨ Raffle draw completed for: ${raffle_id}`);

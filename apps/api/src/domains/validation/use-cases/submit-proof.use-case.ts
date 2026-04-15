@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { createProof, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
-import { createEvent } from '../../../../../../shared/events/event.repository';
+import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -34,16 +34,13 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     recordProofSubmission('rate_limited');
     logger.warn('rate_limit_exceeded', 'validation', rateLimitCheck.reason || 'Rate limit exceeded', input.user_id);
     
-    // Emit rate_limit_exceeded event
-    await createEvent({
-      event_type: 'rate_limit_exceeded',
-      version: 'v1',
-      payload: {
+    // Emit rate_limit_exceeded event (transactional)
+    await withTransactionalOutbox(async (txnId) => {
+      queueEventInTransaction(txnId, 'rate_limit_exceeded', {
         user_id: input.user_id,
         limit_type: 'proofs_per_hour',
         reason: rateLimitCheck.reason,
-      },
-      producer: 'validation',
+      }, 'validation');
     });
     throw new Error(rateLimitCheck.reason);
   }
@@ -60,21 +57,10 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
 
   // Perform behavior analysis
   const behaviorCheck = await behaviorAnalysisService.analyzeBehavior(input.user_id);
+  let shouldFlagFraud = false;
   if (behaviorCheck.is_suspicious) {
+    shouldFlagFraud = true;
     logger.fraud('fraud_flag_detected', 'Suspicious behavior detected', input.user_id, { signals: behaviorCheck.signals });
-    
-    // Emit fraud_flag_detected event
-    await createEvent({
-      event_type: 'fraud_flag_detected',
-      version: 'v1',
-      payload: {
-        user_id: input.user_id,
-        file_url: input.file_url,
-        signals: behaviorCheck.signals,
-        risk_score_modifier: behaviorCheck.risk_score_modifier,
-      },
-      producer: 'validation',
-    });
   }
 
   // Create proof input
@@ -84,25 +70,31 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     hash: hash,
   };
 
-  // Persist proof first (before emitting event)
+  // Persist proof first
   const proof = await createProof(proofInput);
   logger.info('proof_created', 'validation', 'Proof created successfully', input.user_id, { proof_id: proof.id });
 
   // Record rate limit after successful submission
   await rateLimitService.recordProofSubmission(input.user_id);
 
-  // Emit proof_submitted event
-  await createEvent({
-    event_type: 'proof_submitted',
-    version: 'v1',
-    payload: {
+  // Emit events (transactional)
+  await withTransactionalOutbox(async (txnId) => {
+    queueEventInTransaction(txnId, 'proof_submitted', {
       proof_id: proof.id,
       user_id: proof.user_id,
       file_url: proof.file_url,
       submitted_at: proof.submitted_at,
       behavior_signals: behaviorCheck.is_suspicious ? behaviorCheck.signals : null,
-    },
-    producer: 'validation',
+    }, 'validation');
+    
+    if (shouldFlagFraud) {
+      queueEventInTransaction(txnId, 'fraud_flag_detected', {
+        user_id: input.user_id,
+        file_url: input.file_url,
+        signals: behaviorCheck.signals,
+        risk_score_modifier: behaviorCheck.risk_score_modifier,
+      }, 'validation');
+    }
   });
 
   return { proof_id: proof.id };
