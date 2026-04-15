@@ -1,6 +1,7 @@
 import { buildApp } from './app';
 import { config } from '../../../../shared/config/env';
 import { connectWithRetry, getDb } from '../../../../shared/database/connection';
+import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 
 async function start() {
   // Try to connect to database, but allow server to start even if it fails
@@ -10,6 +11,9 @@ async function start() {
   } catch (error) {
     console.error('[DB] Warning: Database connection failed, continuing anyway:', error);
   }
+
+  // Start stuck event recovery globally (runs once)
+  startStuckEventRecovery();
 
   const app = buildApp();
 

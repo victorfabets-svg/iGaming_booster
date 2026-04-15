@@ -133,6 +133,44 @@ export async function recoverStuckEvents(): Promise<number> {
 }
 
 /**
+ * Start stuck event recovery - runs periodically every 60 seconds.
+ * Must be called once globally at application startup.
+ */
+let recoveryInterval: NodeJS.Timeout | null = null;
+
+export function startStuckEventRecovery(): void {
+  if (recoveryInterval) {
+    console.log('[RECOVERY] Already running, skipping duplicate start');
+    return;
+  }
+
+  console.log('[RECOVERY] Starting stuck event recovery background job');
+  
+  // Run immediately on startup
+  recoverStuckEvents().catch(err => {
+    console.error('[RECOVERY] Initial run failed:', err.message);
+  });
+
+  // Then run every 60 seconds
+  recoveryInterval = setInterval(() => {
+    recoverStuckEvents().catch(err => {
+      console.error('[RECOVERY] Periodic run failed:', err.message);
+    });
+  }, 60000);
+}
+
+/**
+ * Stop stuck event recovery (for graceful shutdown).
+ */
+export function stopStuckEventRecovery(): void {
+  if (recoveryInterval) {
+    clearInterval(recoveryInterval);
+    recoveryInterval = null;
+    console.log('[RECOVERY] Stopped stuck event recovery');
+  }
+}
+
+/**
  * Mark event as processed (success).
  */
 export async function markEventProcessed(eventId: string): Promise<void> {
