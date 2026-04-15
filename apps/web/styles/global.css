@@ -717,3 +717,58 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 .metric-value.fraud {
   color: var(--color-fraud-primary);
 }
+
+/* === EVENT TIMELINE === */
+.timeline-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 16px;
+  position: relative;
+}
+
+.timeline-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-primary-primary);
+  border: 2px solid var(--color-primary-primary);
+  box-shadow: 0 0 8px var(--color-primary-glow);
+  flex-shrink: 0;
+}
+
+.timeline-line {
+  width: 2px;
+  flex-grow: 1;
+  background: var(--glass-border);
+  margin: 4px 0;
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 24px;
+}
+
+.timeline-timestamp {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.timeline-label {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+}

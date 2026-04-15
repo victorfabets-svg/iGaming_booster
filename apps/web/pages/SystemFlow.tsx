@@ -5,6 +5,7 @@ import TicketList from '../components/TicketList';
 import RafflePanel from '../components/RafflePanel';
 import RaffleResult from '../components/RaffleResult';
 import MetricsPanel from '../components/MetricsPanel';
+import EventTimeline from '../components/EventTimeline';
 import { useSystemState } from '../state/useSystemState';
 import createApiClient from '../services/api';
 
@@ -245,6 +246,20 @@ const SystemFlowContent: React.FC = () => {
         </div>
         <div className="step-content">
           <MetricsPanel />
+        </div>
+      </div>
+
+      {/* Arrow */}
+      <div className="flow-arrow">↓</div>
+
+      {/* Step 8: Event Timeline */}
+      <div className="flow-step">
+        <div className="step-indicator">
+          <span className="step-number">8</span>
+          <span className="step-label">Eventos</span>
+        </div>
+        <div className="step-content">
+          <EventTimeline />
         </div>
       </div>
     </section>
