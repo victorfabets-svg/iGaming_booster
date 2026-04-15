@@ -4,6 +4,7 @@ import { db } from '../../../../shared/database/connection';
 import { proofRoutes } from './routes/proofs';
 import { rewardRoutes } from './routes/rewards';
 import { raffleRoutes } from './routes/raffles';
+import { eventRoutes } from './routes/events';
 import { getMetrics } from '../../shared/observability/metrics.controller';
 
 export function buildApp(): FastifyInstance {
@@ -22,6 +23,7 @@ export function buildApp(): FastifyInstance {
   app.register(proofRoutes);
   app.register(rewardRoutes);
   app.register(raffleRoutes);
+  app.register(eventRoutes);
 
   app.get('/health', async () => {
     return { status: 'ok' };

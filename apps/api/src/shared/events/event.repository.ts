@@ -43,3 +43,14 @@ export async function findEventsByType(eventType: string): Promise<StoredEvent[]
   );
   return result.rows;
 }
+
+export async function findAllEvents(limit: number = 50): Promise<StoredEvent[]> {
+  const result = await pool.query(
+    `SELECT id, event_type, version, timestamp, producer, correlation_id, payload
+     FROM events.events
+     ORDER BY timestamp DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
