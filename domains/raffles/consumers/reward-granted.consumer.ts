@@ -78,7 +78,7 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
     const idempotencyResult = await client.query(
       `INSERT INTO events.processed_events (event_id, consumer_name, processed_at)
        VALUES ($1, $2, NOW())
-       ON CONFLICT (event_id) DO NOTHING
+       ON CONFLICT (event_id, consumer_name) DO NOTHING
        RETURNING event_id`,
       [eventId, CONSUMER_NAME]
     );
