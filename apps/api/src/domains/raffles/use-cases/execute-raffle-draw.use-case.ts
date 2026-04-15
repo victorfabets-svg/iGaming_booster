@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import { findRaffleById, updateRaffleStatus } from '../../rewards/repositories/raffle.repository';
 import { findTicketsByRaffleId } from '../../rewards/repositories/ticket.repository';
 import { createRaffleDraw, findRaffleDrawByRaffleId, updateRaffleDrawWinner } from '../repositories/raffle-draw.repository';
-import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransactionalOutbox, queueEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { logger } from '../../../../../../shared/observability/logger';
 import { recordRaffleExecution } from '../../../../../../shared/observability/metrics.service';
 
@@ -70,113 +70,105 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
   const resultNumber = calculateResultNumber(seed, raffle_id, raffle.total_numbers);
   console.log(`🎯 Calculated result number: ${resultNumber}`);
 
-  // Step 6: Persist draw result
-  const draw = await createRaffleDraw({
-    raffle_id: raffle_id,
-    seed: seed,
-    algorithm: 'sha256_modulo',
-    result_number: resultNumber,
-  });
-  console.log(`💾 Persisted raffle draw: ${draw.id}`);
-
-  // Step 7: Find winning ticket
+  // Step 6: Find winning ticket
   const tickets = await findTicketsByRaffleId(raffle_id);
   console.log(`🎫 Found ${tickets.length} tickets in raffle`);
 
-  if (tickets.length === 0) {
-    console.log(`⚠️  No tickets in raffle, draw completed without winner`);
-    // Update raffle status anyway
-    await updateRaffleStatus(raffle_id, 'executed');
-    
-    // Emit raffle_draw_executed event (transactional)
-    await withTransactionalOutbox(async (txnId) => {
-      queueEventInTransaction(txnId, 'raffle_draw_executed', {
-        raffle_id: raffle_id,
-        winning_number: resultNumber,
-        user_id: null,
-        seed: seed,
-        ticket_count: 0,
-      }, 'raffles');
-    });
+  // Step 7: Execute draw with full transactional atomicity
+  let winnerUserId: string | null = null;
+  let winnerTicketNumber: number | null = null;
 
-    return {
-      raffle_id: raffle_id,
-      winning_number: resultNumber,
-      user_id: '',
-      seed: seed,
-    };
-  }
+  const result = await withTransactionalOutbox(async (client) => {
+    // Create raffle draw
+    const draw = await client.query(
+      `INSERT INTO raffles.raffle_draws (raffle_id, seed, algorithm, result_number)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, raffle_id, seed, algorithm, result_number, winner_ticket_id, winner_user_id, created_at`,
+      [raffle_id, seed, 'sha256_modulo', resultNumber]
+    );
+    const createdDraw = draw.rows[0];
+    console.log(`💾 Persisted raffle draw: ${createdDraw.id}`);
 
-  const winningTicket = tickets.find(t => t.number === resultNumber);
+    // Find winner and update
+    if (tickets.length > 0) {
+      const winningTicket = tickets.find(t => t.number === resultNumber);
+      
+      let selectedTicket;
+      if (!winningTicket) {
+        // Map result to valid ticket number using deterministic selection
+        const mappedNumber = ((resultNumber - 1) % tickets.length) + 1;
+        selectedTicket = tickets[mappedNumber - 1];
+        console.log(`🎯 Result number ${resultNumber} not in tickets, mapped to: ${mappedNumber}`);
+      } else {
+        selectedTicket = winningTicket;
+      }
 
-  if (!winningTicket) {
-    // Map result to valid ticket number using deterministic selection
-    const mappedNumber = ((resultNumber - 1) % tickets.length) + 1;
-    const selectedTicket = tickets[mappedNumber - 1];
-    
-    console.log(`🎯 Result number ${resultNumber} not in tickets, mapped to: ${mappedNumber}`);
-    
-    // Update draw with winner
-    await updateRaffleDrawWinner(draw.id, selectedTicket.user_id, selectedTicket.id);
-    console.log(`🏆 Winner: user_id = ${selectedTicket.user_id}, ticket_number = ${selectedTicket.number}`);
+      if (selectedTicket) {
+        winnerUserId = selectedTicket.user_id;
+        winnerTicketNumber = selectedTicket.number;
+
+        // Update draw with winner
+        await client.query(
+          `UPDATE raffles.raffle_draws 
+           SET winner_ticket_id = $1, winner_user_id = $2 
+           WHERE id = $3`,
+          [selectedTicket.id, selectedTicket.user_id, createdDraw.id]
+        );
+        console.log(`🏆 Winner: user_id = ${selectedTicket.user_id}, ticket_number = ${selectedTicket.number}`);
+      }
+    }
 
     // Update raffle status
-    await updateRaffleStatus(raffle_id, 'executed');
+    await client.query(
+      `UPDATE raffles.raffles SET status = 'executed' WHERE id = $1`,
+      [raffle_id]
+    );
+    console.log(`✅ Raffle status updated to: executed`);
 
-    // Emit raffle_draw_executed event (transactional)
-    await withTransactionalOutbox(async (txnId) => {
-      queueEventInTransaction(txnId, 'raffle_draw_executed', {
-        raffle_id: raffle_id,
-        winning_number: selectedTicket.number,
-        user_id: selectedTicket.user_id,
-        seed: seed,
-        ticket_count: tickets.length,
-      }, 'raffles');
-    });
-
-    return {
+    // Emit raffle_draw_executed event
+    await queueEventInTransaction(client, 'raffle_draw_executed', {
       raffle_id: raffle_id,
-      winning_number: selectedTicket.number,
-      user_id: selectedTicket.user_id,
-      seed: seed,
-    };
-  }
-
-  // Update draw with winner
-  await updateRaffleDrawWinner(draw.id, winningTicket.user_id, winningTicket.id);
-  console.log(`🏆 Winner: user_id = ${winningTicket.user_id}, ticket_number = ${winningTicket.number}`);
-
-  // Step 8: Mark raffle as executed
-  await updateRaffleStatus(raffle_id, 'executed');
-  console.log(`✅ Raffle status updated to: executed`);
-
-  // Step 9: Emit raffle_draw_executed event (transactional)
-  await withTransactionalOutbox(async (txnId) => {
-    queueEventInTransaction(txnId, 'raffle_draw_executed', {
-      raffle_id: raffle_id,
-      winning_number: winningTicket.number,
-      user_id: winningTicket.user_id,
+      winning_number: winnerTicketNumber || resultNumber,
+      user_id: winnerUserId,
       seed: seed,
       ticket_count: tickets.length,
     }, 'raffles');
-  });
 
-  console.log(`✨ Raffle draw completed for: ${raffle_id}`);
+    // Audit: Insert audit log for raffle executed
+    await insertAuditInTransaction(
+      client,
+      'raffle_executed',
+      'raffle',
+      raffle_id,
+      winnerUserId,
+      {
+        winners: winnerUserId ? [winnerUserId] : [],
+        seed: seed,
+        ticket_count: tickets.length,
+        winning_number: winnerTicketNumber || resultNumber,
+        timestamp: timestamp.toISOString(),
+      }
+    );
+
+    console.log(`✨ Raffle draw completed for: ${raffle_id}`);
+
+    return {
+      raffle_id: raffle_id,
+      winning_number: winnerTicketNumber || resultNumber,
+      user_id: winnerUserId || '',
+      seed: seed,
+    };
+  });
 
   // Record metrics
   recordRaffleExecution(tickets.length > 0 ? 'executed' : 'no_tickets');
   logger.info('raffle_execution_completed', 'raffles', `Raffle executed: ${raffle_id}`, undefined, { 
     raffle_id, 
-    winning_number: winningTicket?.number,
-    winner_user_id: winningTicket?.user_id,
-    seed,
+    winning_number: result.winning_number,
+    winner_user_id: result.user_id,
+    seed: result.seed,
     ticket_count: tickets.length 
   });
 
-  return {
-    raffle_id: raffle_id,
-    winning_number: winningTicket?.number || 0,
-    user_id: winningTicket?.user_id || '',
-    seed: seed,
-  };
+  return result;
 }

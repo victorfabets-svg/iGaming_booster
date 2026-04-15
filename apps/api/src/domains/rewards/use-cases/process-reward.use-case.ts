@@ -4,7 +4,7 @@ import { findRewardByProofId, createReward, createRewardTx, findRewardById } fro
 import { createTicket, findTicketByRaffleAndNumber, countTicketsByRewardId } from '../repositories/ticket.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { findActiveRaffle, createRaffle } from '../repositories/raffle.repository';
-import { withTransactionalOutbox, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransactionalOutbox, queueEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
@@ -177,6 +177,22 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       reward_type: createdReward.reward_type,
       value: createdReward.value,
     }, 'rewards');
+
+    // Audit: Insert audit log for reward granted
+    await insertAuditInTransaction(
+      client,
+      'reward_granted',
+      'reward',
+      createdReward.id,
+      payload.user_id,
+      {
+        proof_id: payload.proof_id,
+        user_id: payload.user_id,
+        value: createdReward.value,
+        reward_type: createdReward.reward_type,
+        tickets_generated: effectiveNumbers,
+      }
+    );
 
     console.log(`✅ Created reward: ${createdReward.id} (within transactional outbox)`);
     return createdReward;
