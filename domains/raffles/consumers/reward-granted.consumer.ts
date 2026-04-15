@@ -82,7 +82,7 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
 
   const reward = rewardResult.rows[0];
 
-  // Step 2: Validate reward status and user_id
+  // Step 2: Validate reward status is 'granted'
   if (reward.status !== 'granted') {
     console.log(`⚠️  Reward ${payload.reward_id} has invalid status: ${reward.status}, cannot create ticket`);
     return;
@@ -104,37 +104,21 @@ async function processRewardGranted(payload: RewardGrantedPayload): Promise<void
     return;
   }
 
-  // Step 4: Get active raffle - fail if none exists (fail-safe)
+  // Step 4: Get active raffle - FREEZE RULE: do nothing if none exists
   const raffle = await getActiveRaffle(new Date());
   
   if (!raffle) {
-    console.log(`⚠️  No active raffle found, cannot create ticket`);
+    console.log(`⚠️  No active raffle found, skipping ticket creation`);
     return;
   }
 
   console.log(`🎰 Using raffle: ${raffle.id}`);
 
-  // Step 5: Check ticket limit per user (anti-abuse)
-  const ticketCountResult = await db.query<{ count: number }>(
-    `SELECT COUNT(*) as count
-     FROM raffles.tickets
-     WHERE user_id = $1 AND raffle_id = $2`,
-    [payload.user_id, raffle.id]
-  );
-
-  const ticketCount = Number(ticketCountResult.rows[0]?.count || 0);
-  const MAX_TICKETS_PER_USER = 100;
-
-  if (ticketCount >= MAX_TICKETS_PER_USER) {
-    console.log(`⚠️  User ${payload.user_id} has reached ticket limit (${ticketCount}/${MAX_TICKETS_PER_USER}), cannot create ticket`);
-    return;
-  }
-
-  // Step 6: Insert exactly one ticket - pure eligibility record
-  // Idempotent via UNIQUE constraint on reward_id
+  // Step 5: Idempotent insert - exactly one ticket per reward
+  // UNIQUE constraint on reward_id ensures idempotency
   await db.query(
-    `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id, status)
+     VALUES ($1, $2, $3, $4, 'active')
      ON CONFLICT (reward_id) DO NOTHING`,
     [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
   );
