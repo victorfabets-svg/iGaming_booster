@@ -111,6 +111,15 @@ export async function executeRaffleDraw(input: ExecuteRaffleDrawInput): Promise<
       [raffle_id]
     );
 
+    // IMMUTABLE AUDIT LOG - ledger for reconstruction and cryptographic proof
+    await db.query(
+      `INSERT INTO raffles.raffle_audit_log 
+       (raffle_id, seed, total_tickets, winner_ticket_id, winner_user_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [raffle_id, seed, tickets.length, winnerTicketId, winnerUserId]
+    );
+    console.log(`📒 Created audit log entry for raffle: ${raffle_id}`);
+
     // Emit raffle_completed event (inside transaction)
     await db.query(
       `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
