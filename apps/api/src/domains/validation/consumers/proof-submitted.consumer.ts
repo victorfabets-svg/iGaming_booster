@@ -1,4 +1,4 @@
-import { fetchAndLockEvents, processWithRetry, runEventMigrations, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processWithRetry, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
@@ -8,9 +8,9 @@ const BATCH_SIZE = 10;
 export async function startProofSubmittedConsumer(): Promise<void> {
   console.log('🔄 Starting proof_submitted consumer...');
 
-  // Run migrations to create tables and columns
-  await runEventMigrations();
-  console.log('✅ Event migrations complete');
+  // Schema now handled by migration (009_hardening_layer.sql)
+  // Fail-fast if schema missing - intentional
+  console.log('✅ Event schema expected from migration');
 
   // Initial poll
   await pollEvents();
