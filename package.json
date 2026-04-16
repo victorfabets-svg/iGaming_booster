@@ -5,12 +5,14 @@
   "scripts": {
     "test:e2e": "ts-node --esm tests/e2e/pipeline.e2e.ts",
     "test:e2e:event": "ts-node --esm tests/e2e/pipeline-event-driven.e2e.ts",
-    "test:e2e:poll": "ts-node --esm tests/e2e/pipeline-real-event.e2e.ts"
+    "test:e2e:poll": "ts-node --esm tests/e2e/pipeline-real-event.e2e.ts",
+    "test:e2e:true": "ts-node --esm tests/e2e/pipeline-true-e2e.e2e.ts"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.20.0",
-    "@types/pg": "^8.10.9",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.2"
+    "typescript": "^5.9.3"
   }
 }
