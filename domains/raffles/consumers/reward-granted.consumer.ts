@@ -198,6 +198,7 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
     }
 
     // Step 4: Insert ticket with idempotent conflict handling
+    // Use rowCount to determine: created (1) vs duplicate (0)
     const ticketResult = await client.query(
       `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
        VALUES ($1, $2, $3, $4)
@@ -206,8 +207,9 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
       [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
     );
 
-    // Audit in same transaction
-    if (ticketResult.rowCount === 1) {
+    // Deterministic handling using rowCount
+    if (ticketResult.rowCount === 1 && ticketResult.rows[0]?.id) {
+      // Ticket created - audit with ticket id
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
@@ -218,6 +220,7 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
         })]
       );
     } else {
+      // Duplicate - audit with null entity_id
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
