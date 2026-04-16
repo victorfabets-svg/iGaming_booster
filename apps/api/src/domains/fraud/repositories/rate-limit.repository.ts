@@ -1,4 +1,4 @@
-import { pool, queryOne } from '../../../lib/database';
+import { getDb, db } from '../../../../shared/database/connection';
 
 export interface RateLimit {
   id: string;
@@ -26,12 +26,12 @@ export async function checkRateLimit(userId: string, limitType: keyof typeof RAT
   const windowStart = new Date(Date.now() - config.window_seconds * 1000);
 
   // Check existing rate limit record
-  const existing = await queryOne<RateLimit>(
+  const existing = await db.query<RateLimit>(
     `SELECT id, user_id, limit_type, count, window_start, window_end
      FROM fraud.rate_limits
      WHERE user_id = $1 AND limit_type = $2 AND window_start >= $3`,
     [userId, limitType, windowStart]
-  );
+  ).then(rows => rows[0] || null);
 
   if (!existing) {
     // No record, allow request
@@ -63,7 +63,7 @@ export async function incrementRateLimit(userId: string, limitType: keyof typeof
   const now = new Date();
   const windowEnd = new Date(now.getTime() + config.window_seconds * 1000);
 
-  await pool.query(
+  await getDb().query(
     `INSERT INTO fraud.rate_limits (user_id, limit_type, count, window_start, window_end)
      VALUES ($1, $2, 1, $3, $4)
      ON CONFLICT (user_id, limit_type) 
@@ -77,7 +77,7 @@ export async function incrementRateLimit(userId: string, limitType: keyof typeof
 }
 
 export async function resetRateLimit(userId: string, limitType: string): Promise<void> {
-  await pool.query(
+  await getDb().query(
     `DELETE FROM fraud.rate_limits WHERE user_id = $1 AND limit_type = $2`,
     [userId, limitType]
   );
@@ -89,11 +89,11 @@ export async function getCurrentRateLimitCount(userId: string, limitType: string
 
   const windowStart = new Date(Date.now() - config.window_seconds * 1000);
 
-  const result = await queryOne<{ count: string }>(
+  const result = await db.query<{ count: string }>(
     `SELECT COUNT as count FROM fraud.rate_limits 
      WHERE user_id = $1 AND limit_type = $2 AND window_start >= $3`,
     [userId, limitType, windowStart]
   );
 
-  return parseInt(result?.count || '0', 10);
+  return parseInt(result[0]?.count || '0', 10);
 }

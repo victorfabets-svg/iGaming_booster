@@ -1,4 +1,4 @@
-import { pool } from '../../../lib/database';
+import { getDb } from '../../../../shared/database/connection';
 
 export interface Ticket {
   id: string;
@@ -17,7 +17,7 @@ export interface CreateTicketInput {
 }
 
 export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO rewards.tickets (user_id, raffle_id, number, reward_id)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (raffle_id, number) DO NOTHING
@@ -28,7 +28,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
 }
 
 export async function findTicketByRaffleAndNumber(raffleId: string, number: number): Promise<Ticket | null> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT id, user_id, raffle_id, number, reward_id, created_at
      FROM rewards.tickets
      WHERE raffle_id = $1 AND number = $2`,
@@ -38,7 +38,7 @@ export async function findTicketByRaffleAndNumber(raffleId: string, number: numb
 }
 
 export async function findTicketsByRewardId(rewardId: string): Promise<Ticket[]> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT id, user_id, raffle_id, number, reward_id, created_at
      FROM rewards.tickets
      WHERE reward_id = $1`,
@@ -48,7 +48,7 @@ export async function findTicketsByRewardId(rewardId: string): Promise<Ticket[]>
 }
 
 export async function countTicketsByRewardId(rewardId: string): Promise<number> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT COUNT(*) as count FROM rewards.tickets WHERE reward_id = $1`,
     [rewardId]
   );
@@ -56,7 +56,7 @@ export async function countTicketsByRewardId(rewardId: string): Promise<number> 
 }
 
 export async function findTicketsByRaffleId(raffleId: string): Promise<Ticket[]> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT id, user_id, raffle_id, number, reward_id, created_at
      FROM rewards.tickets
      WHERE raffle_id = $1

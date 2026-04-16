@@ -1,4 +1,4 @@
-import { pool, queryOne } from '../../../lib/database';
+import { getDb, db } from '../../../../shared/database/connection';
 import { PoolClient } from 'pg';
 
 export interface Reward {
@@ -25,7 +25,7 @@ const DEFAULT_REWARD_TYPE = 'approval';
 const DEFAULT_REWARD_STATUS = 'granted';
 
 export async function createReward(input: CreateRewardInput): Promise<Reward> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO rewards.rewards (user_id, proof_id, reward_type, value, status)
      VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (proof_id) DO UPDATE SET reward_type = EXCLUDED.reward_type
@@ -51,21 +51,21 @@ export async function createRewardTx(
 }
 
 export async function findRewardByProofId(proofId: string): Promise<Reward | null> {
-  return await queryOne<Reward>(
+  return await db.query<Reward>(
     `SELECT id, user_id, proof_id, reward_type, value, status, created_at
      FROM rewards.rewards
      WHERE proof_id = $1`,
     [proofId]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function findRewardById(id: string): Promise<Reward | null> {
-  return await queryOne<Reward>(
+  return await db.query<Reward>(
     `SELECT id, user_id, proof_id, reward_type, value, status, created_at
      FROM rewards.rewards
      WHERE id = $1`,
     [id]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function updateRewardStatus(id: string, status: string): Promise<void> {

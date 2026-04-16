@@ -1,4 +1,4 @@
-import { pool, queryOne, query } from '../../../lib/database';
+import { getDb, db } from '../../../../shared/database/connection';
 
 export interface RiskSignal {
   id: string;
@@ -17,7 +17,7 @@ export interface CreateRiskSignalInput {
 }
 
 export async function createRiskSignal(input: CreateRiskSignalInput): Promise<RiskSignal> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO fraud.risk_signals (user_id, signal_type, value, metadata)
      VALUES ($1, $2, $3, $4)
      RETURNING id, user_id, signal_type, value, metadata, created_at`,
@@ -27,7 +27,7 @@ export async function createRiskSignal(input: CreateRiskSignalInput): Promise<Ri
 }
 
 export async function findRiskSignalsByUserId(userId: string, limit: number = 100): Promise<RiskSignal[]> {
-  return await query<RiskSignal>(
+  return await db.query<RiskSignal>(
     `SELECT id, user_id, signal_type, value, metadata, created_at
      FROM fraud.risk_signals
      WHERE user_id = $1
@@ -38,7 +38,7 @@ export async function findRiskSignalsByUserId(userId: string, limit: number = 10
 }
 
 export async function findRiskSignalsByType(signalType: string, since: Date): Promise<RiskSignal[]> {
-  return await query<RiskSignal>(
+  return await db.query<RiskSignal>(
     `SELECT id, user_id, signal_type, value, metadata, created_at
      FROM fraud.risk_signals
      WHERE signal_type = $1 AND created_at >= $2
@@ -61,6 +61,6 @@ export async function countRiskSignalsByUser(userId: string, signalType?: string
     params.push(since);
   }
 
-  const result = await queryOne<{ count: string }>(sql, params);
-  return parseInt(result?.count || '0', 10);
+  const result = await db.query<{ count: string }>(sql, params);
+  return parseInt(result[0]?.count || '0', 10);
 }

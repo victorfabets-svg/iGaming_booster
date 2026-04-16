@@ -1,4 +1,4 @@
-import { pool, queryOne } from '../../../lib/database';
+import { getDb, db } from '../../../../shared/database/connection';
 
 export interface FraudScore {
   id: string;
@@ -15,7 +15,7 @@ export interface CreateFraudScoreInput {
 }
 
 export async function createFraudScore(input: CreateFraudScoreInput): Promise<FraudScore> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO fraud.fraud_scores (proof_id, score, signals)
      VALUES ($1, $2, $3)
      RETURNING id, proof_id, score, signals, created_at`,
@@ -42,10 +42,10 @@ export async function createFraudScoreWithClient(
 }
 
 export async function findFraudScoreByProofId(proofId: string): Promise<FraudScore | null> {
-  return await queryOne<FraudScore>(
+  return await db.query<FraudScore>(
     `SELECT id, proof_id, score, signals, created_at 
      FROM fraud.fraud_scores 
      WHERE proof_id = $1`,
     [proofId]
-  );
+  ).then(rows => rows[0] || null);
 }
