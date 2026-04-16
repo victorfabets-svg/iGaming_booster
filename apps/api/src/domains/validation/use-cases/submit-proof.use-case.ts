@@ -34,7 +34,19 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     recordProofSubmission('rate_limited');
     logger.warn('rate_limit_exceeded', 'validation', rateLimitCheck.reason || 'Rate limit exceeded', input.user_id);
     
-    // Rate limited - no event emitted, just throw error
+    // Emit rate_limit_exceeded domain event for observability
+    await withTransactionalOutbox(async (client) => {
+      await insertEventInTransaction(
+        client,
+        'rate_limit_exceeded',
+        {
+          user_id: input.user_id,
+          limit_type: 'proofs_per_hour',
+          reason: rateLimitCheck.reason,
+        },
+        'validation'
+      );
+    });
     throw new Error(rateLimitCheck.reason);
   }
 

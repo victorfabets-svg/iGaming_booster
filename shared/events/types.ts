@@ -1,13 +1,24 @@
 /**
  * Event type lock - allowed event types in the system
- * All events must be validated against this list before insert
+ * Split into pipeline events (user-facing) and domain events (internal)
  */
-export const EVENT_TYPES = [
+export const PIPELINE_EVENTS = [
   'proof_submitted',
   'proof_validated',
   'reward_granted',
   'ticket_created',
 ] as const;
+
+export const DOMAIN_EVENTS = [
+  'fraud_flag_detected',
+  'proof_rejected',
+  'rate_limit_exceeded',
+  'payment_identifier_extracted',
+  'payment_signal_detected',
+] as const;
+
+// All allowed events
+export const EVENT_TYPES = [...PIPELINE_EVENTS, ...DOMAIN_EVENTS] as const;
 
 export type EventType = typeof EVENT_TYPES[number];
 
