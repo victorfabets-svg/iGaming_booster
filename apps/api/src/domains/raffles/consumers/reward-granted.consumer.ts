@@ -1,3 +1,5 @@
+export const CONSUMER_NAME = "reward_granted_consumer";
+
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { createTicket, CreateTicketInput } from '../../repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
@@ -144,8 +146,8 @@ async function processEventExactlyOnce(
   // Use the shared event consumer repository's exactly-once function
   const { isEventProcessed, markEventAsProcessed, getClient } = await import('../../../../../../shared/events/event-consumer.repository');
   
-  // Check if already processed (idempotency)
-  const alreadyProcessed = await isEventProcessed(eventId);
+  // Check if already processed (idempotency) - use consumer-specific key
+  const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);
   if (alreadyProcessed) {
     return { success: true, skipped: true };
   }
@@ -158,8 +160,8 @@ async function processEventExactlyOnce(
     // Execute the business logic
     await processFn();
     
-    // Record successful processing (idempotency key)
-    await markEventAsProcessed(eventId);
+    // Record successful processing (idempotency key) - use consumer-specific key
+    await markEventAsProcessed(eventId, CONSUMER_NAME);
     
     await client.query('COMMIT');
     return { success: true, skipped: false };

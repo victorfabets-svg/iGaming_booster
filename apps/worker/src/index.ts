@@ -6,7 +6,7 @@
 import { connectWithRetry } from '../../../shared/database/connection';
 
 // Import all consumers
-import { startRewardGrantedConsumer } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
+import { startRewardGrantedConsumer, CONSUMER_NAME as REWARD_GRANTED_CONSUMER } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
 import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consumers/proof-validated.consumer';
 import { startProofSubmittedConsumer } from '../../api/src/domains/validation/consumers/proof-submitted.consumer';
 import { startRaffleDrawExecutedConsumer } from '../../api/src/domains/raffles/consumers/raffle-draw-executed.consumer';
@@ -29,7 +29,8 @@ async function start() {
   console.log('  ✓ proof_validated consumer started');
   
   startRewardGrantedConsumer();
-  console.log('  ✓ reward_granted consumer started');
+  console.log('  ✓ reward_granted consumer loaded');
+  console.log('    consumer_name:', REWARD_GRANTED_CONSUMER);
   
   startRaffleDrawExecutedConsumer();
   console.log('  ✓ raffle_draw_executed consumer started');
