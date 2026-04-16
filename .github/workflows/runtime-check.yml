@@ -17,10 +17,14 @@ jobs:
           node-version: '20'
 
       - name: Install deps
-        run: npm install
+        run: |
+          cd apps/api
+          npm install
 
       - name: Build
-        run: npm run build
+        run: |
+          cd apps/api
+          npm run build
 
       - name: Debug build output
         run: |
@@ -33,21 +37,45 @@ jobs:
           echo "=== FULL TREE ==="
           find apps/api/dist -type f || true
 
-      - name: Start server (debug mode)
+      - name: Validate Neon DB Connection
+        working-directory: apps/api
         env:
-          DATABASE_URL: ${{ secrets.NEON_DB_URL }}
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
-          FILE=$(find apps/api/dist -name index.js | grep server/index.js | head -n 1)
+          node -e "
+          const { Client } = require('pg');
 
-          echo "Found entry: $FILE"
+          const url = process.env.NEON_DB_URL;
+          if (!url) {
+            throw new Error('NEON_DB_URL not set');
+          }
 
-          if [ -z "$FILE" ]; then
-            echo "Server entry not found"
-            exit 1
-          fi
+          const host = new URL(url).hostname;
+          if (!host.endsWith('neon.tech')) {
+            throw new Error('Invalid DB provider: ' + host);
+          }
 
+          const client = new Client({ connectionString: url, ssl: true });
+
+          client.connect()
+            .then(() => client.query('SELECT NOW()'))
+            .then(res => {
+              console.log('CONNECTED TO NEON:', res.rows[0]);
+              return client.end();
+            })
+            .catch(err => {
+              console.error('DB CONNECTION FAILED:', err);
+              process.exit(1);
+            });
+          "
+
+      - name: Start server (debug mode)
+        working-directory: apps/api
+        env:
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+        run: |
           echo "=== STARTING SERVER ==="
-          node $FILE
+          node dist/server/index.js
 
       - name: Health check
         run: curl -s http://localhost:3000/health
