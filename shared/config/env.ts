@@ -29,6 +29,7 @@ export interface AppConfig {
     ENABLE_REWARDS: boolean;
     ENABLE_VALIDATION: boolean;
     ENABLE_AUTOMATIC_APPROVAL: boolean;
+    ENABLE_RAFFLE: boolean;
   };
   
   // Limits
@@ -84,6 +85,7 @@ function getFeatureFlags(): AppConfig['featureFlags'] {
     ENABLE_REWARDS: process.env.ENABLE_REWARDS !== 'false',
     ENABLE_VALIDATION: process.env.ENABLE_VALIDATION !== 'false',
     ENABLE_AUTOMATIC_APPROVAL: process.env.ENABLE_AUTOMATIC_APPROVAL === 'true', // Disabled by default
+    ENABLE_RAFFLE: process.env.ENABLE_RAFFLE === 'true', // Disabled by default
   };
 }
 

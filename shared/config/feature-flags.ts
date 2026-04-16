@@ -35,6 +35,11 @@ const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, {
     defaultValue: false, // SAFE DEFAULT: require manual review unless explicitly enabled
     critical: false,
   },
+  ENABLE_RAFFLE: {
+    description: 'Enable raffle system for promotional drawings',
+    defaultValue: false, // SAFE DEFAULT: disabled until explicitly enabled
+    critical: false,
+  },
 };
 
 class FeatureFlagsService {
@@ -155,6 +160,7 @@ export const featureFlags = FeatureFlagsService.getInstance();
 export const isRewardsEnabled = () => featureFlags.isEnabled('ENABLE_REWARDS');
 export const isValidationEnabled = () => featureFlags.isEnabled('ENABLE_VALIDATION');
 export const isAutomaticApprovalEnabled = () => featureFlags.isEnabled('ENABLE_AUTOMATIC_APPROVAL');
+export const isRaffleEnabled = () => featureFlags.isEnabled('ENABLE_RAFFLE');
 
 // Guard functions that throw if disabled
 export function requireRewards(): void {
