@@ -147,6 +147,6 @@ jobs:
       - name: Run schema audit
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          NODE_PATH: ./tmp-audit/node_modules
         run: |
-          cd tmp-audit
-          node ../scripts/schema-audit.js
+          node scripts/schema-audit.js
