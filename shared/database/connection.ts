@@ -92,7 +92,7 @@ export async function initDb(connectionString?: string): Promise<void> {
     throw new Error('DATABASE_URL environment variable not set');
   }
 
-  // Configure SSL for cloud providers (Neon, Supabase, etc.)
+  // Configure SSL for cloud providers
   const sslConfig = process.env.NODE_ENV === 'production' 
     ? { rejectUnauthorized: false }
     : false;
