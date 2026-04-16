@@ -1,4 +1,4 @@
-import { pool, query } from '../../../lib/database';
+import { pool, query } from '../../../../shared/database/connection';
 
 export interface PaymentSignal {
   id: string;

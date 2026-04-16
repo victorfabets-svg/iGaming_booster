@@ -3,14 +3,24 @@ import pg from 'pg';
 // Use the Pool from the imported module
 const Pool = pg.Pool;
 
-// Deterministic singleton - always initialized at module load
-let _db: pg.Pool | null = null;
+// TASK 1 — GLOBAL SINGLETON GUARD
+// Use global to survive module reload and ensure single pool instance
+const globalAny = global as any;
+
+if (!globalAny.__DB_POOL__) {
+  globalAny.__DB_POOL__ = new Pool({
+    connectionString: process.env.NEON_DB_URL!,
+    ssl: true,
+  });
+}
+
+// Assert on startup
+console.assert(globalAny.__DB_POOL__, "DB not initialized");
+
+export const db = globalAny.__DB_POOL__;
 
 export function getDb(): pg.Pool {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  return _db;
+  return db;
 }
 
 /**
@@ -18,10 +28,7 @@ export function getDb(): pg.Pool {
  * Caller MUST release the client (even on error).
  */
 export async function getClient(): Promise<pg.PoolClient> {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  return _db.connect();
+  return db.connect();
 }
 
 /**
@@ -85,35 +92,10 @@ export async function logAuditInTransaction(
   );
 }
 
-export async function initDb(connectionString?: string): Promise<void> {
-  const dbUrl = connectionString || process.env.NEON_DB_URL;
-  
-  if (!dbUrl) {
-    throw new Error('NEON_DB_URL environment variable not set');
-  }
-
-  // Configure SSL for cloud providers
-  const sslConfig = process.env.NODE_ENV === 'production' 
-    ? { rejectUnauthorized: false }
-    : false;
-
-  _db = new Pool({
-    connectionString: dbUrl,
-    ssl: sslConfig,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-    // TASK 3: STATEMENT TIMEOUT - 5 seconds
-    statement_timeout: 5000,
-  });
-
-  _db.on('error', (err: Error) => {
-    console.error('[DB] Unexpected database error:', err);
-  });
-
-  // Test the connection
+export async function initDb(): Promise<void> {
+  // Test the connection (pool already initialized via global singleton)
   try {
-    const result = await _db.query('SELECT NOW()');
+    const result = await db.query('SELECT NOW()');
     console.log('[DB] Connection established:', result.rows[0].now);
   } catch (error) {
     console.error('[DB] Failed to connect:', error);
@@ -121,63 +103,35 @@ export async function initDb(connectionString?: string): Promise<void> {
   }
 }
 
-export const db = {
-  query: async <T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> => {
-    if (!_db) {
-      throw new Error('Database not initialized');
-    }
-    const result = await _db.query(text, params);
-    return { rows: result.rows };
-  },
-  connect: async (): Promise<pg.PoolClient> => {
-    if (!_db) {
-      throw new Error('Database not initialized');
-    }
-    return _db.connect();
-  },
-  end: async (): Promise<void> => {
-    if (_db) {
-      await _db.end();
-      _db = null;
-    }
-  },
-};
-
-// Re-export pool for backward compatibility using lazy singleton getter
+// Re-export pool for backward compatibility using global singleton
 export function getPool(): pg.Pool {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  return _db;
+  return db;
 }
 
-// Legacy exports for backward compatibility
+// Legacy exports for backward compatibility - use global singleton
 export const pool = {
-  get query() { return getPool().query.bind(getPool()); },
-  get end() { return () => closePool(); },
-  get connect() { return getPool().connect.bind(getPool()); }
+  query: db.query.bind(db),
+  end: () => db.end(),
+  connect: db.connect.bind(db)
 };
 
 export async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
-  const result = await getPool().query(text, params);
+  const result = await db.query(text, params);
   return result.rows;
 }
 
 export async function queryOne<T>(text: string, params?: unknown[]): Promise<T | null> {
-  const result = await getPool().query(text, params);
+  const result = await db.query(text, params);
   return result.rows[0] || null;
 }
 
 export async function execute(text: string, params?: unknown[]): Promise<number> {
-  const result = await getPool().query(text, params);
+  const result = await db.query(text, params);
   return result.rowCount || 0;
 }
 
 export async function closePool(): Promise<void> {
-  if (_db) {
-    await _db.end();
-    _db = null;
-  }
+  await db.end();
 }
 
 export async function connectWithRetry(maxRetries = 5, delayMs = 2000): Promise<void> {

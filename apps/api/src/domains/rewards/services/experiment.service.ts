@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { pool, queryOne, query } from '../../../lib/database';
+import { pool, queryOne, query } from '../../../../shared/database/connection';
 
 export interface ExperimentAssignment {
   id: string;

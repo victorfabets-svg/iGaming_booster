@@ -3,6 +3,13 @@
  * Manages environment-specific settings
  */
 
+// TASK 2 — STRICT ENV
+if (!process.env.NEON_DB_URL) {
+  throw new Error("NEON_DB_URL missing");
+}
+
+Object.freeze(process.env);
+
 export type Environment = 'development' | 'production' | 'test';
 
 export interface AppConfig {

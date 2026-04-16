@@ -1,4 +1,4 @@
-import { pool, queryOne, query } from '../../../lib/database';
+import { pool, queryOne, query } from '../../../../shared/database/connection';
 
 export interface BenefitRule {
   id: string;
