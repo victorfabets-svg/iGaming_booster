@@ -380,44 +380,32 @@ class TrueE2ETest {
   }
 
   private async createTestUser(): Promise<void> {
-    console.log('\n👤 Setting up test user...');
-    
-    // Strategy 1: Try API registration first
-    try {
-      const res = await httpRequest({
-        method: 'POST',
-        path: '/auth/register',
-        body: { email: TEST_USER_EMAIL, password: 'Test123!' },
-      });
-      if (res.status === 200 || res.status === 201) {
-        const userId = await findUserByEmail(this.pool, TEST_USER_EMAIL);
-        if (userId) {
-          this.testUserId = userId;
-          console.log('  ✅ User created via API');
-          return;
-        }
+    console.log('\n👤 Creating test user via API...');
+
+    // MUST create user via API - no fallback allowed
+    const res = await httpRequest({
+      method: 'POST',
+      path: '/auth/register',
+      body: { email: TEST_USER_EMAIL },
+    });
+
+    if (res.status !== 201) {
+      throw new Error(`Failed to create user: ${res.status} ${JSON.stringify(res.body)}`);
+    }
+
+    // Extract user_id from response
+    if (!res.body.user_id) {
+      // Query user from DB to get ID
+      const userId = await findUserByEmail(this.pool, TEST_USER_EMAIL);
+      if (!userId) {
+        throw new Error('User creation failed - no user_id returned and user not found in DB');
       }
-    } catch (e) {
-      // Registration endpoint not available
+      this.testUserId = userId;
+    } else {
+      this.testUserId = res.body.user_id;
     }
-    
-    // Strategy 2: Use seeded test user (pre-created via migration/seed)
-    // Common pattern: use a fixed test user ID that exists in dev/staging
-    const seededUserId = '00000000-0000-0000-0000-000000000001';
-    const exists = await this.userExists(seededUserId);
-    if (exists) {
-      this.testUserId = seededUserId;
-      console.log('  ✅ Using seeded test user');
-      return;
-    }
-    
-    // Strategy 3: No user available - fail with clear message
-    throw new Error(
-      'No test user available. Either:\n' +
-      '1. Add /auth/register endpoint to API, OR\n' +
-      '2. Seed test user via migration: INSERT INTO identity.users (id, ...) VALUES (...)\n' +
-      'Tests cannot create users directly.'
-    );
+
+    console.log('  ✅ User created via API:', this.testUserId);
   }
   
   private async userExists(userId: string): Promise<boolean> {

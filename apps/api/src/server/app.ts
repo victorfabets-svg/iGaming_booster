@@ -3,6 +3,7 @@ import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import { db } from 'shared/database/connection';
 import { proofRoutes } from './routes/proofs';
+import { authRoutes } from './routes/auth';
 import { config } from 'shared/config/env';
 
 export function buildApp(): FastifyInstance {
@@ -24,6 +25,7 @@ export function buildApp(): FastifyInstance {
 
   // Register routes
   app.register(proofRoutes);
+  app.register(authRoutes);
 
   // Health check - MUST reflect real DB state
   app.get('/health', async () => {
