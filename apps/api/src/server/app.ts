@@ -1,8 +1,9 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
-import { db } from '../../../../shared/database/connection';
+import { db } from 'shared/database/connection';
 import { proofRoutes } from './routes/proofs';
+import { config } from 'shared/config/env';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -11,7 +12,7 @@ export function buildApp(): FastifyInstance {
 
   // Register JWT plugin for authentication
   app.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+    secret: config.jwt.secret,
   });
 
   // Register multipart plugin for file uploads

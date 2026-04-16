@@ -1,8 +1,9 @@
 import { createProofInTransaction } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
-import { generateSHA256 } from '../../../../../../shared/utils/hash';
+import { generateSHA256 } from 'shared/utils/hash';
 import { getStorageService } from '../../../infrastructure/storage';
-import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from 'shared/events/transactional-outbox';
+import { config } from 'shared/config/env';
 
 /**
  * Determine content type from file extension
@@ -96,8 +97,9 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   let expiresIn: number | undefined;
   
   try {
-    // Check if R2 is configured (preferred)
-    if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
+    // Check if R2 is configured (preferred) - use centralized config
+    const { r2Endpoint, r2AccessKeyId, r2SecretAccessKey } = config.storage;
+    if (r2Endpoint && r2AccessKeyId && r2SecretAccessKey) {
       // getStorageService returns R2StorageAdapter which has getSignedUrl
       signedUrl = await (storageService as any).getSignedUrl(path, 300); // 5 minutes
       expiresIn = 300;
