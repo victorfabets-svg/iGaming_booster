@@ -1,9 +1,9 @@
 import { Pool } from 'pg';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.NEON_DB_URL || process.env.DATABASE_URL;
 
 if (!databaseUrl) {
-  throw new Error('DATABASE_URL environment variable is not set');
+  throw new Error('NEON_DB_URL environment variable is not set');
 }
 
 export const pool = new Pool({
@@ -11,6 +11,7 @@ export const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
+  ssl: { rejectUnauthorized: false },
 });
 
 pool.on('error', (err) => {

@@ -62,7 +62,7 @@ class ConfigManager {
                 isProduction: env === 'production',
                 isDevelopment: env === 'development',
                 isTest: env === 'test',
-                databaseUrl: process.env.DATABASE_URL || '',
+                databaseUrl: process.env.NEON_DB_URL || process.env.DATABASE_URL || '',
                 apiPort: parseInt(process.env.PORT || '3000', 10),
                 apiHost: process.env.API_HOST || '0.0.0.0',
                 featureFlags: getFeatureFlags(),
