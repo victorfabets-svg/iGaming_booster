@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
-import { Event } from './types';
-import { saveEvent } from './eventRepository';
+import { AppEvent as Event, saveEvent } from './event.repository';
 
 const REQUIRED_FIELDS = ['event_type', 'producer', 'payload'] as const;
 const DEFAULT_VERSION = 'v1';
