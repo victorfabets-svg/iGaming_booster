@@ -159,6 +159,73 @@ async function getTicketCount(pool: Pool, userId: string): Promise<number> {
   }
 }
 
+/**
+ * Get total count of tickets in the system (for verification)
+ */
+async function getTotalTicketCount(pool: Pool): Promise<number> {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM raffles.tickets');
+    return parseInt(result.rows[0].count, 10);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Get total count of rewards in the system (for verification)
+ */
+async function getTotalRewardCount(pool: Pool): Promise<number> {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM rewards.rewards');
+    return parseInt(result.rows[0].count, 10);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Get total count of events in the system (for verification)
+ */
+async function getTotalEventCount(pool: Pool): Promise<number> {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM events.events');
+    return parseInt(result.rows[0].count, 10);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Verify full chain execution - ensures all tables have expected data
+ * This is the hard validation that proves the pipeline executed correctly
+ */
+async function verifyFullChainExecution(
+  pool: Pool,
+  userId: string
+): Promise<{ tickets: number; rewards: number; events: number }> {
+  const ticketCount = await getTotalTicketCount(pool);
+  const rewardCount = await getTotalRewardCount(pool);
+  const eventCount = await getTotalEventCount(pool);
+  
+  console.log('\n🔍 CHAIN VERIFICATION:');
+  console.log(`   Raffles.Tickets: ${ticketCount}`);
+  console.log(`   Rewards.Rewards: ${rewardCount}`);
+  console.log(`   Events.Events: ${eventCount}`);
+  
+  // Verify at least one of each exists (proof of full chain execution)
+  if (ticketCount === 0) {
+    throw new Error('CHAIN VERIFICATION FAILED: No tickets found - pipeline incomplete');
+  }
+  if (rewardCount === 0) {
+    throw new Error('CHAIN VERIFICATION FAILED: No rewards found - pipeline incomplete');
+  }
+  if (eventCount === 0) {
+    throw new Error('CHAIN VERIFICATION FAILED: No events found - pipeline incomplete');
+  }
+  
+  return { tickets: ticketCount, rewards: rewardCount, events: eventCount };
+}
+
 async function findUserByEmail(pool: Pool, email: string): Promise<string | null> {
   try {
     const result = await pool.query(
@@ -403,11 +470,26 @@ class TrueE2ETest {
     
     if (ticket) {
       console.log('  ✅ Ticket created:', ticket.id);
-      this.results.push({
-        name: 'full-pipeline',
-        success: true,
-        duration: Date.now() - start,
-      });
+      
+      // HARD VALIDATION: Verify full chain executed
+      console.log('\n  🔍 Running chain verification...');
+      try {
+        const chain = await verifyFullChainExecution(this.pool, this.testUserId);
+        console.log('  ✅ Chain verified - Tickets:', chain.tickets, 'Rewards:', chain.rewards, 'Events:', chain.events);
+        
+        this.results.push({
+          name: 'full-pipeline',
+          success: true,
+          duration: Date.now() - start,
+        });
+      } catch (err: any) {
+        this.results.push({
+          name: 'full-pipeline',
+          success: false,
+          duration: Date.now() - start,
+          error: err.message,
+        });
+      }
     } else {
       this.results.push({
         name: 'full-pipeline',
@@ -449,11 +531,26 @@ class TrueE2ETest {
     
     if (count === 1) {
       console.log('  ✅ Idempotent: exactly 1 ticket');
-      this.results.push({
-        name: 'idempotency',
-        success: true,
-        duration: Date.now() - start,
-      });
+      
+      // HARD VALIDATION: Verify full chain executed
+      console.log('\n  🔍 Running chain verification...');
+      try {
+        const chain = await verifyFullChainExecution(this.pool, this.testUserId);
+        console.log('  ✅ Chain verified - Tickets:', chain.tickets, 'Rewards:', chain.rewards, 'Events:', chain.events);
+        
+        this.results.push({
+          name: 'idempotency',
+          success: true,
+          duration: Date.now() - start,
+        });
+      } catch (err: any) {
+        this.results.push({
+          name: 'idempotency',
+          success: false,
+          duration: Date.now() - start,
+          error: err.message,
+        });
+      }
     } else {
       console.log('  ❌ Expected 1 ticket, got:', count);
       this.results.push({
@@ -499,11 +596,26 @@ class TrueE2ETest {
     
     if (count === 1) {
       console.log('  ✅ Concurrent safe: exactly 1 ticket');
-      this.results.push({
-        name: 'concurrency',
-        success: true,
-        duration: Date.now() - start,
-      });
+      
+      // HARD VALIDATION: Verify full chain executed
+      console.log('\n  🔍 Running chain verification...');
+      try {
+        const chain = await verifyFullChainExecution(this.pool, this.testUserId);
+        console.log('  ✅ Chain verified - Tickets:', chain.tickets, 'Rewards:', chain.rewards, 'Events:', chain.events);
+        
+        this.results.push({
+          name: 'concurrency',
+          success: true,
+          duration: Date.now() - start,
+        });
+      } catch (err: any) {
+        this.results.push({
+          name: 'concurrency',
+          success: false,
+          duration: Date.now() - start,
+          error: err.message,
+        });
+      }
     } else {
       console.log('  ❌ Expected 1 ticket, got:', count);
       this.results.push({

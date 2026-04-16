@@ -50,6 +50,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const rewardLimitCheck = await rateLimitService.checkRewardLimit(payload.user_id);
   if (!rewardLimitCheck.allowed) {
     logger.warn('rate_limit_exceeded', 'rewards', 'Reward rate limit exceeded', payload.user_id, { proof_id: payload.proof_id });
+    // Emit fraud_flag_detected domain event for fraud detection
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
@@ -76,6 +77,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       risk_score_modifier: behaviorCheck.risk_score_modifier
     });
     
+    // Emit fraud_flag_detected domain event for fraud detection
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,

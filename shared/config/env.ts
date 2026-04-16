@@ -54,6 +54,20 @@ export interface AppConfig {
     costPerTicket: number;
     revenuePerTicket: number;
   };
+  
+  // Storage (R2) settings
+  storage: {
+    r2Endpoint: string;
+    r2AccessKeyId: string;
+    r2SecretAccessKey: string;
+    r2Bucket: string;
+    r2Region: string;
+  };
+  
+  // JWT settings
+  jwt: {
+    secret: string;
+  };
 }
 
 function getEnvironment(): Environment {
@@ -101,6 +115,22 @@ function getRewardsConfig(): AppConfig['rewards'] {
   };
 }
 
+function getStorageConfig(): AppConfig['storage'] {
+  return {
+    r2Endpoint: process.env.R2_ENDPOINT || '',
+    r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    r2Bucket: process.env.R2_BUCKET || 'igamingbooster',
+    r2Region: process.env.R2_REGION || 'auto',
+  };
+}
+
+function getJwtConfig(): AppConfig['jwt'] {
+  return {
+    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+  };
+}
+
 // Singleton config instance
 class ConfigManager {
   private static instance: AppConfig;
@@ -133,6 +163,10 @@ class ConfigManager {
         raffle: getRaffleConfig(),
         
         rewards: getRewardsConfig(),
+        
+        storage: getStorageConfig(),
+        
+        jwt: getJwtConfig(),
       };
 
       this.initialized = true;

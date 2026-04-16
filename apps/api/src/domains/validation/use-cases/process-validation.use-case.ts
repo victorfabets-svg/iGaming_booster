@@ -206,6 +206,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           confidence_score: fraudScoreResult.score,
         }, 'validation');
         
+        // Emit payment_identifier_extracted domain event for audit
         await insertEventInTransaction(client, 'payment_identifier_extracted', {
           proof_id: proof_id,
           identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
@@ -213,6 +214,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
         }, 'validation');
 
         if (identifierValidationResult.has_valid_identifiers) {
+          // Emit payment_signal_detected domain event for observability
           await insertEventInTransaction(client, 'payment_signal_detected', {
             proof_id: proof_id,
             signal_type: 'valid_payment_identifiers',
@@ -221,6 +223,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           }, 'validation');
         }
       } else {
+        // Emit proof_rejected domain event for audit
         await insertEventInTransaction(client, 'proof_rejected', {
           proof_id: proof_id,
           user_id: proof.user_id,

@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageService } from './StorageService';
+import { config } from 'shared/config/env';
 
 /**
  * R2 Storage Configuration
@@ -14,12 +15,13 @@ interface R2StorageConfig {
 }
 
 function getR2Config(): R2StorageConfig {
+  const { storage } = config;
   return {
-    endpoint: process.env.R2_ENDPOINT || '',
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    bucket: process.env.R2_BUCKET || 'igamingbooster',
-    region: process.env.R2_REGION || 'auto',
+    endpoint: storage.r2Endpoint,
+    accessKeyId: storage.r2AccessKeyId,
+    secretAccessKey: storage.r2SecretAccessKey,
+    bucket: storage.r2Bucket,
+    region: storage.r2Region,
   };
 }
 

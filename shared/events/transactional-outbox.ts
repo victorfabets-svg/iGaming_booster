@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { db, getDb } from '../database/connection';
+import { validateEventType, EVENT_TYPES } from './types';
 
 /**
  * REAL transactional outbox using single DB client.
@@ -57,6 +58,7 @@ export async function withTransactionalOutbox<T>(
 
 /**
  * Insert event within transaction.
+ * Validates event type against allowed EVENT_TYPES before insert
  */
 export async function insertEventInTransaction(
   client: any,
@@ -65,6 +67,9 @@ export async function insertEventInTransaction(
   producer: string,
   version = 'v1'
 ): Promise<void> {
+  // Validate event type before insert
+  validateEventType(event_type);
+  
   const event_id = randomUUID();
   const correlation_id = randomUUID();
   
@@ -109,6 +114,8 @@ export async function queueEventInTransaction(
   version = 'v1'
 ): Promise<void> {
   if (typeof txnId?.query === 'function') {
+    // Validate event type before insert
+    validateEventType(event_type);
     // It's a client - insert directly
     await insertEventInTransaction(txnId, event_type, payload, producer, version);
   }
