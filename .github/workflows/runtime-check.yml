@@ -175,46 +175,4 @@ jobs:
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
           NODE_PATH: ./tmp-write-test/node_modules
-        run: |
-          node -e "
-          const { Client } = require('pg');
-
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true
-          });
-
-          async function run() {
-            await client.connect();
-
-            console.log('Connected to Neon');
-
-            // INSERT
-            const insert = await client.query(
-              \"INSERT INTO validation.proofs (id, user_id, file_url, created_at)
-               VALUES (gen_random_uuid(), 'test-user-ci', 'https://test.com/file.png', NOW())
-               RETURNING *;\"
-            );
-
-            console.log('INSERT RESULT');
-            console.table(insert.rows);
-
-            // READ
-            const read = await client.query(
-              \"SELECT * FROM validation.proofs
-               WHERE user_id = 'test-user-ci'
-               ORDER BY created_at DESC
-               LIMIT 1;\"
-            );
-
-            console.log('READ RESULT');
-            console.table(read.rows);
-
-            await client.end();
-          }
-
-          run().catch(err => {
-            console.error(err);
-            process.exit(1);
-          });
-          "
+        run: node scripts/db-write-test.js
