@@ -50,14 +50,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const rewardLimitCheck = await rateLimitService.checkRewardLimit(payload.user_id);
   if (!rewardLimitCheck.allowed) {
     logger.warn('rate_limit_exceeded', 'rewards', 'Reward rate limit exceeded', payload.user_id, { proof_id: payload.proof_id });
-    await withTransactionalOutbox(async (txnId) => {
-      queueEventInTransaction(txnId, 'fraud_flag_detected', {
-        user_id: payload.user_id,
-        proof_id: payload.proof_id,
-        signal_type: 'reward_limit_exceeded',
-        reason: rewardLimitCheck.reason,
-      }, 'rewards');
-    });
+    // Rate limited - no event emitted, just return early
     return;
   }
 
@@ -76,15 +69,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       risk_score_modifier: behaviorCheck.risk_score_modifier
     });
     
-    await withTransactionalOutbox(async (txnId) => {
-      queueEventInTransaction(txnId, 'fraud_flag_detected', {
-        user_id: payload.user_id,
-        proof_id: payload.proof_id,
-        signal_type: 'high_risk_behavior',
-        signals: behaviorCheck.signals,
-        risk_score_modifier: behaviorCheck.risk_score_modifier,
-      }, 'rewards');
-    });
+    // High risk - no event emitted, just continue without granting
   }
 
   // Step 5: Get proof details for amount

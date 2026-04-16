@@ -13,13 +13,12 @@ export type EventType = typeof EVENT_TYPES[number];
 
 /**
  * Validate event type before insert
+ * Only validates events going through transactional outbox
  * @throws Error if event type is not in the allowed list
  */
 export function validateEventType(eventType: string): void {
   if (!EVENT_TYPES.includes(eventType as EventType)) {
-    throw new Error(
-      `INVALID EVENT TYPE: "${eventType}". Allowed types: ${EVENT_TYPES.join(', ')}`
-    );
+    throw new Error(`Invalid event type: "${eventType}". Allowed: ${EVENT_TYPES.join(', ')}`);
   }
 }
 

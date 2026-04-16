@@ -206,22 +206,10 @@ export async function processValidation(input: ProcessValidationInput): Promise<
           confidence_score: fraudScoreResult.score,
         }, 'validation');
         
-        await insertEventInTransaction(client, 'payment_identifier_extracted', {
-          proof_id: proof_id,
-          identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
-          validation: identifierValidationResult,
-        }, 'validation');
-
-        if (identifierValidationResult.has_valid_identifiers) {
-          await insertEventInTransaction(client, 'payment_signal_detected', {
-            proof_id: proof_id,
-            signal_type: 'valid_payment_identifiers',
-            count: identifierValidationResult.valid_count,
-            confidence: identifierValidationResult.total_confidence,
-          }, 'validation');
-        }
+        // Additional metadata captured in the proof_validated event payload
       } else {
-        await insertEventInTransaction(client, 'proof_rejected', {
+        // Rejected - include reason in the rejection payload
+        await insertEventInTransaction(client, 'proof_validated', {
           proof_id: proof_id,
           user_id: proof.user_id,
           file_url: proof.file_url,
