@@ -112,13 +112,14 @@ jobs:
           exit 1
 
       - name: Start worker (background)
-        working-directory: apps/api
-        env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
-          echo "=== STARTING WORKER ==="
-          node dist/worker/index.js &
-          echo "Worker started in background"
+          node apps/worker/dist/index.js > worker.log 2>&1 &
 
-      - name: Wait for worker
-        run: sleep 5
+      - name: Validate worker started
+        run: |
+          sleep 5
+          if ! grep -q "start" worker.log; then
+          echo "Worker failed"
+          cat worker.log
+          exit 1
+          fi
