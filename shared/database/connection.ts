@@ -143,6 +143,43 @@ export const db = {
   },
 };
 
+// Re-export pool for backward compatibility using lazy singleton getter
+export function getPool(): pg.Pool {
+  if (!_db) {
+    throw new Error('Database not initialized. Call initDb() first.');
+  }
+  return _db;
+}
+
+// Legacy exports for backward compatibility
+export const pool = {
+  get query() { return getPool().query.bind(getPool()); },
+  get end() { return () => closePool(); },
+  get connect() { return getPool().connect.bind(getPool()); }
+};
+
+export async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
+  const result = await getPool().query(text, params);
+  return result.rows;
+}
+
+export async function queryOne<T>(text: string, params?: unknown[]): Promise<T | null> {
+  const result = await getPool().query(text, params);
+  return result.rows[0] || null;
+}
+
+export async function execute(text: string, params?: unknown[]): Promise<number> {
+  const result = await getPool().query(text, params);
+  return result.rowCount || 0;
+}
+
+export async function closePool(): Promise<void> {
+  if (_db) {
+    await _db.end();
+    _db = null;
+  }
+}
+
 export async function connectWithRetry(maxRetries = 5, delayMs = 2000): Promise<void> {
   let lastError: Error | null = null;
   

@@ -1,3 +1,4 @@
+// Primary database connection - singleton for the application
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -14,6 +15,11 @@ export const db = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
+
+// Getter for backward compatibility
+export function getDb(): pg.Pool { return db; }
+export function getClient(): Promise<pg.PoolClient> { return db.connect(); }
+export async function initDb(connectionString?: string): Promise<void> { /* no-op: already initialized */ }
 
 // Connection event handlers
 db.on('connect', () => {
