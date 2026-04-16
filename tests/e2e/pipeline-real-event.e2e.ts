@@ -262,10 +262,17 @@ class E2ETest {
     `, [payload.user_id, payload.proof_id, payload.reward_id, raffleResult.rows[0].id]);
     
     if (ticketResult.rowCount === 1) {
+      // Ticket created - audit with ticket id
       await client.query(`
         INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
         VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
       `, [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]);
+    } else {
+      // Duplicate - audit with null entity_id (truthful based on actual DB outcome)
+      await client.query(`
+        INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+        VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
+      `, [payload.user_id, JSON.stringify({ reward_id: payload.reward_id, reason: 'idempotency_conflict' })]);
     }
   }
 
@@ -408,7 +415,17 @@ class E2ETest {
           RETURNING id
         `, [userId, proofId, rewardId, raffleResult.rows[0].id]);
         
-        return ticketResult.rowCount === 1 ? 'ticket_created' : 'duplicate';
+        if (ticketResult.rowCount === 1) {
+          await client.query(`INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+          VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
+          `, [ticketResult.rows[0].id, userId, JSON.stringify({ reward_id: rewardId })]);
+          return 'ticket_created';
+        } else {
+          await client.query(`INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+          VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
+          `, [userId, JSON.stringify({ reward_id: rewardId, reason: 'idempotency_conflict' })]);
+          return 'duplicate';
+        }
       };
       
       // Execute both IN PARALLEL - this forces REAL DB race condition
