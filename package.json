@@ -1,0 +1,14 @@
+{
+  "name": "igaming-booster",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "ts-node --esm tests/e2e/pipeline.e2e.ts"
+  },
+  "devDependencies": {
+    "pg": "^8.20.0",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  }
+}
