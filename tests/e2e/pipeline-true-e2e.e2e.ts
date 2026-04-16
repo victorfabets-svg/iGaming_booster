@@ -33,7 +33,7 @@ import jwt from 'jsonwebtoken';
 import { connectWithRetry } from '../../shared/database/connection';
 
 // Import worker consumers - this is how worker starts in production
-import { startRewardGrantedConsumer } from '../../domains/raffles/consumers/reward-granted.consumer';
+import { startRewardGrantedConsumer } from '../../apps/api/src/domains/raffles/consumers/reward-granted.consumer';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
 const API_PORT = 3001;

@@ -1,5 +1,5 @@
-import { getSeedForDraw, fetchTicketsForDraw, selectWinner } from '../../../domains/raffles/application/draw-engine';
-import { getRaffleById } from '../../../domains/raffles/application/get-active-raffle';
+import { getSeedForDraw, fetchTicketsForDraw, selectWinner } from '../application/draw-engine';
+import { getRaffleById } from '../application/get-active-raffle';
 import { db } from '../../../../../../shared/database/connection';
 import { randomUUID } from 'crypto';
 import { logger } from '../../../../../../shared/observability/logger';
