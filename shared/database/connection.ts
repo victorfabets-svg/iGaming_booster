@@ -86,10 +86,11 @@ export async function logAuditInTransaction(
 }
 
 export async function initDb(connectionString?: string): Promise<void> {
-  const dbUrl = connectionString || process.env.DATABASE_URL;
+  // Fail-fast: NEON_DB_URL is required
+  const dbUrl = process.env.NEON_DB_URL;
   
   if (!dbUrl) {
-    throw new Error('DATABASE_URL environment variable not set');
+    throw new Error("NEON_DB_URL is required");
   }
 
   // Configure SSL for cloud providers
