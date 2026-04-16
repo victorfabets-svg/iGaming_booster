@@ -6,6 +6,13 @@ interface RegisterBody {
   email: string;
 }
 
+// Simple email validation regex
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(email: unknown): email is string {
+  return typeof email === 'string' && EMAIL_REGEX.test(email);
+}
+
 /**
  * Auth routes - public registration endpoint
  */
@@ -16,7 +23,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
       const { email } = request.body;
 
-      if (!email || !email.includes('@')) {
+      if (!isValidEmail(email)) {
         return reply.status(400).send({ error: 'Valid email required' });
       }
 
