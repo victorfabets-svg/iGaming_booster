@@ -20,13 +20,15 @@ export interface ProofValidatedEventPayload {
 }
 
 export async function processReward(payload: ProofValidatedEventPayload): Promise<void> {
-  console.log(`🎁 Processing reward for proof: ${payload.proof_id}`);
-  console.log(`   Validation status: ${payload.status}, confidence: ${payload.confidence_score}`);
+  logger.info({
+    event: 'reward_processing_start',
+    context: 'rewards',
+    data: { proof_id: payload.proof_id, user_id: payload.user_id, validation_status: payload.status, confidence_score: payload.confidence_score }
+  });
 
   // Check if rewards are enabled
   if (!isRewardsEnabled()) {
     logger.warn('rewards_disabled', 'rewards', 'Rewards are currently disabled', payload.user_id, { proof_id: payload.proof_id });
-    console.log(`⚠️  Rewards are disabled, skipping reward`);
     return;
   }
 
@@ -37,21 +39,29 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   // Step 1: Check if validation is approved
   if (payload.status !== 'approved') {
-    console.log(`⏭️  Validation not approved, skipping reward`);
+    logger.info({
+      event: 'validation_not_approved',
+      context: 'rewards',
+      data: { proof_id: payload.proof_id, status: payload.status }
+    });
     return;
   }
 
   // Step 2: Check if reward already exists (idempotency)
   const existingReward = await findRewardByProofId(payload.proof_id);
   if (existingReward) {
-    console.log(`⏭️  Reward already exists for proof: ${payload.proof_id}, skipping`);
+    logger.info({
+      event: 'reward_duplicate_detected',
+      context: 'rewards',
+      data: { proof_id: payload.proof_id, reward_id: existingReward.id }
+    });
     return;
   }
 
   // Step 3: Check reward rate limit
   const rewardLimitCheck = await rateLimitService.checkRewardLimit(payload.user_id);
   if (!rewardLimitCheck.allowed) {
-    console.log(`⚠️  Reward rate limit exceeded for user: ${payload.user_id}`);
+    logger.warn('rate_limit_exceeded', 'rewards', 'Reward rate limit exceeded', payload.user_id, { proof_id: payload.proof_id });
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
@@ -72,7 +82,11 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     // High risk - downgraded to manual review or reject
     shouldGrantReward = false;
     downgradeReason = `High risk behavior: ${behaviorCheck.signals.join(', ')}`;
-    console.log(`⚠️  High risk detected, not granting reward: ${downgradeReason}`);
+    logger.warn('high_risk_detected', 'rewards', 'High risk detected, not granting reward', payload.user_id, { 
+      proof_id: payload.proof_id,
+      signals: behaviorCheck.signals,
+      risk_score_modifier: behaviorCheck.risk_score_modifier
+    });
     
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
@@ -93,7 +107,10 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   // Check risk first - if high risk, don't create reward
   if (!shouldGrantReward) {
-    console.log(`🚫 Reward not granted due to risk assessment: ${downgradeReason}`);
+    logger.warn('reward_not_granted_risk', 'rewards', 'Reward not granted due to risk assessment', payload.user_id, { 
+      proof_id: payload.proof_id,
+      reason: downgradeReason
+    });
     return;
   }
 
@@ -101,8 +118,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   // Step 6: Get experiment variant for this user
   const experimentVariant = await experimentService.assignUserToExperiment(payload.user_id, 'reward_tickets');
-  console.log(`🧪 Experiment variant: ${experimentVariant}`);
-  logger.info('experiment_assigned', 'rewards', `Assigned to experiment: reward_tickets`, payload.user_id, { 
+  logger.info('experiment_assigned', 'rewards', 'Assigned to experiment', payload.user_id, { 
     experiment: 'reward_tickets', 
     variant: experimentVariant 
   });
@@ -122,7 +138,10 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   }
   
   if (!benefitRule) {
-    console.log(`⚠️  No benefit rule found for amount: ${mockAmount}`);
+    logger.warn('no_benefit_rule', 'rewards', 'No benefit rule found', payload.user_id, { 
+      proof_id: payload.proof_id,
+      amount: mockAmount
+    });
     return;
   }
 
@@ -133,7 +152,13 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     effectiveNumbers = Math.max(1, Math.floor(benefitRule.numbers_generated * (1 - riskModifier * (benefitRule.risk_multiplier - 1))));
   }
 
-  console.log(`📋 Using benefit rule: ${effectiveNumbers} numbers (base: ${benefitRule.numbers_generated}, multiplier: ${benefitRule.risk_multiplier || 1}), ${benefitRule.access_days} days`);
+  logger.info('benefit_rule_selected', 'rewards', 'Using benefit rule', payload.user_id, { 
+    proof_id: payload.proof_id,
+    effective_numbers: effectiveNumbers,
+    base_numbers: benefitRule.numbers_generated,
+    multiplier: benefitRule.risk_multiplier || 1,
+    access_days: benefitRule.access_days
+  });
 
   // Step 7: Create reward with transactional outbox pattern
   const REWARD_VALUE = 10;
@@ -179,7 +204,11 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       }
     );
 
-    console.log(`✅ Created reward: ${createdReward.id} + event in same transaction (outbox pattern)`);
+    logger.info({
+      event: 'reward_created',
+      context: 'rewards',
+      data: { reward_id: createdReward.id, proof_id: payload.proof_id, user_id: payload.user_id, reward_type: createdReward.reward_type, value: createdReward.value }
+    });
     return createdReward;
   });
   // Note: Only reward_granted event - reward_created is NOT part of contract
@@ -197,5 +226,9 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   // Record reward in rate limit (outside transaction)
   await rateLimitService.recordRewardGranted(payload.user_id);
 
-  console.log(`✨ Reward processing completed for proof: ${payload.proof_id}`);
+  logger.info({
+    event: 'reward_processing_completed',
+    context: 'rewards',
+    data: { proof_id: payload.proof_id, reward_id: reward.id }
+  });
 }

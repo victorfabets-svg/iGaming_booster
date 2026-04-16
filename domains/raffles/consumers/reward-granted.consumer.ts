@@ -2,6 +2,7 @@ import { fetchAndLockEvents, getRetryCount, processWithRetry } from '../../../sh
 import { getActiveRaffle } from '../application/get-active-raffle';
 import { db } from '../../../shared/database/connection';
 import { randomUUID } from 'crypto';
+import { logger } from '../../../shared/observability/logger';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;
@@ -16,7 +17,7 @@ interface RewardGrantedPayload {
 }
 
 export async function startRewardGrantedConsumer(): Promise<void> {
-  console.log('🎁 Starting reward_granted consumer for ticket generation...');
+  logger.info('consumer_started', 'raffles', 'Starting reward_granted consumer for ticket generation');
 
   await pollEvents();
 
@@ -34,13 +35,20 @@ async function pollEvents(): Promise<void> {
       return;
     }
 
-    console.log(`📬 Found ${events.length} ${EVENT_TYPE} events`);
+    logger.info({
+      event: 'events_polled',
+      context: 'raffles',
+      data: { event_type: EVENT_TYPE, count: events.length }
+    });
 
     for (const event of events) {
       await processEvent(event);
     }
   } catch (error) {
-    console.error('❌ Error polling reward_granted events:', error);
+    logger.error('poll_error', 'raffles', 'Error polling reward_granted events', undefined, {
+      error: (error as Error).message,
+      stack: (error as Error).stack
+    });
   }
 }
 
@@ -49,8 +57,11 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
   const payload = event.payload as RewardGrantedPayload;
   const retryCount = await getRetryCount(eventId);
 
-  console.log(`\n🎁 Processing reward_granted event: ${eventId} (retry: ${retryCount})`);
-  console.log(`   User: ${payload.user_id}, Reward: ${payload.reward_id}`);
+  logger.info({
+    event: 'event_processing',
+    context: 'raffles',
+    data: { event_id: eventId, user_id: payload.user_id, reward_id: payload.reward_id, retry_count: retryCount }
+  });
 
   const success = await processWithRetry(
     eventId,
@@ -61,9 +72,17 @@ async function processEvent(event: { event_id?: string; id?: string; payload: un
   );
 
   if (success) {
-    console.log(`✅ Event ${eventId} processed successfully`);
+    logger.info({
+      event: 'event_processed',
+      context: 'raffles',
+      data: { event_id: eventId, status: 'success' }
+    });
   } else {
-    console.log(`📬 Event ${eventId} sent to DLQ after 3 retries`);
+    logger.warn({
+      event: 'event_dlq',
+      context: 'raffles',
+      data: { event_id: eventId, status: 'sent_to_dlq', retry_count: 3 }
+    });
   }
 }
 
@@ -286,7 +305,10 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
 
 if (require.main === module) {
   startRewardGrantedConsumer().catch((error) => {
-    console.error('Fatal error:', error);
+    logger.error('fatal_error', 'raffles', 'Fatal error starting consumer', undefined, {
+      error: error.message,
+      stack: error.stack
+    });
     process.exit(1);
   });
 }
