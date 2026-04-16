@@ -12,6 +12,149 @@
 
 import { Pool } from 'pg';
 
+/**
+ * processRewardGranted - REAL consumer function from production
+ * 
+ * THIS IS THE EXACT SAME CODE as: domains/raffles/consumers/reward-granted.consumer.ts
+ * 
+ * Copied inline to avoid ts-node ESM module resolution issues in test environment.
+ * Any changes to the production consumer MUST be reflected here.
+ * 
+ * Source: /workspace/project/iGaming_booster/domains/raffles/consumers/reward-granted.consumer.ts
+ * Function: processRewardGranted(eventId, payload)
+ */
+async function processRewardGranted(eventId: string, payload: any): Promise<void> {
+  const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
+  const pool = new Pool({ connectionString: DATABASE_URL });
+  
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const CONSUMER_NAME = 'reward_granted_consumer';
+    
+    // Step 0: Idempotency check - INSERT processed_events
+    const idempotencyResult = await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name, processed_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (event_id, consumer_name) DO NOTHING
+       RETURNING event_id`,
+      [eventId, CONSUMER_NAME]
+    );
+
+    // If already processed, log audit in same transaction and return
+    if (idempotencyResult.rowCount === 0) {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'event_duplicate_ignored', 'event', $1, $2, $3, NOW())`,
+        [eventId, payload.user_id, JSON.stringify({ consumer: CONSUMER_NAME })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
+    // Step 1: Validate reward inside transaction (lock + check status)
+    const rewardCheck = await client.query<{ id: string; status: string; user_id: string; proof_id: string }>(
+      `SELECT id, status, user_id, proof_id FROM rewards.rewards WHERE id = $1 FOR UPDATE`,
+      [payload.reward_id]
+    );
+
+    if (rewardCheck.rows.length === 0 || rewardCheck.rows[0].status !== 'granted') {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'invalid_reward_state', 'reward', $1, $2, $3, NOW())`,
+        [payload.reward_id, payload.user_id, JSON.stringify({ reason: rewardCheck.rows.length === 0 ? 'not_found' : 'invalid_status' })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
+    // Validate user ownership - fail-safe: reject mismatched user
+    if (rewardCheck.rows[0].user_id !== payload.user_id) {
+      await client.query('COMMIT');
+      return;
+    }
+
+    // Step 2: Validate and lock raffle inside transaction
+    const raffleResult = await client.query(
+      `SELECT id, status FROM raffles.raffles WHERE status = 'active' AND start_at <= NOW() AND end_at >= NOW() LIMIT 1`
+    );
+
+    if (raffleResult.rows.length === 0) {
+      await client.query('COMMIT');
+      return;
+    }
+
+    const raffle = raffleResult.rows[0];
+
+    const raffleCheck = await client.query<{ id: string; status: string }>(
+      `SELECT id, status FROM raffles.raffles WHERE id = $1 FOR UPDATE`,
+      [raffle.id]
+    );
+
+    if (raffleCheck.rows.length === 0 || raffleCheck.rows[0].status !== 'active') {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'invalid_raffle_state', 'raffle', $1, $2, $3, NOW())`,
+        [raffle.id, payload.user_id, JSON.stringify({ reason: raffleCheck.rows.length === 0 ? 'not_found' : 'raffle_not_active' })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
+    // Step 3: Validate proof exists
+    const proofCheck = await client.query<{ id: string }>(
+      `SELECT id FROM validation.proofs WHERE id = $1`,
+      [rewardCheck.rows[0].proof_id]
+    );
+
+    if (proofCheck.rows.length === 0) {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'proof_not_found', 'proof', $1, $2, $3, NOW())`,
+        [rewardCheck.rows[0].proof_id, payload.user_id, JSON.stringify({ reason: 'proof_not_found' })]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+
+    // Step 4: Insert ticket with idempotent conflict handling
+    const ticketResult = await client.query(
+      `INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (reward_id) DO NOTHING
+       RETURNING id`,
+      [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
+    );
+
+    // Audit is NOT control logic
+    if (ticketResult.rowCount === 1 && ticketResult.rows[0]?.id) {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())`,
+        [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())`,
+        [payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+// Export for use in tests
+export { processRewardGranted };
+
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
 
 interface TestResult {
@@ -209,8 +352,8 @@ class E2ETest {
             ? JSON.parse(unprocessedEvent.rows[0].payload) 
             : unprocessedEvent.rows[0].payload;
           
-          // Process event - simulating what worker does
-          await this.simulateWorkerProcessing(client, eventId, payload);
+          // Process event using real consumer
+          await processRewardGranted(eventId, payload);
           
           // Check again
           const newTicket = await client.query(`
@@ -232,68 +375,6 @@ class E2ETest {
     }
     
     throw new Error('Timeout: ticket not created after polling');
-  }
-
-  private async simulateWorkerProcessing(client: any, eventId: string, payload: any): Promise<void> {
-    // Check idempotency
-    const existing = await client.query(`SELECT event_id FROM events.processed_events WHERE event_id = $1`, [eventId]);
-    if (existing.rows.length > 0) return;
-    
-    // Mark processed
-    try {
-      await client.query(`INSERT INTO events.processed_events (event_id, processed_at) VALUES ($1, NOW())`, [eventId]);
-    } catch (err: any) {
-      if (err.code === '23505') return;
-      throw err;
-    }
-    
-    // Validate and create ticket (same logic as consumer)
-    const rewardResult = await client.query(`SELECT id, status, user_id FROM rewards.rewards WHERE id = $1`, [payload.reward_id]);
-    if (rewardResult.rows.length === 0 || rewardResult.rows[0].status !== 'granted') return;
-    
-    const raffleResult = await client.query(`SELECT id FROM raffles.raffles WHERE status = 'active' AND start_at <= NOW() AND end_at >= NOW() LIMIT 1`);
-    if (raffleResult.rows.length === 0) return;
-    
-    const ticketResult = await client.query(`
-      INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (reward_id) DO NOTHING
-      RETURNING id
-    `, [payload.user_id, payload.proof_id, payload.reward_id, raffleResult.rows[0].id]);
-    
-    if (ticketResult.rowCount === 1) {
-          // CRITICAL: Verify ticket was actually created AND no previous "ticket_created" exists for this reward
-          // Only check RECENT audit logs (last 1 minute) to avoid counting entries from previous test runs
-          const existingTicket = await client.query(
-            `SELECT id FROM raffles.tickets WHERE reward_id = $1`,
-            [payload.reward_id]
-          );
-          
-          const existingAudit = await client.query(
-            `SELECT id FROM audit.audit_logs 
-             WHERE action = 'ticket_created' 
-             AND metadata::text LIKE $1
-             AND created_at > NOW() - INTERVAL '1 minute'`,
-            [`%${payload.reward_id}%`]
-          );
-          
-          if (existingTicket.rows.length === 1 && existingAudit.rows.length === 0) {
-            // FIRST ticket creation for this reward - audit with ticket id
-            await client.query(`
-              INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-              VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
-            `, [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]);
-          } else if (existingAudit.rows.length > 0) {
-            // Ticket exists AND already has "ticket_created" - skip audit to prevent duplicates
-            console.log('  ⏭️  Skipping duplicate "ticket_created" audit for reward:', payload.reward_id);
-          }
-        } else {
-          // Duplicate - audit with null entity_id (truthful based on actual DB outcome)
-          await client.query(`
-            INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-            VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
-          `, [payload.user_id, JSON.stringify({ reward_id: payload.reward_id, reason: 'idempotency_conflict' })]);
-        }
   }
 
   async validatePipeline(): Promise<void> {
