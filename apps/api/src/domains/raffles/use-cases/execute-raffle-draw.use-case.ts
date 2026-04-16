@@ -2,10 +2,10 @@ import * as crypto from 'crypto';
 import { findRaffleById, updateRaffleStatus } from '../../rewards/repositories/raffle.repository';
 import { findTicketsByRaffleId } from '../../rewards/repositories/ticket.repository';
 import { createRaffleDraw, findRaffleDrawByRaffleId, updateRaffleDrawWinner } from '../repositories/raffle-draw.repository';
-import { createEvent } from '../../../shared/events/event.repository';
-import { logger } from '../../../shared/observability/logger';
-import { recordRaffleExecution } from '../../../shared/observability/metrics.service';
-import { isRaffleEnabled } from '../../../shared/config/feature-flags';
+import { createEvent } from 'shared/events/event.repository';
+import { logger } from 'shared/observability/logger';
+import { recordRaffleExecution } from 'shared/observability/metrics.service';
+import { isRaffleEnabled } from 'shared/config/feature-flags';
 
 export interface ExecuteRaffleDrawInput {
   raffle_id: string;

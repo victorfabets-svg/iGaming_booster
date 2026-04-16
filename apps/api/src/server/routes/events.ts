@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { findAllEvents } from '../../shared/events/event.repository';
+import { findAllEvents } from 'shared/events/event.repository';
 
 export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
   // Get all events (last 50, sorted by timestamp DESC)
