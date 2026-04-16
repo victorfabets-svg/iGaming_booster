@@ -1,19 +1,10 @@
 import { pool, queryOne } from '../../../lib/database';
 import { PoolClient } from 'pg';
 
-/**
- * Schema assertion: Verify 'status' column exists in rewards table
- * This ensures schema integrity before any reward operations
- */
-export async function assertRewardSchema(): Promise<void> {
-  const result = await queryOne<{ column_name: string }>(
-    `SELECT column_name 
-     FROM information_schema.columns 
-     WHERE table_schema = 'rewards' AND table_name = 'rewards' AND column_name = 'status'`
-  );
-  
-  if (!result) {
-    throw new Error('SCHEMA VIOLATION: rewards.rewards table missing "status" column. Run migration 016_fix_rewards_schema.sql');
+// Simple invariant check - fail-fast on invalid input
+function validateRewardPayload(input: CreateRewardInput): void {
+  if (!input || !input.user_id || !input.proof_id) {
+    throw new Error('Invalid reward payload: user_id and proof_id are required');
   }
 }
 
@@ -45,8 +36,8 @@ const DEFAULT_REWARD_STATUS = 'granted';
  * This guarantees runtime integrity regardless of input
  */
 export async function createReward(input: CreateRewardInput): Promise<Reward> {
-  // Assert schema integrity before any insert
-  await assertRewardSchema();
+  // Fail-fast on invalid input
+  validateRewardPayload(input);
   
   // Force status to 'granted' - never allow override
   const forcedStatus = DEFAULT_REWARD_STATUS;
@@ -66,8 +57,8 @@ export async function createRewardTx(
   input: CreateRewardInput,
   client: PoolClient
 ): Promise<Reward> {
-  // Assert schema integrity before any insert
-  await assertRewardSchema();
+  // Fail-fast on invalid input
+  validateRewardPayload(input);
   
   // Force status to 'granted' - never allow override
   const forcedStatus = DEFAULT_REWARD_STATUS;
