@@ -12,7 +12,12 @@ async function run() {
 
   const insertQuery = `
     INSERT INTO validation.proofs (id, user_id, file_url, hash)
-    VALUES (gen_random_uuid(), 'test-user-ci', 'test-url', 'test-hash')
+    VALUES (
+      gen_random_uuid(),
+      gen_random_uuid(),
+      'test-url',
+      'test-hash'
+    )
     RETURNING *;
   `;
 
@@ -22,7 +27,7 @@ async function run() {
 
   console.log('Running SELECT...');
   const selectRes = await client.query(
-    "SELECT * FROM validation.proofs WHERE user_id = 'test-user-ci'"
+    "SELECT * FROM validation.proofs WHERE file_url = 'test-url'"
   );
   console.table(selectRes.rows);
 
