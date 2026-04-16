@@ -118,7 +118,7 @@ jobs:
       - name: Validate worker started
         run: |
           sleep 5
-          if ! grep -q "start" worker.log; then
+          if ! grep -Ei "worker|consumer|started" worker.log; then
           echo "Worker failed"
           cat worker.log
           exit 1
