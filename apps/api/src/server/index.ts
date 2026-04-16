@@ -4,12 +4,14 @@ import { connectWithRetry, getDb } from '../../../../shared/database/connection'
 import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 
 async function start() {
-  // Try to connect to database, but allow server to start even if it fails
+  // Connect to database - MUST succeed or app fails
   try {
     console.log('[DB] Attempting to connect to database...');
     await connectWithRetry();
+    console.log('[DB] Connection successful');
   } catch (error) {
-    console.error('[DB] Warning: Database connection failed, continuing anyway:', error);
+    console.error('[DB] Connection failed');
+    process.exit(1);
   }
 
   // Start stuck event recovery globally (runs once)
