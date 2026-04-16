@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { db, connectWithRetry } from 'shared/database/connection';
+import { db, query, connectWithRetry } from 'shared/database/connection';
 
 const MIGRATIONS_DIR = path.join(__dirname, 'shared/database/migrations');
 
@@ -22,10 +22,10 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 async function getExecutedMigrations(): Promise<Migration[]> {
-  const result = await db.query<Migration>(
+  const result = await query<Migration>(
     `SELECT filename, executed_at FROM events.migrations ORDER BY executed_at ASC`
   );
-  return result.rows;
+  return result;
 }
 
 async function markMigrationExecuted(filename: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { db } from '../database/connection';
+import { db, query } from '../database/connection';
 import { Event } from './types';
 export { Event };
 
@@ -14,7 +14,7 @@ export { Event };
  * If tables/columns are missing, this will fail fast - which is correct behavior.
  */
 export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
-  const result = await db.query<Event>(
+  const result = await query<Event>(
     `SELECT id, event_type, version, producer, correlation_id, payload, 
             retry_count, processed, timestamp, locked_at
      FROM events.events
@@ -26,7 +26,7 @@ export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
     [limit]
   );
 
-  return result.rows;
+  return result;
 }
 
 /**
@@ -47,7 +47,7 @@ export async function lockEvent(eventId: string): Promise<void> {
  * These events were likely abandoned by crashed consumers.
  */
 export async function recoverStuckEvents(): Promise<number> {
-  const result = await db.query<{ id: string }>(
+  const result = await query<{ id: string }>(
     `UPDATE events.events 
      SET locked_at = NULL
      WHERE locked_at IS NOT NULL 
@@ -55,7 +55,7 @@ export async function recoverStuckEvents(): Promise<number> {
      RETURNING id`
   );
   
-  const count = result.rows.length;
+  const count = result.length;
   if (count > 0) {
     console.log(`[RECOVERY] Released ${count} stuck events`);
   }
@@ -129,11 +129,11 @@ export async function incrementRetryCount(eventId: string): Promise<void> {
  * Get current retry count for an event.
  */
 export async function getRetryCount(eventId: string): Promise<number> {
-  const result = await db.query<{ retry_count: number }>(
+  const result = await query<{ retry_count: number }>(
     `SELECT retry_count FROM events.events WHERE id = $1`,
     [eventId]
   );
-  return result.rows[0]?.retry_count ?? 0;
+  return result[0]?.retry_count ?? 0;
 }
 
 // ============================================================================
@@ -166,7 +166,7 @@ export async function isInDlq(eventId: string): Promise<boolean> {
     `SELECT 1 FROM events.dlq_events WHERE event_id = $1`,
     [eventId]
   );
-  return result.rows.length > 0;
+  return result.length > 0;
 }
 
 /**
@@ -179,7 +179,7 @@ export async function getDlqEvents(limit: number = 100): Promise<any[]> {
      LIMIT $1`,
     [limit]
   );
-  return result.rows;
+  return result;
 }
 
 /**
@@ -264,11 +264,11 @@ export async function fetchUnprocessedEvents(limit: number = 100): Promise<Event
 
 export async function acquireEventLock(eventId: string): Promise<boolean> {
   // Row locking handles this - just check if already processed
-  const result = await db.query<{ id: string }>(
+  const result = await query<{ id: string }>(
     `SELECT id FROM events.events WHERE id = $1 AND processed = TRUE`,
     [eventId]
   );
-  return result.rows.length === 0;
+  return result.length === 0;
 }
 
 export async function ensureDlqTable(): Promise<void> {
@@ -304,7 +304,7 @@ export async function isEventProcessed(eventId: string): Promise<boolean> {
     `SELECT 1 FROM events.processed_events WHERE event_id = $1`,
     [eventId]
   );
-  return result.rows.length > 0;
+  return result.length > 0;
 }
 
 /**
