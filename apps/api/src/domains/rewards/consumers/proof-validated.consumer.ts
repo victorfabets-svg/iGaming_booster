@@ -1,16 +1,25 @@
 import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processReward } from '../../rewards/use-cases/process-reward.use-case';
+import { logger } from '../../../../../../shared/observability/logger';
 
 const EVENT_TYPE = 'proof_validated';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
 export async function startProofValidatedConsumer(): Promise<void> {
-  console.log('🔄 Starting proof_validated consumer...');
+  logger.info({
+    event: 'consumer_starting',
+    context: 'rewards',
+    data: { event_type: EVENT_TYPE, poll_interval_ms: POLL_INTERVAL_MS, batch_size: BATCH_SIZE }
+  });
 
   // Schema now handled by migration (009_hardening_layer.sql)
   // Fail-fast if schema missing - intentional
-  console.log('✅ Event schema expected from migration');
+  logger.info({
+    event: 'schema_expected',
+    context: 'rewards',
+    data: { message: 'Event schema expected from migration' }
+  });
 
   // Initial poll
   await pollEvents();
@@ -33,13 +42,21 @@ async function pollEvents(): Promise<void> {
       return;
     }
 
-    console.log(`📬 Found ${events.length} ${EVENT_TYPE} events (with row lock)`);
+    logger.info({
+      event: 'events_found',
+      context: 'rewards',
+      data: { event_type: EVENT_TYPE, count: events.length, batch_size: BATCH_SIZE }
+    });
 
     for (const event of events) {
       await processEvent(event);
     }
   } catch (error) {
-    console.error('❌ Error polling events:', error);
+    logger.error(
+      'poll_events_error',
+      'rewards',
+      `Error polling events: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -58,8 +75,12 @@ async function processEvent(event: Event): Promise<void> {
   const payload = event.payload as ProofValidatedPayload;
   const retryCount = await getRetryCount(eventId);
 
-  console.log(`\n🔔 Processing event: ${eventId} (retry: ${retryCount})`);
-  console.log(`   Type: ${EVENT_TYPE}, Proof ID: ${payload.proof_id}, Status: ${payload.status}`);
+  logger.info({
+    event: 'event_processing',
+    context: 'rewards',
+    data: { event_id: eventId, event_type: EVENT_TYPE, proof_id: payload.proof_id, status: payload.status, retry_count: retryCount },
+    user_id: payload.user_id
+  });
 
   // Use retry logic - increments retry_count on each failure
   // After 3 retries → goes to DLQ
@@ -72,16 +93,30 @@ async function processEvent(event: Event): Promise<void> {
   );
 
   if (success) {
-    console.log(`✅ Event ${eventId} processed successfully`);
+    logger.info({
+      event: 'event_processed',
+      context: 'rewards',
+      data: { event_id: eventId, proof_id: payload.proof_id, status: 'success' },
+      user_id: payload.user_id
+    });
   } else {
-    console.log(`📬 Event ${eventId} sent to DLQ after 3 retries`);
+    logger.info({
+      event: 'event_dlq',
+      context: 'rewards',
+      data: { event_id: eventId, proof_id: payload.proof_id, status: 'dlq', retry_count: retryCount },
+      user_id: payload.user_id
+    });
   }
 }
 
 // For running as standalone script
 if (require.main === module) {
   startProofValidatedConsumer().catch((error) => {
-    console.error('Fatal error:', error);
+    logger.error(
+      'fatal_error',
+      'rewards',
+      `Fatal error: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   });
 }
