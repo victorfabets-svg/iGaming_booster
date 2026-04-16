@@ -2,9 +2,14 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+// Validate required environment variables
+if (!process.env.NEON_DB_URL) {
+  throw new Error("NEON_DB_URL is not set");
+}
+
 // Deterministic singleton - always initialized at module load
 export const db = new Pool({
-  connectionString: process.env.DATABASE_URL!,
+  connectionString: process.env.NEON_DB_URL!,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
