@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { db, connectWithRetry } from '../../../shared/database/connection';
+import { pool, query } from '../lib/database';
 
-const MIGRATIONS_DIR = path.join(__dirname, '../../../shared/database/migrations');
+const MIGRATIONS_DIR = path.join(__dirname, '../../shared/database/migrations');
 
 interface Migration {
   filename: string;
@@ -10,7 +10,7 @@ interface Migration {
 }
 
 async function ensureMigrationsTable(): Promise<void> {
-  await db.query(`
+  await query(`
     CREATE TABLE IF NOT EXISTS events.migrations (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
       filename TEXT NOT NULL UNIQUE,
@@ -20,13 +20,14 @@ async function ensureMigrationsTable(): Promise<void> {
 }
 
 async function getExecutedMigrations(): Promise<Migration[]> {
-  const result = await db.query<Migration>(
+  const result = await query<Migration>(
     `SELECT filename, executed_at FROM events.migrations ORDER BY executed_at ASC`
-  ) as unknown as Migration[] || [];
+  );
+  return result || [];
 }
 
 async function markMigrationExecuted(filename: string): Promise<void> {
-  await db.query(
+  await query(
     `INSERT INTO events.migrations (filename, executed_at) VALUES ($1, NOW())`,
     [filename]
   );
@@ -35,10 +36,6 @@ async function markMigrationExecuted(filename: string): Promise<void> {
 async function runMigrations(): Promise<void> {
   console.log('🔄 Starting migration runner...');
   console.log(`📁 Migrations directory: ${MIGRATIONS_DIR}`);
-
-  // Connect to database first
-  await connectWithRetry();
-  console.log('✅ Database connected');
 
   // Ensure migrations table exists
   await ensureMigrationsTable();
@@ -77,7 +74,7 @@ async function runMigrations(): Promise<void> {
     console.log(`🚀 Executing: ${file}`);
 
     try {
-      await db.query(sql);
+      await pool.query(sql);
       await markMigrationExecuted(file);
       console.log(`✅ Completed: ${file}`);
       executed++;
@@ -93,7 +90,7 @@ async function runMigrations(): Promise<void> {
   console.log(`   Skipped: ${skipped}`);
   console.log('✨ Migration runner finished');
 
-  await db.end();
+  await pool.end();
 }
 
 runMigrations().catch((error) => {

@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { findAllRewards, findRewardById } from '../../../domains/rewards/repositories/reward.repository';
-import { findRaffleById, findActiveRaffle, findAllRaffles } from '../../../domains/rewards/repositories/raffle.repository';
+import { findAllRewards, findRewardById } from '../../domains/rewards/repositories/reward.repository';
+import { findRaffleById, findActiveRaffle, findAllRaffles } from '../../domains/rewards/repositories/raffle.repository';
 
 export async function rewardRoutes(fastify: FastifyInstance): Promise<void> {
   // Get all rewards

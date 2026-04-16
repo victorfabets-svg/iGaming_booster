@@ -1,4 +1,4 @@
-import { findProofById, findProofsByUserId } from '../../validation/repositories/proof.repository';
+import { findProofById } from '../../validation/repositories/proof.repository';
 import { findRiskSignalsByUserId, countRiskSignalsByUser, createRiskSignal } from '../repositories/risk-signal.repository';
 
 export interface BehaviorAnalysisResult {
@@ -97,7 +97,7 @@ export class BehaviorAnalysisService {
         value: isSuspicious ? 'suspicious' : 'normal',
         metadata: {
           signals,
-          risk_score_modifier,
+          riskScoreModifier,
           proof_count_24h: userProofs.length,
         },
       });

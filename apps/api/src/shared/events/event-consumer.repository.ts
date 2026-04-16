@@ -1,4 +1,4 @@
-import { pool, query, execute, queryOne } from '../../../../lib/database';
+import { pool, query, execute, queryOne } from '../../lib/database';
 
 export interface Event {
   id: string;

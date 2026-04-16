@@ -1,7 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { createProofUseCase } from '../../../domains/validation/application/createProofUseCase';
-import { findProofById, findAllProofs } from '../../../domains/validation/repositories/proof.repository';
-import { findValidationByProofId } from '../../../domains/validation/repositories/proof-validation.repository';
+import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
+import { findProofById, findAllProofs } from '../../domains/validation/repositories/proof.repository';
+import { findValidationByProofId } from '../../domains/validation/repositories/proof-validation.repository';
+import { Proof } from '../../domains/validation/repositories/proof.repository';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
@@ -86,7 +87,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       
       // Get validation for each proof
       const proofsWithValidation = await Promise.all(
-        proofs.map(async (proof) => {
+        proofs.map(async (proof: Proof) => {
           const validation = await findValidationByProofId(proof.id);
           return {
             id: proof.id,

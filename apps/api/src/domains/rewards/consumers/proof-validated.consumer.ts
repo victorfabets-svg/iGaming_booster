@@ -51,7 +51,7 @@ interface ProofValidatedPayload {
 
 async function processEvent(event: { id: string; payload: Record<string, unknown> }): Promise<void> {
   const eventId = event.id;
-  const payload = event.payload as ProofValidatedPayload;
+  const payload = event.payload as unknown as ProofValidatedPayload;
 
   console.log(`\n🔔 Processing event: ${eventId}`);
   console.log(`   Type: ${EVENT_TYPE}`);

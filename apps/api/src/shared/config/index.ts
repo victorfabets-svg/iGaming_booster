@@ -3,9 +3,9 @@
  * Logs environment and feature flags on startup
  */
 
-import { config, environment, isProduction, isDevelopment } from './config/env';
-import { featureFlags } from './config/feature-flags';
-import { logger } from './observability/logger';
+import { config, environment, isProduction, isDevelopment } from './env';
+import { featureFlags } from './feature-flags';
+import { logger } from '../observability/logger';
 
 export function initializeEnvironment(): void {
   // Log environment info
@@ -67,5 +67,5 @@ export function initializeEnvironment(): void {
 }
 
 // Export config for use throughout the application
-export { config, environment, isProduction, isDevelopment, featureFlags } from './config/env';
-export { featureFlags as ff, isRewardsEnabled, isValidationEnabled, isRaffleEnabled, isAutomaticApprovalEnabled } from './config/feature-flags';
+export { config, environment, isProduction, isDevelopment, featureFlags } from './env';
+export { featureFlags as ff, isRewardsEnabled, isValidationEnabled, isRaffleEnabled, isAutomaticApprovalEnabled } from './feature-flags';

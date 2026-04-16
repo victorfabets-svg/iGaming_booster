@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { db } from '../../../../shared/database/connection';
+import { pool } from '../../../lib/database';
 import { Proof, ProofInput, ProofResult } from '../domain/proof';
 
 export async function createProof(proof: ProofInput, fileUrl: string, hash: string): Promise<ProofResult> {
@@ -7,7 +7,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
   const submitted_at = new Date().toISOString();
 
   try {
-    await db.query(
+    await pool.query(
       `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
        VALUES ($1, $2, $3, $4, $5)`,
       [id, proof.user_id, fileUrl, hash, submitted_at]
@@ -37,7 +37,7 @@ export async function createProof(proof: ProofInput, fileUrl: string, hash: stri
 }
 
 export async function findByHash(hash: string): Promise<Proof | null> {
-  const result = await db.query(
+  const result = await pool.query(
     `SELECT id, user_id, file_url, hash, submitted_at FROM validation.proofs WHERE hash = $1`,
     [hash]
   );

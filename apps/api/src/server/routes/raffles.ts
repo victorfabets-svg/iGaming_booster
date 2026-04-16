@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { findRaffleById, findAllRaffles, findActiveRaffle } from '../../../domains/rewards/repositories/raffle.repository';
-import { findRaffleDrawByRaffleId } from '../../../domains/raffles/repositories/raffle-draw.repository';
+import { findRaffleById, findAllRaffles, findActiveRaffle } from '../../domains/rewards/repositories/raffle.repository';
+import { findRaffleDrawByRaffleId } from '../../domains/raffles/repositories/raffle-draw.repository';
 
 export async function raffleRoutes(fastify: FastifyInstance): Promise<void> {
   // Get all raffles

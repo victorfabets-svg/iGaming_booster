@@ -1,5 +1,5 @@
 import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../shared/events/event-consumer.repository';
-import { processProofSubmitted, ProofSubmittedEventPayload } from '../../use-cases/process-proof-submitted.use-case';
+import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 
 const EVENT_TYPE = 'proof_submitted';
 const POLL_INTERVAL_MS = 5000;
@@ -41,7 +41,7 @@ async function pollEvents(): Promise<void> {
 
 async function processEvent(event: { id: string; payload: Record<string, unknown> }): Promise<void> {
   const eventId = event.id;
-  const payload = event.payload as ProofSubmittedEventPayload;
+  const payload = event.payload as unknown as ProofSubmittedEventPayload;
 
   console.log(`\n🔔 Processing event: ${eventId}`);
   console.log(`   Type: ${EVENT_TYPE}`);

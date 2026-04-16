@@ -14,9 +14,9 @@
     "declarationMap": true,
     "sourceMap": true,
     "moduleResolution": "node",
-    "baseUrl": ".",
+    "baseUrl": "./src",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./*"]
     }
   },
   "include": ["src/**/*"],

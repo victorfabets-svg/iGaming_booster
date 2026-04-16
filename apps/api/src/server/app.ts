@@ -1,11 +1,11 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
-import { db } from '../../../../shared/database/connection';
+import { pool } from '../lib/database';
 import { proofRoutes } from './routes/proofs';
 import { rewardRoutes } from './routes/rewards';
 import { raffleRoutes } from './routes/raffles';
 import { eventRoutes } from './routes/events';
-import { getMetrics } from '../../shared/observability/metrics.controller';
+import { getMetrics } from '../shared/observability/metrics.controller';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -31,7 +31,7 @@ export function buildApp(): FastifyInstance {
 
   app.get('/health/db', async () => {
     try {
-      await db.query('SELECT 1');
+      await pool.query('SELECT 1');
       return { status: 'ok' };
     } catch (error) {
       return { status: 'error' };
