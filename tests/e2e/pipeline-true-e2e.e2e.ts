@@ -235,14 +235,9 @@ class TrueE2ETest {
   private async setup(): Promise<void> {
     console.log('\n📦 Setting up test environment...');
     
-    // Verify DB connection
-    const client = await this.pool.connect();
-    try {
-      await client.query('SELECT 1');
-      console.log('✅ Database connected');
-    } finally {
-      client.release();
-    }
+    // Verify DB connection (read-only check, no writes)
+    await this.pool.query('SELECT 1');
+    console.log('✅ Database connected');
     
     // Verify dist exists
     const apiDist = path.join(__dirname, '../../apps/api/dist/server/index.js');
@@ -318,53 +313,55 @@ class TrueE2ETest {
   }
 
   private async createTestUser(): Promise<void> {
-    console.log('\n👤 Finding test user...');
+    console.log('\n👤 Setting up test user...');
     
-    // Check if user exists
-    const existingId = await findUserByEmail(this.pool, TEST_USER_EMAIL);
-    if (existingId) {
-      this.testUserId = existingId;
-      console.log('  ✅ Test user found:', this.testUserId);
-      return;
-    }
-    
-    // For TRUE E2E test, we must create user via API, not direct DB
-    // But if no registration API exists, we need to accept this limitation
-    // The user creation IS test infrastructure setup, not test logic
-    
-    // Try to create via API first (preferred)
+    // Strategy 1: Try API registration first
     try {
       const res = await httpRequest({
         method: 'POST',
         path: '/auth/register',
-        body: { email: TEST_USER_EMAIL, password: 'test123!' },
+        body: { email: TEST_USER_EMAIL, password: 'Test123!' },
       });
       if (res.status === 200 || res.status === 201) {
-        console.log('  ✅ Test user created via API');
         const userId = await findUserByEmail(this.pool, TEST_USER_EMAIL);
         if (userId) {
           this.testUserId = userId;
+          console.log('  ✅ User created via API');
           return;
         }
       }
     } catch (e) {
-      // API registration not available
+      // Registration endpoint not available
     }
     
-    // Fall back to direct DB creation (infrastructure setup, not test)
-    console.log('  ⚠️  Using DB user creation (infrastructure setup)...');
-    const client = await this.pool.connect();
+    // Strategy 2: Use seeded test user (pre-created via migration/seed)
+    // Common pattern: use a fixed test user ID that exists in dev/staging
+    const seededUserId = '00000000-0000-0000-0000-000000000001';
+    const exists = await this.userExists(seededUserId);
+    if (exists) {
+      this.testUserId = seededUserId;
+      console.log('  ✅ Using seeded test user');
+      return;
+    }
+    
+    // Strategy 3: No user available - fail with clear message
+    throw new Error(
+      'No test user available. Either:\n' +
+      '1. Add /auth/register endpoint to API, OR\n' +
+      '2. Seed test user via migration: INSERT INTO identity.users (id, ...) VALUES (...)\n' +
+      'Tests cannot create users directly.'
+    );
+  }
+  
+  private async userExists(userId: string): Promise<boolean> {
     try {
-      const result = await client.query(`
-        INSERT INTO identity.users (id, email, status, created_at)
-        VALUES (gen_random_uuid(), $1, 'active', NOW())
-        RETURNING id
-      `, [TEST_USER_EMAIL]);
-      
-      this.testUserId = result.rows[0].id;
-      console.log('  ✅ Test user created:', this.testUserId);
-    } finally {
-      client.release();
+      const result = await this.pool.query(
+        'SELECT 1 FROM identity.users WHERE id = $1',
+        [userId]
+      );
+      return result.rows.length > 0;
+    } catch {
+      return false;
     }
   }
 
