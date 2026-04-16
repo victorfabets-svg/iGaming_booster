@@ -1,17 +1,24 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
-import { findProofById, findAllProofs } from '../../domains/validation/repositories/proof.repository';
-import { findValidationByProofId } from '../../domains/validation/repositories/proof-validation.repository';
-import { Proof } from '../../domains/validation/repositories/proof.repository';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
+  // Apply auth middleware to all routes in this plugin
+  fastify.addHook('preHandler', authMiddleware);
+
   fastify.post(
     '/proofs',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Zero trust: user_id extracted from token, NOT from body
+      const user_id = (request as any).userId;
+      
+      if (!user_id) {
+        return reply.status(401).send({ error: 'Unauthorized: valid token required' });
+      }
+
       // Use parts() iterator to handle multipart form data
       const parts = request.parts();
 
-      let user_id: string | null = null;
       let fileBuffer: Buffer | null = null;
       let filename: string | null = null;
 
@@ -22,15 +29,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           fileBuffer = await part.toBuffer();
           filename = part.filename;
         }
-
-        if (part.type === 'field' && part.fieldname === 'user_id') {
-          user_id = part.value as string;
-        }
-      }
-
-      // Validate user_id
-      if (!user_id) {
-        return reply.status(400).send({ error: 'Missing required field: user_id' });
+        // NOTE: user_id no longer accepted from body - extracted from token only
       }
 
       // Validate file
@@ -38,71 +37,26 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Missing required file upload or file is empty' });
       }
 
-      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes`);
+      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
 
       const result = await createProofUseCase({
         user_id,
         file_buffer: fileBuffer,
+        filename: filename || undefined,
       });
 
-      return reply.status(201).send({
+      // Build response with optional signed URL
+      const response: any = {
         proof_id: result.proof_id,
         status: result.status,
-      });
-    }
-  );
-
-  // Get proof by ID with validation status
-  fastify.get(
-    '/proofs/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { id } = request.params as { id: string };
+      };
       
-      const proof = await findProofById(id);
-      if (!proof) {
-        return reply.status(404).send({ error: 'Proof not found' });
+      if (result.file_url) {
+        response.file_url = result.file_url;
+        response.expires_in = result.expires_in;
       }
 
-      const validation = await findValidationByProofId(id);
-      
-      return {
-        id: proof.id,
-        user_id: proof.user_id,
-        file_url: proof.file_url,
-        hash: proof.hash,
-        submitted_at: proof.submitted_at,
-        status: validation?.status || null,
-        confidence_score: validation?.confidence_score || null,
-        validated_at: validation?.validated_at || null,
-      };
-    }
-  );
-
-  // Get all proofs with optional limit
-  fastify.get(
-    '/proofs',
-    async (request: FastifyRequest) => {
-      const limit = parseInt((request.query as Record<string, string>).limit || '50', 10);
-      const proofs = await findAllProofs(limit);
-      
-      // Get validation for each proof
-      const proofsWithValidation = await Promise.all(
-        proofs.map(async (proof: Proof) => {
-          const validation = await findValidationByProofId(proof.id);
-          return {
-            id: proof.id,
-            user_id: proof.user_id,
-            file_url: proof.file_url,
-            hash: proof.hash,
-            submitted_at: proof.submitted_at,
-            status: validation?.status || null,
-            confidence_score: validation?.confidence_score || null,
-            validated_at: validation?.validated_at || null,
-          };
-        })
-      );
-      
-      return proofsWithValidation;
+      return reply.status(201).send(response);
     }
   );
 }

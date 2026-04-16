@@ -1,4 +1,4 @@
-import { findProofById } from '../../validation/repositories/proof.repository';
+import { findProofById, findProofsByUserId } from '../../validation/repositories/proof.repository';
 import { findRiskSignalsByUserId, countRiskSignalsByUser, createRiskSignal } from '../repositories/risk-signal.repository';
 
 export interface BehaviorAnalysisResult {

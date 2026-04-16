@@ -1,7 +1,22 @@
 import { buildApp } from './app';
-import { config } from '../shared/config/env';
+import { config } from '../../../../shared/config/env';
+import { connectWithRetry, getDb } from '../../../../shared/database/connection';
+import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 
 async function start() {
+  // Connect to database - MUST succeed or app fails
+  try {
+    console.log('[DB] Attempting to connect to database...');
+    await connectWithRetry();
+    console.log('[DB] Connection successful');
+  } catch (error) {
+    console.error('[DB] Connection failed');
+    process.exit(1);
+  }
+
+  // Start stuck event recovery globally (runs once)
+  startStuckEventRecovery();
+
   const app = buildApp();
 
   const port = config.apiPort;

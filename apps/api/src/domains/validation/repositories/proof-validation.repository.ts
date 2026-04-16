@@ -1,4 +1,4 @@
-import { pool, queryOne, query } from '../../../lib/database';
+import { pool, queryOne } from '../../../lib/database';
 
 export interface ProofValidation {
   id: string;
@@ -18,6 +18,23 @@ export interface CreateProofValidationInput {
 
 export async function createProofValidation(input: CreateProofValidationInput): Promise<ProofValidation> {
   const result = await pool.query(
+    `INSERT INTO validation.proof_validations (proof_id, status, validation_version)
+     VALUES ($1, $2, $3)
+     RETURNING id, proof_id, status, confidence_score, validation_version, validated_at, created_at`,
+    [input.proof_id, input.status, input.validation_version]
+  );
+  return result.rows[0];
+}
+
+/**
+ * Create proof validation within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function createProofValidationWithClient(
+  client: any,
+  input: CreateProofValidationInput
+): Promise<ProofValidation> {
+  const result = await client.query(
     `INSERT INTO validation.proof_validations (proof_id, status, validation_version)
      VALUES ($1, $2, $3)
      RETURNING id, proof_id, status, confidence_score, validation_version, validated_at, created_at`,
@@ -48,9 +65,20 @@ export async function updateValidationStatus(
   );
 }
 
-export async function findProofById(id: string): Promise<{ id: string; user_id: string; file_url: string } | null> {
-  return await queryOne<{ id: string; user_id: string; file_url: string }>(
-    `SELECT id, user_id, file_url FROM validation.proofs WHERE id = $1`,
-    [id]
+/**
+ * Update validation status within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function updateValidationStatusWithClient(
+  client: any,
+  id: string,
+  status: string,
+  confidenceScore?: number
+): Promise<void> {
+  await client.query(
+    `UPDATE validation.proof_validations
+     SET status = $1, confidence_score = $2, validated_at = NOW()
+     WHERE id = $3`,
+    [status, confidenceScore ?? null, id]
   );
 }

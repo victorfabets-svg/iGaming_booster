@@ -1,16 +1,17 @@
-import { fetchUnprocessedEvents, markEventProcessed, ensureProcessedEventsTable } from '../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processReward } from '../../rewards/use-cases/process-reward.use-case';
+import { logger } from '../../../../../../shared/observability';
 
 const EVENT_TYPE = 'proof_validated';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
 export async function startProofValidatedConsumer(): Promise<void> {
-  console.log('🔄 Starting proof_validated consumer...');
-  
-  // Ensure processed_events table exists
-  await ensureProcessedEventsTable();
-  console.log('✅ Processed events tracking ready');
+  logger.info('consumer_starting', 'rewards', `Starting proof validated consumer: ${EVENT_TYPE}, poll: ${POLL_INTERVAL_MS}ms, batch: ${BATCH_SIZE}`);
+
+  // Schema now handled by migration (009_hardening_layer.sql)
+  // Fail-fast if schema missing - intentional
+  logger.info('schema_expected', 'rewards', 'Event schema expected from migration');
 
   // Initial poll
   await pollEvents();
@@ -23,19 +24,27 @@ export async function startProofValidatedConsumer(): Promise<void> {
 
 async function pollEvents(): Promise<void> {
   try {
-    const events = await fetchUnprocessedEvents(EVENT_TYPE, BATCH_SIZE);
+    // Use row-level locking - FOR UPDATE SKIP LOCKED
+    const allEvents = await fetchAndLockEvents(BATCH_SIZE);
     
+    // Filter by event type
+    const events = allEvents.filter(e => e.event_type === EVENT_TYPE);
+
     if (events.length === 0) {
       return;
     }
 
-    console.log(`📬 Found ${events.length} unprocessed ${EVENT_TYPE} events`);
+    logger.info('events_found', 'rewards', `Found ${events.length} events for ${EVENT_TYPE}, batch_size: ${BATCH_SIZE}`);
 
     for (const event of events) {
       await processEvent(event);
     }
   } catch (error) {
-    console.error('❌ Error polling events:', error);
+    logger.error(
+      'poll_events_error',
+      'rewards',
+      `Error polling events: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -49,31 +58,38 @@ interface ProofValidatedPayload {
   confidence_score: number;
 }
 
-async function processEvent(event: { id: string; payload: Record<string, unknown> }): Promise<void> {
-  const eventId = event.id;
-  const payload = event.payload as unknown as ProofValidatedPayload;
+async function processEvent(event: Event): Promise<void> {
+  const eventId = event.event_id || event.id || '';
+  const payload = event.payload as ProofValidatedPayload;
+  const retryCount = await getRetryCount(eventId);
 
-  console.log(`\n🔔 Processing event: ${eventId}`);
-  console.log(`   Type: ${EVENT_TYPE}`);
-  console.log(`   Proof ID: ${payload.proof_id}, Status: ${payload.status}`);
+  logger.info('event_processing', 'rewards', `Processing event ${eventId}, proof_id: ${payload.proof_id}, status: ${payload.status}, retry: ${retryCount}`, payload.user_id);
 
-  try {
-    await processReward(payload);
-    
-    // Mark event as processed after successful handling
-    await markEventProcessed(eventId);
-    
-    console.log(`✅ Event ${eventId} processed and marked`);
-  } catch (error) {
-    console.error(`❌ Failed to process event ${eventId}:`, error);
-    // Do not mark as processed on failure - will retry
+  // Use retry logic - increments retry_count on each failure
+  // After 3 retries → goes to DLQ
+  const success = await processWithRetry(
+    eventId,
+    payload,
+    async () => {
+      await processReward(payload);
+    }
+  );
+
+  if (success) {
+    logger.info('event_processed', 'rewards', `Event processed successfully: ${eventId}, proof_id: ${payload.proof_id}`, payload.user_id);
+  } else {
+    logger.info('event_dlq', 'rewards', `Event sent to DLQ: ${eventId}, proof_id: ${payload.proof_id}, retry: ${retryCount}`, payload.user_id);
   }
 }
 
 // For running as standalone script
 if (require.main === module) {
   startProofValidatedConsumer().catch((error) => {
-    console.error('Fatal error:', error);
+    logger.error(
+      'fatal_error',
+      'rewards',
+      `Fatal error: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   });
 }

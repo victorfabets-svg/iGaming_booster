@@ -22,16 +22,12 @@ function normalizeEvent(event: Event): Event {
   // Ensure event_id exists
   const event_id = event.event_id || randomUUID();
 
-  // Ensure timestamp is ISO string
-  const timestamp = event.timestamp || new Date().toISOString();
-
   // Ensure correlation_id exists
   const correlation_id = event.correlation_id || event_id;
 
   return {
     ...event,
     event_id,
-    timestamp,
     correlation_id,
   };
 }
@@ -42,21 +38,12 @@ export async function saveEvent(event: Event): Promise<void> {
 
   try {
     await db.query(
-      `INSERT INTO events.events (
-        id,
-        event_type,
-        version,
-        timestamp,
-        producer,
-        correlation_id,
-        payload
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload)
+      VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         normalized.event_id,
         normalized.event_type,
         normalized.version,
-        normalized.timestamp,
         normalized.producer,
         normalized.correlation_id,
         JSON.stringify(normalized.payload),
@@ -66,4 +53,9 @@ export async function saveEvent(event: Event): Promise<void> {
     console.error('[EVENT_SAVE_ERROR]', normalized, error);
     throw new Error(`Failed to save event: ${normalized.event_id}`);
   }
+}
+
+// Wrapper for domain use - creates and saves event
+export async function createEvent(event: Event): Promise<void> {
+  await saveEvent(event);
 }

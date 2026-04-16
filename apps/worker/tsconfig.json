@@ -1,0 +1,14 @@
+{
+  "extends": "../api/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../../",
+    "outDir": "./dist"
+  },
+  "include": [
+    "src/**/*",
+    "../api/src/**/*",
+    "../../shared/**/*",
+    "../../domains/**/*"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

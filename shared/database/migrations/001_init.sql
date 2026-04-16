@@ -32,6 +32,7 @@ submitted_at TIMESTAMP NOT NULL DEFAULT NOW()
 
 
 -- PROOF VALIDATIONS
+-- AUDIT FIX: DB IDEMPOTENCY - UNIQUE constraint ensures proof_id is not duplicated
 CREATE TABLE validation.proof_validations (
 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 proof_id UUID NOT NULL REFERENCES validation.proofs(id),
@@ -39,8 +40,13 @@ status TEXT NOT NULL,
 confidence_score NUMERIC(3,2),
 validation_version TEXT NOT NULL,
 validated_at TIMESTAMP,
-created_at TIMESTAMP NOT NULL DEFAULT NOW()
+created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+UNIQUE (proof_id)
 );
+
+/* AUDIT FIX: DB IDEMPOTENCY - Explicit ALTER TABLE for clarity */
+-- ALTER TABLE validation.proof_validations
+-- ADD CONSTRAINT proof_validations_proof_id_unique UNIQUE (proof_id);
 
 
 -- FRAUD SCORES
@@ -71,7 +77,8 @@ id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 name TEXT NOT NULL,
 prize TEXT NOT NULL,
 total_numbers INT NOT NULL,
-draw_date TIMESTAMP NOT NULL,
+	start_at TIMESTAMP NOT NULL,
+	end_at TIMESTAMP NOT NULL,
 status TEXT NOT NULL
 );
 

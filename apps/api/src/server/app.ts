@@ -1,15 +1,17 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
-import { pool } from '../lib/database';
+import fastifyJwt from '@fastify/jwt';
+import { db } from '../../../../shared/database/connection';
 import { proofRoutes } from './routes/proofs';
-import { rewardRoutes } from './routes/rewards';
-import { raffleRoutes } from './routes/raffles';
-import { eventRoutes } from './routes/events';
-import { getMetrics } from '../shared/observability/metrics.controller';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     logger: true,
+  });
+
+  // Register JWT plugin for authentication
+  app.register(fastifyJwt, {
+    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
   });
 
   // Register multipart plugin for file uploads
@@ -21,26 +23,15 @@ export function buildApp(): FastifyInstance {
 
   // Register routes
   app.register(proofRoutes);
-  app.register(rewardRoutes);
-  app.register(raffleRoutes);
-  app.register(eventRoutes);
 
+  // Health check - MUST reflect real DB state
   app.get('/health', async () => {
-    return { status: 'ok' };
-  });
-
-  app.get('/health/db', async () => {
     try {
-      await pool.query('SELECT 1');
+      await db.query('SELECT 1');
       return { status: 'ok' };
-    } catch (error) {
+    } catch (err) {
       return { status: 'error' };
     }
-  });
-
-  // Metrics endpoint
-  app.get('/metrics', async () => {
-    return await getMetrics();
   });
 
   return app;

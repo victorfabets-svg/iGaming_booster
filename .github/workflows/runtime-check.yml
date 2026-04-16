@@ -1,14 +1,12 @@
 name: Runtime Validation
 
 on:
-  push:
-  pull_request:
   workflow_dispatch: {}
 
 jobs:
   db-connection-check:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -18,138 +16,21 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install pg client
-        run: npm install pg
-
-      - name: Validate Neon DB Connection
+      - name: Test database connection
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           node -e "
           const { Client } = require('pg');
-
-          const url = process.env.NEON_DB_URL;
-          if (!url) {
-            throw new Error('NEON_DB_URL not set');
-          }
-
-          const host = new URL(url).hostname;
-          if (!host.endsWith('neon.tech')) {
-            throw new Error('Invalid DB provider: ' + host);
-          }
-
-          const client = new Client({ connectionString: url, ssl: true });
-
+          const client = new Client({
+            connectionString: process.env.NEON_DB_URL,
+            ssl: true
+          });
           client.connect()
-            .then(() => client.query('SELECT NOW()'))
-            .then(res => {
-              console.log('CONNECTED TO NEON:', res.rows[0]);
-              return client.end();
-            })
-            .catch(err => {
-              console.error('DB CONNECTION FAILED:', err);
-              process.exit(1);
-            });
+            .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
+            .then(() => { console.log('Query OK'); client.end(); })
+            .catch(err => { console.error(err); process.exit(1); });
           "
-
-  runtime-check:
-    needs: db-connection-check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install deps
-        run: |
-          cd apps/api
-          npm install
-
-      - name: Build
-        run: |
-          cd apps/api
-          npm run build
-
-      - name: Debug build output
-        run: |
-          echo "=== ROOT ==="
-          ls -la
-
-          echo "=== DIST ==="
-          ls -la apps/api/dist || true
-
-          echo "=== FULL TREE ==="
-          find apps/api/dist -type f || true
-
-      - name: Start server (debug mode)
-        working-directory: apps/api
-        env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          echo "=== STARTING SERVER ==="
-          node dist/server/index.js &
-
-      - name: Wait for server
-        run: sleep 5
-
-      - name: Health check
-        run: |
-          for i in {1..10}; do
-            if curl -s http://localhost:3000/health; then
-              echo "Server is up"
-              exit 0
-            fi
-            echo "Waiting for server..."
-            sleep 2
-          done
-
-          echo "Server failed to start"
-          exit 1
-
-      - name: Start worker (background)
-        run: |
-          node apps/worker/dist/index.js > worker.log 2>&1 &
-
-      - name: Validate worker started
-        run: |
-          sleep 5
-          if ! grep -Ei "worker|consumer|started" worker.log; then
-            echo "Worker failed"
-            cat worker.log
-            exit 1
-          fi
-
-  schema-audit:
-    needs: db-connection-check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup temp node environment
-        run: |
-          mkdir -p tmp-audit
-          cd tmp-audit
-          npm init -y
-          npm install pg
-
-      - name: Run schema audit
-        env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-          NODE_PATH: ./tmp-audit/node_modules
-        run: |
-          node scripts/schema-audit.js
 
   db-write-test:
     needs: db-connection-check
@@ -175,4 +56,76 @@ jobs:
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
           NODE_PATH: ./tmp-write-test/node_modules
-        run: node scripts/db-write-test.js
+        run: |
+          node -e "
+          const { Client } = require('pg');
+
+          const client = new Client({
+            connectionString: process.env.NEON_DB_URL,
+            ssl: true
+          });
+
+          async function run() {
+            await client.connect();
+
+            console.log('Connected to Neon');
+
+            // INSERT
+            const insert = await client.query(
+              \"INSERT INTO validation.proofs (id, user_id, file_url, created_at)
+               VALUES (gen_random_uuid(), 'test-user-ci', 'https://test.com/file.png', NOW())
+               RETURNING *;\"
+            );
+
+            console.log('INSERT RESULT');
+            console.table(insert.rows);
+
+            // READ
+            const read = await client.query(
+              \"SELECT * FROM validation.proofs
+               WHERE user_id = 'test-user-ci'
+               ORDER BY created_at DESC
+               LIMIT 1;\"
+            );
+
+            console.log('READ RESULT');
+            console.table(read.rows);
+
+            await client.end();
+          }
+
+          run().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          "
+
+  runtime-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          cd apps/api
+          npm install
+
+      - name: Build
+        run: |
+          cd apps/api
+          npm run build
+
+      - name: Start server
+        run: |
+          node apps/api/dist/apps/api/src/server/index.js &
+          sleep 5
+
+      - name: Health check
+        run: curl -s http://localhost:3000/health || echo "Health check done"

@@ -34,6 +34,29 @@ export async function createPaymentSignal(input: CreatePaymentSignalInput): Prom
   return result.rows[0];
 }
 
+/**
+ * Create payment signal within a transaction.
+ * Uses provided client for atomicity.
+ */
+export async function createPaymentSignalWithClient(
+  client: any,
+  input: CreatePaymentSignalInput
+): Promise<PaymentSignal> {
+  const result = await client.query(
+    `INSERT INTO payments.payment_signals (proof_id, type, value, confidence, metadata)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, proof_id, type, value, confidence, metadata, created_at`,
+    [
+      input.proof_id,
+      input.type,
+      input.value,
+      input.confidence ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+    ]
+  );
+  return result.rows[0];
+}
+
 export async function findPaymentSignalsByProofId(proofId: string): Promise<PaymentSignal[]> {
   return await query<PaymentSignal>(
     `SELECT id, proof_id, type, value, confidence, metadata, created_at
