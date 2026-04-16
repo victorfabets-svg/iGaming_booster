@@ -118,8 +118,8 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
     }
 
     // Step 1: Validate reward inside transaction (lock + check status)
-    const rewardCheck = await client.query<{ id: string; status: string; user_id: string }>(
-      `SELECT id, status, user_id FROM rewards.rewards WHERE id = $1 FOR UPDATE`,
+    const rewardCheck = await client.query<{ id: string; status: string; user_id: string; proof_id: string }>(
+      `SELECT id, status, user_id, proof_id FROM rewards.rewards WHERE id = $1 FOR UPDATE`,
       [payload.reward_id]
     );
 
