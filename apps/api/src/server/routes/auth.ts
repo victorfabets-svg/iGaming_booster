@@ -40,7 +40,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         if (err.code === '23505') {
           return reply.status(409).send({ error: 'Email already registered' });
         }
-        throw err;
+        console.error(err);
+        return reply.status(500).send({ error: 'Internal server error' });
       }
     }
   );
