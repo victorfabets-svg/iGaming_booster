@@ -3,12 +3,10 @@
  * Manages environment-specific settings
  */
 
-// TASK 2 — STRICT ENV
+// TASK 2 — STRICT ENV CHECK (without freeze - runtime libraries modify process.env)
 if (!process.env.NEON_DB_URL) {
   throw new Error("NEON_DB_URL missing");
 }
-
-Object.freeze(process.env);
 
 export type Environment = 'development' | 'production' | 'test';
 

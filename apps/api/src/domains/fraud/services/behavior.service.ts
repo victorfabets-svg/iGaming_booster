@@ -111,7 +111,7 @@ export class BehaviorAnalysisService {
   }
 
   private async getUserRecentProofs(userId: string, since: Date): Promise<{ id: string; file_url: string; submitted_at: Date }[]> {
-    const { query } = await import('../../../lib/database');
+    const { query } = await import('shared/database/connection');
     
     const result = await query<{ id: string; file_url: string; submitted_at: Date }>(
       `SELECT id, file_url, submitted_at 

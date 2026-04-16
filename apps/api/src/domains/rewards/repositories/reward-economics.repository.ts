@@ -1,4 +1,4 @@
-import { pool, queryOne } from '../../../../shared/database/connection';
+import { pool, queryOne } from 'shared/database/connection';
 
 export interface RewardEconomics {
   id: string;

@@ -1,4 +1,4 @@
-import { pool } from '../../lib/database';
+import { pool } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
 
 export interface EventInput {

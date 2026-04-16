@@ -1,4 +1,4 @@
-import { pool } from '../../../../shared/database/connection';
+import { pool } from 'shared/database/connection';
 
 export interface Ticket {
   id: string;

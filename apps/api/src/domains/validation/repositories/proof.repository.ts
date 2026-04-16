@@ -1,4 +1,4 @@
-import { pool, query, queryOne, execute } from '../../../../shared/database/connection';
+import { pool, query, queryOne, execute } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
 
 export interface Proof {
