@@ -150,3 +150,71 @@ jobs:
           NODE_PATH: ./tmp-audit/node_modules
         run: |
           node scripts/schema-audit.js
+
+  db-write-test:
+    needs: db-connection-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install minimal deps
+        run: |
+          mkdir tmp-write-test
+          cd tmp-write-test
+          npm init -y
+          npm install pg
+
+      - name: Run write test
+        env:
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          NODE_PATH: ./tmp-write-test/node_modules
+        run: |
+          node -e "
+          const { Client } = require('pg');
+
+          const client = new Client({
+            connectionString: process.env.NEON_DB_URL,
+            ssl: true
+          });
+
+          async function run() {
+            await client.connect();
+
+            console.log('Connected to Neon');
+
+            // INSERT
+            const insert = await client.query(
+              \"INSERT INTO validation.proofs (id, user_id, file_url, created_at)
+               VALUES (gen_random_uuid(), 'test-user-ci', 'https://test.com/file.png', NOW())
+               RETURNING *;\"
+            );
+
+            console.log('INSERT RESULT');
+            console.table(insert.rows);
+
+            // READ
+            const read = await client.query(
+              \"SELECT * FROM validation.proofs
+               WHERE user_id = 'test-user-ci'
+               ORDER BY created_at DESC
+               LIMIT 1;\"
+            );
+
+            console.log('READ RESULT');
+            console.table(read.rows);
+
+            await client.end();
+          }
+
+          run().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          "
