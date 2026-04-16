@@ -207,35 +207,18 @@ async function processRewardGranted(eventId: string, payload: RewardGrantedPaylo
       [payload.user_id, payload.proof_id, payload.reward_id, raffle.id]
     );
 
-    // Deterministic handling using rowCount
+    // PURE LOGIC: audit is NOT control logic
     if (ticketResult.rowCount === 1 && ticketResult.rows[0]?.id) {
-      // CRITICAL: Verify ticket was actually created AND no previous "ticket_created" exists for this reward
-      // Only check RECENT audit logs (last 1 minute) to avoid counting stale entries
-      const existingTicket = await client.query(
-        `SELECT id FROM raffles.tickets WHERE reward_id = $1`,
-        [payload.reward_id]
+      // Ticket created - audit with ticket id
+      await client.query(
+        `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), 'ticket_created', 'ticket', ticketResult.rows[0].id, payload.user_id, JSON.stringify({
+          reward_id: payload.reward_id,
+          proof_id: payload.proof_id,
+          raffle_id: raffle.id
+        })]
       );
-      
-      const existingAudit = await client.query(
-        `SELECT id FROM audit.audit_logs 
-         WHERE action = 'ticket_created' 
-         AND metadata::text LIKE $1
-         AND created_at > NOW() - INTERVAL '1 minute'`,
-        [`%${payload.reward_id}%`]
-      );
-      
-      if (existingTicket.rows.length === 1 && existingAudit.rows.length === 0) {
-        // FIRST ticket creation for this reward - audit with ticket id
-        await client.query(
-          `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [randomUUID(), 'ticket_created', 'ticket', existingTicket.rows[0].id, payload.user_id, JSON.stringify({
-            reward_id: payload.reward_id,
-            proof_id: payload.proof_id,
-            raffle_id: raffle.id
-          })]
-        );
-      }
     } else {
       // Duplicate - audit with null entity_id
       await client.query(
