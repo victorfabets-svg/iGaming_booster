@@ -262,18 +262,38 @@ class E2ETest {
     `, [payload.user_id, payload.proof_id, payload.reward_id, raffleResult.rows[0].id]);
     
     if (ticketResult.rowCount === 1) {
-      // Ticket created - audit with ticket id
-      await client.query(`
-        INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-        VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
-      `, [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]);
-    } else {
-      // Duplicate - audit with null entity_id (truthful based on actual DB outcome)
-      await client.query(`
-        INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-        VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
-      `, [payload.user_id, JSON.stringify({ reward_id: payload.reward_id, reason: 'idempotency_conflict' })]);
-    }
+          // CRITICAL: Verify ticket was actually created AND no previous "ticket_created" exists for this reward
+          // Only check RECENT audit logs (last 1 minute) to avoid counting entries from previous test runs
+          const existingTicket = await client.query(
+            `SELECT id FROM raffles.tickets WHERE reward_id = $1`,
+            [payload.reward_id]
+          );
+          
+          const existingAudit = await client.query(
+            `SELECT id FROM audit.audit_logs 
+             WHERE action = 'ticket_created' 
+             AND metadata::text LIKE $1
+             AND created_at > NOW() - INTERVAL '1 minute'`,
+            [`%${payload.reward_id}%`]
+          );
+          
+          if (existingTicket.rows.length === 1 && existingAudit.rows.length === 0) {
+            // FIRST ticket creation for this reward - audit with ticket id
+            await client.query(`
+              INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+              VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
+            `, [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]);
+          } else if (existingAudit.rows.length > 0) {
+            // Ticket exists AND already has "ticket_created" - skip audit to prevent duplicates
+            console.log('  ⏭️  Skipping duplicate "ticket_created" audit for reward:', payload.reward_id);
+          }
+        } else {
+          // Duplicate - audit with null entity_id (truthful based on actual DB outcome)
+          await client.query(`
+            INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
+            VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
+          `, [payload.user_id, JSON.stringify({ reward_id: payload.reward_id, reason: 'idempotency_conflict' })]);
+        }
   }
 
   async validatePipeline(): Promise<void> {
