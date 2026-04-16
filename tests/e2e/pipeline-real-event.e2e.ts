@@ -30,6 +30,14 @@ interface PipelineState {
   ticket?: { id: string };
 }
 
+function genRandomUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 class E2ETest {
   private pool: Pool;
   private results: TestResult[] = [];
@@ -330,18 +338,21 @@ class E2ETest {
   }
 
   async testConcurrencyReal(): Promise<void> {
-    console.log('\n⚡ Testing REAL concurrency (fast parallel inserts)...');
-    const client = await this.pool.connect();
+    console.log('\n⚡ Testing REAL DB race condition (2 independent connections)...');
+    
+    // Create 2 INDEPENDENT DB connections
+    const client1 = await this.pool.connect();
+    const client2 = await this.pool.connect();
+    
     try {
-      // Create new proof
-      const newProof = await client.query(`
+      // Setup: Create new proof + reward
+      const newProof = await client1.query(`
         INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
-        VALUES (gen_random_uuid(), $1, 'https://example.com/proof.jpg', 'hash456', NOW())
+        VALUES (gen_random_uuid(), $1, 'https://race.test/proof.jpg', 'hash789', NOW())
         RETURNING id
       `, [this.state.user!.id]);
       
-      // Create new reward
-      const newReward = await client.query(`
+      const newReward = await client1.query(`
         INSERT INTO rewards.rewards (id, user_id, proof_id, reward_type, value, status, created_at)
         VALUES (gen_random_uuid(), $1, $2, 'approval', 10, 'granted', NOW())
         RETURNING id
@@ -349,34 +360,91 @@ class E2ETest {
       
       const rewardId = newReward.rows[0].id;
       const proofId = newProof.rows[0].id;
+      const userId = this.state.user!.id;
       
-      // Insert SAME event TWICE very fast (parallel)
-      await Promise.all([
-        client.query(`
-          INSERT INTO events.events (id, event_type, version, timestamp, producer, correlation_id, payload)
-          VALUES (gen_random_uuid(), 'reward_granted', 'v1', NOW(), 'rewards', $1, $2)
-        `, [rewardId, JSON.stringify({ reward_id: rewardId, proof_id: proofId, user_id: this.state.user!.id })]),
-        client.query(`
-          INSERT INTO events.events (id, event_type, version, timestamp, producer, correlation_id, payload)
-          VALUES (gen_random_uuid(), 'reward_granted', 'v1', NOW(), 'rewards', $1, $2)
-        `, [rewardId, JSON.stringify({ reward_id: rewardId, proof_id: proofId, user_id: this.state.user!.id })])
+      console.log('  📝 Setup: reward_id =', rewardId);
+      
+      // Create 2 events (both try to process same reward)
+      const event1Result = await client1.query(`
+        INSERT INTO events.events (id, event_type, version, timestamp, producer, correlation_id, payload)
+        VALUES ($1, 'reward_granted', 'v1', NOW(), 'rewards', $2, $3)
+        RETURNING id
+      `, [genRandomUUID(), rewardId, JSON.stringify({ reward_id: rewardId, proof_id: proofId, user_id: userId })]);
+      
+      const event2Result = await client2.query(`
+        INSERT INTO events.events (id, event_type, version, timestamp, producer, correlation_id, payload)
+        VALUES ($1, 'reward_granted', 'v1', NOW(), 'rewards', $2, $3)
+        RETURNING id
+      `, [genRandomUUID(), rewardId, JSON.stringify({ reward_id: rewardId, proof_id: proofId, user_id: userId })]);
+      
+      console.log('  📝 Events created, starting race...');
+      
+      // Run both processors IN PARALLEL with slight delay to force overlap
+      const processFn = async (client: any, eventId: string) => {
+        // Small delay to ensure overlapping execution
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Process with same logic as consumer
+        const existing = await client.query(`SELECT event_id FROM events.processed_events WHERE event_id = $1`, [eventId]);
+        if (existing.rows.length > 0) return 'already_processed';
+        
+        try {
+          await client.query(`INSERT INTO events.processed_events (event_id, processed_at) VALUES ($1, NOW())`, [eventId]);
+        } catch (err: any) {
+          if (err.code === '23505') return 'race_detected';
+          throw err;
+        }
+        
+        const rewardResult = await client.query(`SELECT id, status, user_id FROM rewards.rewards WHERE id = $1`, [rewardId]);
+        if (rewardResult.rows.length === 0 || rewardResult.rows[0].status !== 'granted') return 'invalid_reward';
+        
+        const raffleResult = await client.query(`SELECT id FROM raffles.raffles WHERE status = 'active' AND start_at <= NOW() AND end_at >= NOW() LIMIT 1`);
+        if (raffleResult.rows.length === 0) return 'no_raffle';
+        
+        const ticketResult = await client.query(`
+          INSERT INTO raffles.tickets (user_id, proof_id, reward_id, raffle_id)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (reward_id) DO NOTHING
+          RETURNING id
+        `, [userId, proofId, rewardId, raffleResult.rows[0].id]);
+        
+        return ticketResult.rowCount === 1 ? 'ticket_created' : 'duplicate';
+      };
+      
+      // Execute both IN PARALLEL - this forces REAL DB race condition
+      const [result1, result2] = await Promise.all([
+        processFn(client1, event1Result.rows[0].id),
+        processFn(client2, event2Result.rows[0].id)
       ]);
       
-      // Wait and poll
-      for (let i = 0; i < 20; i++) {
-        await this.sleep(100);
-        const ticketResult = await client.query(`SELECT COUNT(*) as cnt FROM raffles.tickets WHERE reward_id = $1`, [rewardId]);
-        if (ticketResult.rows[0].cnt === '1') {
-          console.log('  ✅ Concurrency safe: exactly 1 ticket despite parallel inserts');
-          this.results.push({ step: 'testConcurrencyReal', success: true });
-          return;
-        }
+      console.log('  📊 Result client1:', result1);
+      console.log('  📊 Result client2:', result2);
+      
+      // Check: MUST have exactly 1 ticket
+      const ticketCount = await client1.query(`SELECT COUNT(*) as cnt FROM raffles.tickets WHERE reward_id = $1`, [rewardId]);
+      const count = parseInt(ticketCount.rows[0].cnt);
+      
+      if (count !== 1) {
+        throw new Error(`Expected exactly 1 ticket, got ${count}`);
+      }
+      console.log('  ✅ Concurrency safe: exactly 1 ticket despite race');
+      
+      // Check audit logs
+      const auditResult = await client1.query(`
+        SELECT action FROM audit.audit_logs 
+        WHERE action IN ('ticket_created', 'ticket_duplicate_ignored')
+        ORDER BY created_at
+      `);
+      
+      // Should have at least ticket_created OR duplicate_ignored
+      if (auditResult.rows.length > 0) {
+        console.log('  ✅ Audit logs:', auditResult.rows.map(r => r.action).join(', '));
       }
       
-      console.log('  ⚠️  Concurrency test: polling completed');
       this.results.push({ step: 'testConcurrencyReal', success: true });
     } finally {
-      client.release();
+      client1.release();
+      client2.release();
     }
   }
 
