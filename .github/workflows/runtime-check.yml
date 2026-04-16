@@ -119,7 +119,7 @@ jobs:
         run: |
           sleep 5
           if ! grep -Ei "worker|consumer|started" worker.log; then
-          echo "Worker failed"
-          cat worker.log
-          exit 1
+            echo "Worker failed"
+            cat worker.log
+            exit 1
           fi
