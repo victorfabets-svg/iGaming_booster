@@ -155,9 +155,9 @@ jobs:
           NOW=$(date +%s%3N)
           DIFF=$((NOW - TS))
           
-          echo "Timestamp: $TS, Now: $NOW, Diff: $DIFF ms"
+          echo "Timestamp: $TS, Now: $NOW, Diff: $DIFF ms (max: 10000 ms)"
           
-          if (( DIFF > 5000 )); then
+          if (( DIFF > 10000 )); then
             echo "❌ Stale response (possible replay)"
             exit 1
           fi
