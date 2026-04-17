@@ -193,8 +193,8 @@ jobs:
 
             echo "Attempt $i: Status = $STATUS"
 
-            if [[ "$STATUS" == "ok" ]]; then
-              echo "System ready (DB connected)"
+            if [[ "$STATUS" == "ok" || "$STATUS" == "degraded" ]]; then
+              echo "API liveness confirmed (status: $STATUS)"
               exit 0
             fi
 
@@ -204,6 +204,18 @@ jobs:
           echo "System never became ready"
           echo "Final response: $RESPONSE"
           exit 1
+
+      - name: Validate DB readiness (strict)
+        run: |
+          RESPONSE=$(curl -s http://localhost:3000/health/db)
+          STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
+
+          if [[ "$STATUS" != "ok" ]]; then
+            echo "DB not ready after boot"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          echo "DB ready (status: ok)"
 
       - name: Start Worker
         working-directory: apps/worker
@@ -295,8 +307,8 @@ jobs:
             RESPONSE=$(curl -s http://localhost:3000/health/db || echo "")
             STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
 
-            if [[ "$STATUS" == "ok" ]]; then
-              echo "API READY"
+            if [[ "$STATUS" == "ok" || "$STATUS" == "degraded" ]]; then
+              echo "API liveness confirmed (status: $STATUS)"
               exit 0
             fi
 
@@ -305,6 +317,18 @@ jobs:
 
           echo "API FAILED"
           exit 1
+
+      - name: Validate DB readiness (strict)
+        run: |
+          RESPONSE=$(curl -s http://localhost:3000/health/db)
+          STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
+
+          if [[ "$STATUS" != "ok" ]]; then
+            echo "DB not ready after boot"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          echo "DB ready (status: ok)"
 
       - name: Run E2E
         run: |
