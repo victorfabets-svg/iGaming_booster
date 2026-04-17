@@ -166,6 +166,12 @@ export const isDevelopment = config.isDevelopment;
 export const featureFlags = config.featureFlags;
 
 // NEON database URL - Single Source of Truth (SSOT)
+
+// FAIL FAST: Supabase is forbidden
+if (process.env.SUPABASE_DB_URL) {
+  throw new Error("SUPABASE_DB_URL is forbidden - use NEON_DB_URL only");
+}
+
 if (!process.env.NEON_DB_URL) {
   throw new Error("NEON_DB_URL is required");
 }
