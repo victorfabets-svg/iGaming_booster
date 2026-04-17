@@ -35,11 +35,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: |
-          npm install
+      - name: Install API dependencies
+        working-directory: apps/api
+        run: npm install
 
       - name: Test database connection
+        working-directory: apps/api
         env:
           NEON_DB_URL: postgresql://test:test@postgres:5432/test
         run: |
@@ -69,20 +70,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install API dependencies
+        working-directory: apps/api
         run: npm install
 
-      - name: Install minimal deps
-        run: |
-          mkdir tmp-write-test
-          cd tmp-write-test
-          npm init -y
-          npm install pg
-
       - name: Run write test
+        working-directory: apps/api
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-          NODE_PATH: ./tmp-write-test/node_modules
         run: |
           node -e "
           const { Client } = require('pg');
