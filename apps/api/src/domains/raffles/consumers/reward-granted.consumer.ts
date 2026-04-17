@@ -3,6 +3,7 @@ export const CONSUMER_NAME = "reward_granted_consumer";
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { createTicket, CreateTicketInput } from '../../repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
+import { db } from '../../../../shared/database/connection';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;
@@ -86,12 +87,25 @@ async function processEvent(event: Event): Promise<void> {
   const { success, skipped } = await processEventExactlyOnce(
     eventId,
     async () => {
+      // Get reward with proof_id - required for ticket creation
+      const rewardResult = await db.query<{ id: string; status: string; user_id: string; proof_id: string }>(
+        `SELECT id, status, user_id, proof_id
+         FROM rewards.rewards
+         WHERE id = $1`,
+        [payload.reward_id]
+      );
+      
+      const reward = rewardResult.rows[0];
+      if (!reward) {
+        throw new Error(`Reward not found: ${payload.reward_id}`);
+      }
+      
       // Create ticket - idempotent via ON CONFLICT (reward_id) DO NOTHING
       const ticketInput: CreateTicketInput = {
         user_id: payload.user_id,
         raffle_id: payload.raffle_id,
         reward_id: payload.reward_id,
-        proof_id: payload.proof_id,
+        proof_id: reward.proof_id,
       };
 
       const ticket = await createTicket(ticketInput);
