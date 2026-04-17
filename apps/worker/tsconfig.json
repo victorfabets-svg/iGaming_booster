@@ -1,13 +1,19 @@
 {
-  "extends": "../api/tsconfig.json",
   "compilerOptions": {
-    "baseUrl": "../../",
-    "outDir": "./dist"
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
   },
   "include": [
-    "src/**/*",
-    "../api/src/**/*",
-    "../../shared/**/*"
+    "src/**/*"
   ],
   "exclude": ["node_modules", "dist"]
 }
