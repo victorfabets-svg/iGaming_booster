@@ -1,4 +1,4 @@
-import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, isEventProcessed, markEventAsProcessed, lockEvent, query, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, isEventProcessed, markEventAsProcessed, lockEvent, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { findActiveRaffle } from '../../rewards/repositories/raffle.repository';
 import { logger } from '../../../../../../shared/observability';
@@ -92,7 +92,7 @@ async function processEvent(event: Event): Promise<void> {
     }
 
     // STEP 3: Check if already processed (idempotency)
-    const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);
+    const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME, client);
     
     if (alreadyProcessed) {
       await client.query('ROLLBACK');
@@ -106,7 +106,7 @@ async function processEvent(event: Event): Promise<void> {
     await createTicketForRewardWithClient(payload, client);
 
     // STEP 5: Mark as processed AFTER successful processing (idempotency)
-    await markEventAsProcessed(eventId, CONSUMER_NAME);
+    await markEventAsProcessed(eventId, CONSUMER_NAME, client);
 
     // STEP 6: COMMIT
     await client.query('COMMIT');

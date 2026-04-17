@@ -298,24 +298,42 @@ export function getBackoffDelayLegacy(retryAttempt: number): number {
 /**
  * Check if event was already processed (idempotency check).
  * Returns true if event exists in processed_events table.
+ * 
+ * @param eventId - The event ID to check
+ * @param consumerName - The consumer name for multi-consumer idempotency
+ * @param client - Database client for transaction support. MUST be provided for transactional consistency.
  */
-export async function isEventProcessed(eventId: string): Promise<boolean> {
-  const result = await db.query(
-    `SELECT 1 FROM events.processed_events WHERE event_id = $1`,
-    [eventId]
+export async function isEventProcessed(
+  eventId: string,
+  consumerName: string,
+  client: any
+): Promise<boolean> {
+  const result = await client.query(
+    `SELECT 1 FROM events.processed_events 
+     WHERE event_id = $1 AND consumer_name = $2`,
+    [eventId, consumerName]
   );
-  return result.length > 0;
+  return result.rows.length > 0;
 }
 
 /**
  * Mark event as processed in the idempotency table.
  * Should be called AFTER successful processing within a transaction.
+ * 
+ * @param eventId - The event ID to mark as processed
+ * @param consumerName - The consumer name for multi-consumer idempotency
+ * @param client - Database client for transaction support. MUST be provided for transactional consistency.
  */
-export async function markEventAsProcessed(eventId: string): Promise<void> {
-  await db.query(
-    `INSERT INTO events.processed_events (event_id) VALUES ($1)
-     ON CONFLICT (event_id) DO NOTHING`,
-    [eventId]
+export async function markEventAsProcessed(
+  eventId: string,
+  consumerName: string,
+  client: any
+): Promise<void> {
+  await client.query(
+    `INSERT INTO events.processed_events (event_id, consumer_name) 
+     VALUES ($1, $2)
+     ON CONFLICT (event_id, consumer_name) DO NOTHING`,
+    [eventId, consumerName]
   );
 }
 
@@ -324,31 +342,37 @@ export async function markEventAsProcessed(eventId: string): Promise<void> {
  * - Checks if already processed (skip if yes)
  * - Wraps processing + idempotency record in single transaction
  * 
+ * @param eventId - The event ID to process
+ * @param consumerName - The consumer name for multi-consumer idempotency
+ * @param processFn - The processing function to execute
+ * 
  * Returns: { success: boolean, skipped: boolean }
  */
 export async function processEventExactlyOnce(
   eventId: string,
+  consumerName: string,
   processFn: () => Promise<void>
 ): Promise<{ success: boolean; skipped: boolean }> {
-  // Step 1: Check if already processed (skip duplicate)
-  const alreadyProcessed = await isEventProcessed(eventId);
-  if (alreadyProcessed) {
-    console.log(`⏭️  Event ${eventId} already processed, skipping`);
-    return { success: true, skipped: true };
-  }
-
-  // Step 2: Process event within transaction with idempotency record
+  // Step 1: Connect and begin transaction for idempotency check
   const client = await db.connect();
   try {
     await client.query('BEGIN');
+
+    // Step 2: Check if already processed (skip duplicate) - using client for transactional consistency
+    const alreadyProcessed = await isEventProcessed(eventId, consumerName, client);
+    if (alreadyProcessed) {
+      await client.query('ROLLBACK');
+      console.log(`⏭️  Event ${eventId} already processed, skipping`);
+      return { success: true, skipped: true };
+    }
     
-    // Execute the business logic
+    // Step 3: Execute the business logic within same transaction
     await processFn();
     
-    // Record successful processing (idempotency key)
+    // Step 4: Record successful processing (idempotency key) - using same client
     await client.query(
-      `INSERT INTO events.processed_events (event_id) VALUES ($1)`,
-      [eventId]
+      `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)`,
+      [eventId, consumerName]
     );
     
     await client.query('COMMIT');
