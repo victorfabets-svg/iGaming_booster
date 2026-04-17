@@ -169,19 +169,23 @@ jobs:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
           JWT_SECRET: test-secret-for-ci
           CANARY_TOKEN: test-canary-token
+          PORT: 3000
         working-directory: apps/api
         run: |
-          node dist/server.js > api.log 2>&1 &
+          PORT=$PORT node dist/server.js > api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
-          echo "Started API with PID $API_PID (logs: $(pwd)/api.log)"
+          echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
+
+      - name: Debug port
+        run: echo "Using PORT=$PORT"
 
       - name: Wait for API to be ready
         run: |
           echo "Starting readiness check..."
 
           for i in {1..30}; do
-            RESPONSE=$(curl -s --fail http://localhost:3000/health/db 2>/dev/null || echo "")
+            RESPONSE=$(curl -s --fail http://localhost:$PORT/health/db 2>/dev/null || echo "")
 
             if [[ -z "$RESPONSE" ]]; then
               echo "Attempt $i: Empty response, waiting..."
@@ -207,7 +211,7 @@ jobs:
 
       - name: Validate DB readiness (strict)
         run: |
-          RESPONSE=$(curl -s http://localhost:3000/health/db)
+          RESPONSE=$(curl -s http://localhost:$PORT/health/db)
           STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
 
           if [[ "$STATUS" != "ok" ]]; then
@@ -249,7 +253,7 @@ jobs:
 
           echo ""
           echo "===== LAST HEALTH CHECK ====="
-          curl -sv http://localhost:3000/health/db 2>&1 || echo "Health endpoint unreachable"
+          curl -sv http://localhost:$PORT/health/db 2>&1 || echo "Health endpoint unreachable"
 
       - name: Cleanup processes
         if: always()
@@ -296,15 +300,20 @@ jobs:
           echo "Build output validated: dist/server.js exists"
 
       - name: Start API
+        env:
+          PORT: 3000
         working-directory: apps/api
         run: |
-          node dist/server.js > api.log 2>&1 &
+          PORT=$PORT node dist/server.js > api.log 2>&1 &
           echo $! > api.pid
+
+      - name: Debug port
+        run: echo "Using PORT=$PORT"
 
       - name: Wait for API
         run: |
           for i in {1..30}; do
-            RESPONSE=$(curl -s http://localhost:3000/health/db || echo "")
+            RESPONSE=$(curl -s http://localhost:$PORT/health/db || echo "")
             STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
 
             if [[ "$STATUS" == "ok" || "$STATUS" == "degraded" ]]; then
@@ -320,7 +329,7 @@ jobs:
 
       - name: Validate DB readiness (strict)
         run: |
-          RESPONSE=$(curl -s http://localhost:3000/health/db)
+          RESPONSE=$(curl -s http://localhost:$PORT/health/db)
           STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
 
           if [[ "$STATUS" != "ok" ]]; then
