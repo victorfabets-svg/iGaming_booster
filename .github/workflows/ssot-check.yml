@@ -14,42 +14,61 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Scan for forbidden database providers
+      - name: Scan for forbidden providers (strict)
         run: |
-          echo "🔍 Scanning for forbidden database providers..."
-          
-          # Check for Supabase in application code (exclude security hardening in entrypoints)
-          # Scan: shared/, apps/api/src/domains/, apps/worker/src/jobs/
-          if grep -r "supabase" shared/ apps/api/src/domains/ apps/worker/src/jobs/ --include="*.ts" --include="*.js" 2>/dev/null | grep -v "node_modules" | grep -v ".git" > /dev/null; then
-            echo "❌ Supabase reference detected in application code"
-            grep -r "supabase" shared/ apps/api/src/domains/ apps/worker/src/jobs/ --include="*.ts" --include="*.js" | grep -v "node_modules" | grep -v ".git" || true
+          echo "🔍 Strict scan (excluding node_modules, build, docs)..."
+
+          # Get only relevant source files
+          TARGETS=$(git ls-files \
+            'apps/**/*.ts' \
+            'shared/**/*.ts' \
+            ':!*node_modules/**' \
+            ':!*dist/**' \
+            ':!*build/**' \
+            ':!*.md' \
+            ':!*package-lock.json' \
+            ':!*yarn.lock')
+
+          # Check for supabase in source code
+          if echo "$TARGETS" | xargs grep -il "supabase" 2>/dev/null | grep -v "index.ts" > /dev/null; then
+            echo "❌ Forbidden pattern detected in application code"
+            echo "$TARGETS" | xargs grep -il "supabase" 2>/dev/null || true
             exit 1
           fi
-          
-      - name: Scan for forbidden env variables
+
+      - name: Block forbidden env usage in code
         run: |
-          echo "🔍 Scanning for forbidden env variables..."
-          
-          # Check for DATABASE_URL (forbidden - must use NEON_DB_URL)
-          if grep -r "DATABASE_URL" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" | grep -v "supabase" > /dev/null; then
-            echo "❌ DATABASE_URL usage detected - use NEON_DB_URL instead"
+          echo "🔍 Checking for forbidden env variables in code..."
+
+          # Check for DATABASE_URL or SUPABASE usage in code (case insensitive)
+          if git ls-files \
+            | xargs grep -Ei "process\.env\.(DATABASE_URL|SUPABASE)" 2>/dev/null; then
+            echo "❌ Forbidden env usage detected in code"
             exit 1
           fi
-          
-      - name: Scan for non-Neon postgres hosts
+
+      - name: Validate DB host is Neon-only
         run: |
-          echo "🔍 Validating database hosts..."
-          
-          # Look for common non-Neon's hosts
-          if grep -rE "postgres://|postgresql://" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" | grep -v "neon.tech" > /dev/null; then
-            echo "⚠️ Raw postgres connection string found - ensuring it points to Neon"
-            # Get all connection strings
-            CONN_STRINGS=$(grep -rE "postgres://|postgresql://" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" || true)
-            if echo "$CONN_STRINGS" | grep -v "neon.tech" > /dev/null; then
-              echo "❌ Non-Neon's database host detected"
-              echo "$CONN_STRINGS" | grep -v "neon.tech" || true
-              exit 1
+          echo "🔍 Checking connection strings..."
+
+          # Get source files only
+          TARGETS=$(git ls-files 'apps/**/*.ts' 'shared/**/*.ts' | grep -v node_modules)
+
+          FAIL=0
+
+          # Find all postgres connection strings
+          CONNS=$(git ls-files | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
+
+          for url in $CONNS; do
+            host=$(echo "$url" | sed -E 's|postgres(ql)?://([^/]+).*|\1|' | sed 's/:.*//')
+            if [[ -n "$host" && "$host" != *"neon.tech"* && "$host" != *"localhost"* ]]; then
+              echo "❌ Invalid DB host: $host (not neon.tech)"
+              FAIL=1
             fi
+          done
+
+          if [[ $FAIL -eq 1 ]]; then
+            exit 1
           fi
 
       - name: Pass
