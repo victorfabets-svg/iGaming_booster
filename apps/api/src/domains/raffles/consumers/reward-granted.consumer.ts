@@ -1,9 +1,9 @@
 export const CONSUMER_NAME = "reward_granted_consumer";
 
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
-import { createTicket, CreateTicketInput } from '../repositories/ticket.repository';
+import { createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
-import { db } from '@shared/database/connection';
+import { db, getClient } from '@shared/database/connection';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;
@@ -158,7 +158,7 @@ async function processEventExactlyOnce(
   processFn: () => Promise<void>
 ): Promise<{ success: boolean; skipped: boolean }> {
   // Use the shared event consumer repository's exactly-once function
-  const { isEventProcessed, markEventAsProcessed, getClient } = await import('../../../../../../shared/events/event-consumer.repository');
+  const { isEventProcessed, markEventAsProcessed } = await import('@shared/events/event-consumer.repository');
   
   // Check if already processed (idempotency) - use consumer-specific key
   const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);

@@ -1,4 +1,4 @@
-import { db, getClient, saveEventInTransaction } from '../../../shared/database/connection';
+import { db, getClient, saveEventInTransaction } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
 import * as crypto from 'crypto';
 
@@ -35,7 +35,7 @@ async function closeRaffleInTx(raffleId: string, client: any): Promise<boolean> 
   }
   
   // Step 3: COUNT after close (race-safe - no new tickets can be added)
-  const ticketCountResult = await client.query<{ count: string }>(
+  const ticketCountResult = await client.query(
     `SELECT COUNT(*)::text as count FROM raffles.tickets WHERE raffle_id = $1`,
     [raffleId]
   );
@@ -84,7 +84,7 @@ export async function closeRaffleJob(): Promise<{ closed: number; errors: number
     
     // CRITICAL: Use FOR SHARE to prevent race conditions on read
     // This acquires a shared lock that blocks FOR UPDATE but allows other SHARED reads
-    const rafflesToClose = await client.query<{ id: string }>(
+    const rafflesToClose = await client.query(
       `SELECT id FROM raffles.raffles 
        WHERE status = 'active' 
          AND end_at <= NOW()
@@ -120,7 +120,7 @@ export async function closeRaffleJob(): Promise<{ closed: number; errors: number
 // Run if called directly
 if (require.main === module) {
   // Import initDb from shared connection for standalone execution
-  import('../../../shared/database/connection').then(async ({ initDb }) => {
+  import('@shared/database/connection').then(async ({ initDb }) => {
     try {
       await initDb();
       const result = await closeRaffleJob();

@@ -27,7 +27,7 @@ export async function createRiskSignal(input: CreateRiskSignalInput): Promise<Ri
 }
 
 export async function findRiskSignalsByUserId(userId: string, limit: number = 100): Promise<RiskSignal[]> {
-  return await db.query<RiskSignal>(
+  const result = await db.query<RiskSignal>(
     `SELECT id, user_id, signal_type, value, metadata, created_at
      FROM fraud.risk_signals
      WHERE user_id = $1
@@ -35,16 +35,18 @@ export async function findRiskSignalsByUserId(userId: string, limit: number = 10
      LIMIT $2`,
     [userId, limit]
   );
+  return result.rows;
 }
 
 export async function findRiskSignalsByType(signalType: string, since: Date): Promise<RiskSignal[]> {
-  return await db.query<RiskSignal>(
+  const result = await db.query<RiskSignal>(
     `SELECT id, user_id, signal_type, value, metadata, created_at
      FROM fraud.risk_signals
      WHERE signal_type = $1 AND created_at >= $2
      ORDER BY created_at DESC`,
     [signalType, since]
   );
+  return result.rows;
 }
 
 export async function countRiskSignalsByUser(userId: string, signalType?: string, since?: Date): Promise<number> {

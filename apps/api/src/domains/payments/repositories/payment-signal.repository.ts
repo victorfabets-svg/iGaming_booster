@@ -58,12 +58,13 @@ export async function createPaymentSignalWithClient(
 }
 
 export async function findPaymentSignalsByProofId(proofId: string): Promise<PaymentSignal[]> {
-  return await db.query<PaymentSignal>(
+  const result = await db.query<PaymentSignal>(
     `SELECT id, proof_id, type, value, confidence, metadata, created_at
      FROM payments.payment_signals
      WHERE proof_id = $1`,
     [proofId]
   );
+  return result.rows;
 }
 
 export async function findPaymentSignalByProofAndType(proofId: string, type: string): Promise<PaymentSignal | null> {

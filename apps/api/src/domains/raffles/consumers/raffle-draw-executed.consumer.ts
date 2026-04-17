@@ -1,6 +1,6 @@
 import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, markEventAsProcessed, processEventExactlyOnce, validateEvent } from '@shared/events/event-consumer.repository';
 import { getRaffleById } from '../application/get-active-raffle';
-import { executeRaffleDraw } from '../application/execute-raffle-draw.use-case';
+import { executeRaffleDraw } from '../use-cases/execute-raffle-draw.use-case';
 
 const EVENT_TYPE = 'raffle_draw_executed';
 const EVENT_VERSION = 'v1';

@@ -124,6 +124,12 @@ export const db = {
     const result = await _db.query(text, params);
     return { rows: result.rows };
   },
+  connect: async (): Promise<pg.PoolClient> => {
+    if (!_db) {
+      throw new Error('Database not initialized');
+    }
+    return await _db.connect();
+  },
   end: async (): Promise<void> => {
     if (_db) {
       await _db.end();

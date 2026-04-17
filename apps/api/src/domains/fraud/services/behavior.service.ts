@@ -120,7 +120,7 @@ export class BehaviorAnalysisService {
       [userId, since]
     );
     
-    return result;
+    return result.rows;
   }
 
   async flagFraudDetection(userId: string, proofId: string, reason: string): Promise<void> {

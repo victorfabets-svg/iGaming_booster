@@ -125,7 +125,7 @@ class ExperimentService {
     );
     
     const stats: Record<string, number> = {};
-    for (const row of result) {
+    for (const row of result.rows) {
       stats[row.variant] = parseInt(row.count, 10);
     }
     return stats;
