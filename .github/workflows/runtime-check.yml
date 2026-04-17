@@ -12,20 +12,7 @@ on:
 jobs:
   db-connection-check:
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        options: >-
-          --health-cmd="pg_isready -U test"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=5
-    
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -42,7 +29,7 @@ jobs:
       - name: Test database connection
         working-directory: apps/api
         env:
-          NEON_DB_URL: postgresql://test:test@postgres:5432/test
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           for i in {1..10}; do
             node -e "
@@ -58,7 +45,7 @@ jobs:
           done || (echo "All retries failed" && exit 1)
 
   db-write-test:
-    needs: db-connection-check
+    needs: []
     runs-on: ubuntu-latest
 
     steps:
@@ -81,7 +68,7 @@ jobs:
         run: node scripts/db-write-test.js
 
   runtime-check:
-    needs: db-write-test
+    needs: [db-connection-check, db-write-test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
