@@ -5,12 +5,17 @@ import { startStuckEventRecovery } from '../../../../shared/events/event-consume
 
 async function start() {
   // Validate environment variables
+  const mode = process.env.RUNTIME_ENV; // 'ci' | 'preaudit'
+
   if (!process.env.NEON_DB_URL) {
     throw new Error("NEON_DB_URL missing");
   }
 
-  if (process.env.NEON_DB_URL.includes("localhost")) {
-    throw new Error("INVALID DB: localhost is not allowed for pre-audit");
+  if (
+    mode === 'preaudit' &&
+    process.env.NEON_DB_URL.includes("localhost")
+  ) {
+    throw new Error("INVALID DB: localhost not allowed in preaudit");
   }
 
   // Connect to database - MUST succeed or app fails
