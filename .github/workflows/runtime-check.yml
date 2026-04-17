@@ -138,117 +138,77 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install root dependencies
+      - name: Install API dependencies
+        working-directory: apps/api
         run: npm install
 
-      - name: Build Worker (safe)
-        run: |
-          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
-            echo "🔧 Worker detected"
-
-            pushd apps/worker > /dev/null
-
-            npm install
-            npm run build
-
-            popd > /dev/null
-
-            echo "✅ Worker built"
-          else
-            echo "⚠️ Worker not present — skipping worker build"
-          fi
-
-      - name: Install API dependencies
-        run: |
-          cd apps/api
-          npm install
-
       - name: Build API
+        working-directory: apps/api
+        run: npm run build
+
+      - name: Build Worker
+        working-directory: apps/worker
         run: |
-          cd apps/api
+          npm install
           npm run build
 
       - name: Start server
+        env:
+          NODE_ENV: development
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          JWT_SECRET: test-secret-for-ci
+          CANARY_TOKEN: test-canary-token
+        working-directory: apps/api
         run: |
-          # Set env for local testing
-          export NODE_ENV=development
-          export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
-          export JWT_SECRET=test-secret-for-ci
-          export CANARY_TOKEN=test-canary-token
-          
-          cd apps/api
-          
-          # Start API in background with log capture
-          node dist/server.js > $PWD/api.log 2>&1 &
+          node dist/server.js > api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
-          echo "Started API with PID $API_PID (logs: $PWD/api.log)"
+          echo "Started API with PID $API_PID (logs: $(pwd)/api.log)"
 
       - name: Wait for API to be ready
         run: |
-          # Ensure jq is installed
-          if ! command -v jq &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-
           echo "Starting readiness check..."
 
           for i in {1..30}; do
-            # Safe response capture with --fail for proper HTTP errors
             RESPONSE=$(curl -s --fail http://localhost:3000/health/db 2>/dev/null || echo "")
 
-            # Validate response not empty
             if [[ -z "$RESPONSE" ]]; then
               echo "Attempt $i: Empty response, waiting..."
               sleep 1
               continue
             fi
 
-            # Safe JSON parse with fallback
             STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"' 2>/dev/null || echo "invalid")
 
             echo "Attempt $i: Status = $STATUS"
 
-            # Strict validation
             if [[ "$STATUS" == "ok" ]]; then
-              echo "✅ System ready (DB connected)"
+              echo "System ready (DB connected)"
               exit 0
             fi
 
-            # Any other status (degraded, error, invalid) - still wait
             sleep 1
           done
 
-          # Failed after all retries
-          echo "❌ System never became ready"
+          echo "System never became ready"
           echo "Final response: $RESPONSE"
           exit 1
 
-      - name: Start Worker (optional)
+      - name: Start Worker
+        working-directory: apps/worker
         run: |
-          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
-            echo "🚀 Starting worker"
+          node dist/index.js &
+          WORKER_PID=$!
+          echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
+          echo "Worker started with PID $WORKER_PID"
 
-            pushd apps/worker > /dev/null
-
-            node dist/index.js &
-
-            WORKER_PID=$!
-            popd > /dev/null
-
-            echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
-            echo "✅ Worker started with PID $WORKER_PID"
-          else
-            echo "⚠️ Worker not present — skipping start"
-          fi
-
-      - name: Run E2E tests against live system
+      - name: Run E2E tests
+        working-directory: apps/api
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
-          echo "Running E2E tests..."
           npm run test:e2e || { echo "E2E failed"; exit 1; }
-          echo "✅ E2E tests passed"
+          echo "E2E tests passed"
 
       - name: Debug snapshot on failure
         if: failure()
@@ -285,22 +245,25 @@ jobs:
     needs: runtime-check
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      - name: Install API dependencies
+        working-directory: apps/api
+        run: npm install
+
       - name: Build API
-        run: |
-          cd apps/api
-          npm install
-          npm run build
+        working-directory: apps/api
+        run: npm run build
 
       - name: Start API
+        working-directory: apps/api
         run: |
-          cd apps/api
           node dist/server.js > api.log 2>&1 &
           echo $! > api.pid
 
