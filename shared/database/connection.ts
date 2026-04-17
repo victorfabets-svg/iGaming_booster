@@ -4,7 +4,7 @@ const { Pool } = pg;
 
 // Deterministic singleton - always initialized at module load
 export const db = new Pool({
-  connectionString: process.env.DATABASE_URL!,
+  connectionString: process.env.NEON_DB_URL!,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
