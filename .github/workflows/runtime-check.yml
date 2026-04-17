@@ -146,6 +146,17 @@ jobs:
         working-directory: apps/api
         run: npm run build
 
+      - name: Validate build output
+        working-directory: apps/api
+        run: |
+          if [ ! -f "dist/server.js" ]; then
+            echo "Build output missing: dist/server.js"
+            echo "Contents of dist:"
+            ls -la dist || echo "No dist folder"
+            exit 1
+          fi
+          echo "Build output validated: dist/server.js exists"
+
       - name: Build Worker
         working-directory: apps/worker
         run: |
@@ -261,6 +272,17 @@ jobs:
         working-directory: apps/api
         run: npm run build
 
+      - name: Validate build output
+        working-directory: apps/api
+        run: |
+          if [ ! -f "dist/server.js" ]; then
+            echo "Build output missing: dist/server.js"
+            echo "Contents of dist:"
+            ls -la dist || echo "No dist folder"
+            exit 1
+          fi
+          echo "Build output validated: dist/server.js exists"
+
       - name: Start API
         working-directory: apps/api
         run: |
@@ -287,6 +309,12 @@ jobs:
       - name: Run E2E
         run: |
           echo "E2E running..."
+
+      - name: Debug logs
+        if: failure()
+        run: |
+          echo "===== API LOG ====="
+          cat apps/api/api.log 2>/dev/null || echo "No log file"
 
       - name: Cleanup
         if: always()
