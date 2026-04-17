@@ -180,21 +180,42 @@ jobs:
 
       - name: Wait for API to be ready
         run: |
+          # Ensure jq is installed
+          if ! command -v jq &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          echo "Starting readiness check..."
+
           for i in {1..30}; do
-            RESP=$(curl -s http://localhost:3000/health/db || echo "")
-            STATUS=$(echo "$RESP" | jq -r '.status' 2>/dev/null || echo "unknown")
-            
+            # Safe response capture with --fail for proper HTTP errors
+            RESPONSE=$(curl -s --fail http://localhost:3000/health/db 2>/dev/null || echo "")
+
+            # Validate response not empty
+            if [[ -z "$RESPONSE" ]]; then
+              echo "Attempt $i: Empty response, waiting..."
+              sleep 1
+              continue
+            fi
+
+            # Safe JSON parse with fallback
+            STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"' 2>/dev/null || echo "invalid")
+
+            echo "Attempt $i: Status = $STATUS"
+
+            # Strict validation
             if [[ "$STATUS" == "ok" ]]; then
-              echo "✅ API is ready and DB is connected"
+              echo "✅ System ready (DB connected)"
               exit 0
             fi
-            
-            echo "Attempt $i: API status = $STATUS, waiting..."
+
+            # Any other status (degraded, error, invalid) - still wait
             sleep 1
           done
-          
-          echo "❌ API failed to become ready"
-          curl -s http://localhost:3000/health/db || true
+
+          # Failed after all retries
+          echo "❌ System never became ready"
+          echo "Final response: $RESPONSE"
           exit 1
 
       - name: Start Worker (optional)
