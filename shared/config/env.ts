@@ -175,17 +175,20 @@ if (!process.env.NEON_DB_URL) {
   throw new Error("NEON_DB_URL is required");
 }
 
-// SSOT ENFORCEMENT: Only Neon is allowed
-const dbUrl = process.env.NEON_DB_URL;
-if (!dbUrl.includes("neon.tech")) {
-  throw new Error("Invalid database provider — only Neon (neon.tech) is allowed");
+// SSOT ENFORCEMENT: Validate actual host, not just naming
+let host: string;
+
+try {
+  host = new URL(process.env.NEON_DB_URL).hostname;
+} catch {
+  throw new Error("Invalid NEON_DB_URL format");
+}
+
+if (!host.includes("neon.tech")) {
+  throw new Error(`Invalid database host: ${host} — only Neon allowed`);
 }
 
 // Log active DB host for observability
-try {
-  console.log("🔗 DB_HOST:", new URL(dbUrl).host);
-} catch {
-  // URL parsing failed - will fail at connection time
-}
+console.log("🔗 DB_HOST:", host);
 
 export const NEON_DB_URL = process.env.NEON_DB_URL;
