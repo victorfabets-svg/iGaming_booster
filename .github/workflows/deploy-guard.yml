@@ -13,30 +13,83 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Hit canary health endpoint
+      - name: Hit canary health endpoint (with retries)
         run: |
-          echo "🔎 Checking canary DB host..."
+          set -e
 
-          CANARY_URL="${{ secrets.CANARY_URL }}"
-          
-          if [[ -z "$CANARY_URL" ]]; then
-            echo "❌ CANARY_URL secret not set"
+          URL="${{ secrets.CANARY_URL }}/health/db"
+          HEADER="x-internal-check: true"
+          AUTH="x-canary-token: ${{ secrets.CANARY_TOKEN }}"
+
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            RESPONSE=$(curl -s -m 5 -H "$HEADER" -H "$AUTH" "$URL" || true)
+
+            if [[ -n "$RESPONSE" ]]; then
+              echo "Got response: $RESPONSE"
+              break
+            fi
+
+            echo "Retry $i failed, waiting..."
+            sleep $((i * 2))
+          done
+
+          if [[ -z "$RESPONSE" ]]; then
+            echo "❌ Canary endpoint unreachable after 3 attempts"
             exit 1
           fi
 
-          RESPONSE=$(curl -s -H "x-internal-check: true" "$CANARY_URL/health/db")
+          echo "RESPONSE=$RESPONSE" >> $GITHUB_ENV
 
-          echo "Response: $RESPONSE"
+      - name: Validate health status
+        run: |
+          RESPONSE="${{ env.RESPONSE }}"
+          
+          STATUS=$(echo "$RESPONSE" | jq -r '.status')
 
-          HOST=$(echo "$RESPONSE" | jq -r '.dbHost // empty')
+          if [[ -z "$STATUS" || "$STATUS" == "null" ]]; then
+            echo "❌ No status returned"
+            exit 1
+          fi
+
+          if [[ "$STATUS" != "ok" ]]; then
+            echo "❌ Canary not healthy: $STATUS"
+            exit 1
+          fi
+
+          echo "✅ Health status: $STATUS"
+
+      - name: Validate DB host against allowlist
+        run: |
+          RESPONSE="${{ env.RESPONSE }}"
+          
+          HOST=$(echo "$RESPONSE" | jq -r '.dbHost')
 
           if [[ -z "$HOST" || "$HOST" == "null" ]]; then
             echo "❌ No dbHost returned from canary"
             exit 1
           fi
 
-          if [[ "$HOST" != *"neon.tech" ]]; then
-            echo "❌ Invalid DB host in canary: $HOST"
+          ALLOWED="${{ secrets.ALLOWED_NEON_HOSTS }}"
+
+          if [[ -z "$ALLOWED" ]]; then
+            echo "❌ ALLOWED_NEON_HOSTS secret not set"
+            exit 1
+          fi
+
+          MATCH=0
+          IFS=',' read -ra LIST <<< "$ALLOWED"
+          for h in "${LIST[@]}"; do
+            # Trim whitespace
+            h=$(echo "$h" | xargs)
+            if [[ "$HOST" == "$h" ]]; then
+              MATCH=1
+              break
+            fi
+          done
+
+          if [[ $MATCH -ne 1 ]]; then
+            echo "❌ Host '$HOST' not in allowlist: $ALLOWED"
             exit 1
           fi
 
