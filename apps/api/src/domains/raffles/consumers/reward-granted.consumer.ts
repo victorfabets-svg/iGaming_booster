@@ -1,4 +1,4 @@
-import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, isEventProcessed, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, isEventProcessed, markEventAsProcessed, lockEvent, query, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { findActiveRaffle } from '../../rewards/repositories/raffle.repository';
 import { logger } from '../../../../../../shared/observability';
@@ -66,7 +66,25 @@ async function processEvent(event: Event): Promise<void> {
 
   logger.info('event_processing', 'raffles', `Processing event ${eventId}, reward_id: ${payload.reward_id}, retry: ${retryCount}`, payload.user_id);
 
-  // STEP 1: Check if already processed (idempotency)
+  // STEP 1: Acquire row-level lock with FOR UPDATE SKIP LOCKED
+  // This ensures only ONE worker can process this event at a time
+  // If another worker has locked this event, the query returns no rows
+  const lockedEvent = await query<Event>(
+    `SELECT id, event_type, version, producer, correlation_id, payload, 
+            retry_count, processed, timestamp, locked_at
+     FROM events.events
+     WHERE id = $1
+     FOR UPDATE SKIP LOCKED`,
+    [eventId]
+  );
+
+  if (lockedEvent.length === 0) {
+    // Another worker is processing this event - skip
+    logger.info('event_locked_by_other', 'raffles', `Event ${eventId} is locked by another worker, skipping`, payload.user_id);
+    return;
+  }
+
+  // STEP 2: Check if already processed (idempotency)
   const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);
   
   if (alreadyProcessed) {
@@ -74,7 +92,7 @@ async function processEvent(event: Event): Promise<void> {
     return;
   }
 
-  // STEP 2: Process the event (create ticket)
+  // STEP 3: Process the event (create ticket)
   try {
     await createTicketForReward(payload);
   } catch (err) {
@@ -82,7 +100,7 @@ async function processEvent(event: Event): Promise<void> {
     throw err; // Re-throw to trigger retry/DLQ
   }
 
-  // STEP 3: Mark as processed AFTER successful processing (idempotency)
+  // STEP 4: Mark as processed AFTER successful processing (idempotency)
   await markEventAsProcessed(eventId, CONSUMER_NAME);
 
   logger.info('event_processed', 'raffles', `Event processed successfully: ${eventId}, reward_id: ${payload.reward_id}`, payload.user_id);
