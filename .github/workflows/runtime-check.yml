@@ -130,7 +130,7 @@ jobs:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/apps/api/src/server/app.js > api.log 2>&1 &
+          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/app.js > api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
           echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
@@ -279,7 +279,7 @@ jobs:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/apps/api/src/server/app.js > api.log 2>&1 &
+          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/app.js > api.log 2>&1 &
           echo $! > api.pid
           sleep 2
           echo "=== SERVER LOG ==="
