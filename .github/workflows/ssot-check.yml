@@ -1,0 +1,56 @@
+name: SSOT Enforcement
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/**
+
+jobs:
+  ssot-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan for forbidden database providers
+        run: |
+          echo "🔍 Scanning for forbidden database providers..."
+          
+          # Check for Supabase in application code (exclude security hardening in entrypoints)
+          # Scan: shared/, apps/api/src/domains/, apps/worker/src/jobs/
+          if grep -r "supabase" shared/ apps/api/src/domains/ apps/worker/src/jobs/ --include="*.ts" --include="*.js" 2>/dev/null | grep -v "node_modules" | grep -v ".git" > /dev/null; then
+            echo "❌ Supabase reference detected in application code"
+            grep -r "supabase" shared/ apps/api/src/domains/ apps/worker/src/jobs/ --include="*.ts" --include="*.js" | grep -v "node_modules" | grep -v ".git" || true
+            exit 1
+          fi
+          
+      - name: Scan for forbidden env variables
+        run: |
+          echo "🔍 Scanning for forbidden env variables..."
+          
+          # Check for DATABASE_URL (forbidden - must use NEON_DB_URL)
+          if grep -r "DATABASE_URL" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" | grep -v "supabase" > /dev/null; then
+            echo "❌ DATABASE_URL usage detected - use NEON_DB_URL instead"
+            exit 1
+          fi
+          
+      - name: Scan for non-Neon postgres hosts
+        run: |
+          echo "🔍 Validating database hosts..."
+          
+          # Look for common non-Neon's hosts
+          if grep -rE "postgres://|postgresql://" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" | grep -v "neon.tech" > /dev/null; then
+            echo "⚠️ Raw postgres connection string found - ensuring it points to Neon"
+            # Get all connection strings
+            CONN_STRINGS=$(grep -rE "postgres://|postgresql://" . --exclude="ssot-check.yml" 2>/dev/null | grep -v "node_modules" | grep -v ".git" || true)
+            if echo "$CONN_STRINGS" | grep -v "neon.tech" > /dev/null; then
+              echo "❌ Non-Neon's database host detected"
+              echo "$CONN_STRINGS" | grep -v "neon.tech" || true
+              exit 1
+            fi
+          fi
+
+      - name: Pass
+        run: echo "✅ SSOT check passed - only Neon allowed"
