@@ -23,7 +23,6 @@ export interface AppConfig {
   featureFlags: {
     ENABLE_REWARDS: boolean;
     ENABLE_VALIDATION: boolean;
-    ENABLE_AUTOMATIC_APPROVAL: boolean;
   };
   
   // Limits
@@ -61,10 +60,10 @@ function getEnvironment(): Environment {
 function getFeatureFlags(): AppConfig['featureFlags'] {
   // SAFE DEFAULTS: All production features disabled until explicitly enabled
   // Only ENABLE_REWARDS and ENABLE_VALIDATION default to true (core functionality)
+  // NOTE: ENABLE_AUTOMATIC_APPROVAL removed - thresholds always from config
   return {
     ENABLE_REWARDS: process.env.ENABLE_REWARDS !== 'false',
     ENABLE_VALIDATION: process.env.ENABLE_VALIDATION !== 'false',
-    ENABLE_AUTOMATIC_APPROVAL: process.env.ENABLE_AUTOMATIC_APPROVAL === 'true', // Disabled by default
   };
 }
 

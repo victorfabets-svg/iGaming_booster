@@ -20,10 +20,7 @@ const EXPERIMENTS: Record<string, ExperimentConfig> = {
     name: 'reward_tickets',
     variants: ['control', 'treatment_a', 'treatment_b'],
   },
-  validation_threshold: {
-    name: 'validation_threshold',
-    variants: ['control', 'stricter', 'lenient'],
-  },
+  // NOTE: validation_threshold experiment removed - thresholds always from config
 };
 
 // Deterministic assignment based on user ID

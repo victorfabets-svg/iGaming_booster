@@ -10,7 +10,7 @@ import { extractIdentifiers } from '../../payments/services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../../payments/services/identifier-validation.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
-import { isValidationEnabled, isAutomaticApprovalEnabled } from '../../../../../../shared/config/feature-flags';
+import { isValidationEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
 import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 
@@ -39,12 +39,12 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     throw new Error('Validation is currently disabled');
   }
 
-  // Use config for thresholds only when automatic approval is explicitly enabled
-  const automaticApproval = isAutomaticApprovalEnabled();
-  const approvalThreshold = automaticApproval ? config.validation.approvalThreshold : 0.9;
-  const manualReviewThreshold = automaticApproval ? config.validation.manualReviewThreshold : 0.6;
+  // Always use config thresholds - same behavior in all environments
+  // NOTE: ENABLE_AUTOMATIC_APPROVAL removed to ensure deterministic behavior
+  const approvalThreshold = config.validation.approvalThreshold;
+  const manualReviewThreshold = config.validation.manualReviewThreshold;
 
-  console.log(`🔄 Processing validation for proof: ${proof_id} (auto_approval: ${automaticApproval})`);
+  console.log(`🔄 Processing validation for proof: ${proof_id} (thresholds: approval=${approvalThreshold}, manualReview=${manualReviewThreshold})`);
 
   // Load proof from database
   const proof = await findProofById(proof_id);
@@ -149,7 +149,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     } else {
       decision = 'rejected';
     }
-    console.log(`📊 Decision: ${decision} (ENABLE_AUTOMATIC_APPROVAL: ${isAutomaticApprovalEnabled()}, confidence: ${fraudScoreResult.score})`);
+    console.log(`📊 Decision: ${decision} (confidence: ${fraudScoreResult.score})`);
 
     logger.info('validation_completed', 'validation', `Validation completed: ${decision}`, proof.user_id, { 
       proof_id, 

@@ -10,8 +10,13 @@ export function buildApp(): FastifyInstance {
   });
 
   // Register JWT plugin for authentication
+  // MUST fail in production if JWT_SECRET not set - no fallback secrets
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
   app.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
+    secret: jwtSecret,
   });
 
   // Register multipart plugin for file uploads

@@ -15,6 +15,8 @@ export interface FeatureFlagState {
 
 // Feature flag definitions with metadata
 // SAFE DEFAULTS: All production features disabled until explicitly enabled
+// NOTE: ENABLE_AUTOMATIC_APPROVAL was removed - it caused non-deterministic behavior
+// Thresholds are now always from config, same behavior in all environments
 const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, { 
   description: string; 
   defaultValue: boolean;
@@ -29,11 +31,6 @@ const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, {
     description: 'Enable automatic validation processing',
     defaultValue: true,
     critical: true, // Disabling stops all validation
-  },
-  ENABLE_AUTOMATIC_APPROVAL: {
-    description: 'Enable automatic approval for high-confidence validations - if false, default to manual_review',
-    defaultValue: false, // SAFE DEFAULT: require manual review unless explicitly enabled
-    critical: false,
   },
 };
 
@@ -152,9 +149,9 @@ class FeatureFlagsService {
 export const featureFlags = FeatureFlagsService.getInstance();
 
 // Convenience functions
+// NOTE: isAutomaticApprovalEnabled removed - thresholds are now always from config
 export const isRewardsEnabled = () => featureFlags.isEnabled('ENABLE_REWARDS');
 export const isValidationEnabled = () => featureFlags.isEnabled('ENABLE_VALIDATION');
-export const isAutomaticApprovalEnabled = () => featureFlags.isEnabled('ENABLE_AUTOMATIC_APPROVAL');
 
 // Guard functions that throw if disabled
 export function requireRewards(): void {
