@@ -175,7 +175,7 @@ if (!process.env.NEON_DB_URL) {
   throw new Error("NEON_DB_URL is required");
 }
 
-// SSOT ENFORCEMENT: Validate actual host, not just naming
+// SSOT ENFORCEMENT: Strict Neon host pattern validation
 let host: string;
 
 try {
@@ -184,8 +184,15 @@ try {
   throw new Error("Invalid NEON_DB_URL format");
 }
 
-if (!host.includes("neon.tech")) {
-  throw new Error(`Invalid database host: ${host} — only Neon allowed`);
+/**
+ * Strict Neon pattern validation:
+ * - Must match: ep-<id>.<region>.aws.neon.tech
+ * - Prevents: fake.neon.tech, subdomain bypass, etc.
+ */
+const NEON_HOST_REGEX = /^ep-[a-z0-9]+\.[a-z0-9-]+\.aws\.neon\.tech$/;
+
+if (!NEON_HOST_REGEX.test(host)) {
+  throw new Error(`Invalid database host: ${host} — only official Neon endpoints allowed`);
 }
 
 // Log active DB host for observability
