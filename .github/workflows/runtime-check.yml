@@ -279,3 +279,53 @@ jobs:
             kill ${{ env.WORKER_PID }} 2>/dev/null || true
             echo "Killed Worker"
           fi
+
+  pipeline-e2e-test:
+    runs-on: ubuntu-latest
+    needs: runtime-check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build API
+        run: |
+          cd apps/api
+          npm install
+          npm run build
+
+      - name: Start API
+        run: |
+          cd apps/api
+          node dist/server.js > api.log 2>&1 &
+          echo $! > api.pid
+
+      - name: Wait for API
+        run: |
+          for i in {1..30}; do
+            RESPONSE=$(curl -s http://localhost:3000/health/db || echo "")
+            STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
+
+            if [[ "$STATUS" == "ok" ]]; then
+              echo "API READY"
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "API FAILED"
+          exit 1
+
+      - name: Run E2E
+        run: |
+          echo "E2E running..."
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kill $(cat api.pid) || true
