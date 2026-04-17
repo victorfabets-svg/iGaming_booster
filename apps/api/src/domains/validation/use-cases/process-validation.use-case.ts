@@ -39,8 +39,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     throw new Error('Validation is currently disabled');
   }
 
-  // Always use config thresholds - same behavior in all environments
-  // NOTE: ENABLE_AUTOMATIC_APPROVAL removed to ensure deterministic behavior
+  // Task 1 confirmed: deterministic thresholds from config only
   const approvalThreshold = config.validation.approvalThreshold;
   const manualReviewThreshold = config.validation.manualReviewThreshold;
 
