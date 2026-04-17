@@ -64,22 +64,38 @@ export function buildApp(): FastifyInstance {
 
     const status = dbOk ? 'ok' : 'degraded';
     
-    const payload: Record<string, unknown> = { status };
+    // Canonical JSON serializer for deterministic signing
+    const canonical = (obj: Record<string, unknown>) =>
+      JSON.stringify(
+        Object.keys(obj).sort().reduce((acc, k) => {
+          acc[k] = obj[k];
+          return acc;
+        }, {} as Record<string, unknown>)
+      );
+
+    // Build payload with timestamp
+    const payload: Record<string, unknown> = {
+      status,
+      ts: Date.now()
+    };
     
     // Add dbHost only for internal checks
     if (internal) {
       payload.dbHost = host;
     }
 
-    // Sign response for internal checks with CANARY_TOKEN (anti-spoof)
+    // Sign response for internal checks with CANARY_TOKEN (anti-spoof + anti-replay)
     if (internal && process.env.CANARY_TOKEN) {
-      const body = JSON.stringify(payload);
+      const nonce = crypto.randomBytes(8).toString('hex');
+      const body = canonical(payload) + nonce;
+      
       const sig = crypto
         .createHmac('sha256', process.env.CANARY_TOKEN)
         .update(body)
         .digest('hex');
       
       reply.header('x-canary-signature', sig);
+      reply.header('x-canary-nonce', nonce);
     }
 
     // Public: only status. Internal: full visibility.

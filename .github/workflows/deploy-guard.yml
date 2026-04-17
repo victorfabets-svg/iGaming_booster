@@ -106,30 +106,60 @@ jobs:
 
           echo "✅ Canary DB host validated: $HOST"
 
-      - name: Verify canary signature (if token provided)
+      - name: Verify signed response (anti-replay + integrity)
         if: secrets.CANARY_TOKEN != ''
         run: |
+          # Extract body and headers
           BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
-          
-          # Compute expected signature
-          EXPECTED=$(node -e "
-            const crypto = require('crypto');
-            const body = '$BODY';
-            const token = '${{ secrets.CANARY_TOKEN }}';
-            const sig = crypto.createHmac('sha256', token).update(body).digest('hex');
-            console.log(sig);
-          ")
-          
-          # Get signature from response headers
           HEADERS=$(cat canary_response.txt | sed -n '1,/^\r*$/p')
-          ACTUAL_SIG=$(echo "$HEADERS" | grep -i "x-canary-signature" | cut -d: -f2 | tr -d ' \r')
           
-          echo "Expected: $EXPECTED"
-          echo "Actual: $ACTUAL_SIG"
+          SIG=$(echo "$HEADERS" | grep -i "x-canary-signature" | cut -d: -f2 | tr -d ' \r')
+          NONCE=$(echo "$HEADERS" | grep -i "x-canary-nonce" | cut -d: -f2 | tr -d ' \r')
           
-          if [[ "$EXPECTED" != "$ACTUAL_SIG" ]]; then
-            echo "❌ Invalid canary signature"
+          if [[ -z "$SIG" || -z "$NONCE" ]]; then
+            echo "❌ Missing signature or nonce"
             exit 1
           fi
           
-          echo "✅ Signature verified"
+          # Compute expected signature with canonical JSON + nonce
+          EXPECTED=$(node -e "
+            const crypto = require('crypto');
+            
+            const canonical = (obj) => {
+              const keys = Object.keys(obj).sort();
+              const o = keys.reduce((a,k) => { a[k] = obj[k]; return a; }, {});
+              return JSON.stringify(o);
+            };
+            
+            const payload = JSON.parse('$BODY');
+            const nonce = '$NONCE';
+            
+            const body = canonical(payload) + nonce;
+            const sig = crypto.createHmac('sha256', process.env.CANARY_TOKEN)
+              .update(body)
+              .digest('hex');
+            
+            console.log(sig);
+          ")
+          
+          echo "Expected: $EXPECTED"
+          echo "Actual: $SIG"
+          
+          if [[ "$SIG" != "$EXPECTED" ]]; then
+            echo "❌ Signature mismatch"
+            exit 1
+          fi
+          
+          # Verify timestamp is fresh (anti-replay)
+          TS=$(echo "$BODY" | jq -r '.ts')
+          NOW=$(date +%s%3N)
+          DIFF=$((NOW - TS))
+          
+          echo "Timestamp: $TS, Now: $NOW, Diff: $DIFF ms"
+          
+          if (( DIFF > 5000 )); then
+            echo "❌ Stale response (possible replay)"
+            exit 1
+          fi
+          
+          echo "✅ Signature and timestamp verified"
