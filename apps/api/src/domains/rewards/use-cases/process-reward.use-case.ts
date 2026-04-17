@@ -1,7 +1,8 @@
 import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createRewardTx } from '../repositories/reward.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
-import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '@shared/events/transactional-outbox';
+import { queueEventInTransaction } from '@shared/events';
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';

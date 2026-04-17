@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { db } from '../../../../shared/database/connection';
+import { db } from '@shared/database/connection';
 
 /**
  * Deterministic draw engine - uses seed + SHA256 for reproducible results.

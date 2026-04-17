@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { getDb, db } from '../../../../shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 
 export interface ExperimentAssignment {
   id: string;

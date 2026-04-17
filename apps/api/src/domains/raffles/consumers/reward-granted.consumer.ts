@@ -1,9 +1,9 @@
 export const CONSUMER_NAME = "reward_granted_consumer";
 
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
-import { createTicket, CreateTicketInput } from '../../repositories/ticket.repository';
+import { createTicket, CreateTicketInput } from '../repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
-import { db } from '../../../../shared/database/connection';
+import { db } from '@shared/database/connection';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;

@@ -1,4 +1,4 @@
-import { getDb, db } from '../../../../shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
 
 export interface Proof {

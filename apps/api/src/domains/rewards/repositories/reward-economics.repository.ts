@@ -1,4 +1,4 @@
-import { getDb, db } from '../../../../shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 
 export interface RewardEconomics {
   id: string;

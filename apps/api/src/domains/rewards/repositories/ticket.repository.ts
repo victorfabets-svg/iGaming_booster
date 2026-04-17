@@ -1,4 +1,4 @@
-import { getDb } from '../../../../shared/database/connection';
+import { getDb } from '@shared/database/connection';
 
 export interface Ticket {
   id: string;

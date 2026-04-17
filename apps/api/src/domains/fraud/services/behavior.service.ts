@@ -1,6 +1,6 @@
 import { findProofById, findProofsByUserId } from '../../validation/repositories/proof.repository';
 import { findRiskSignalsByUserId, countRiskSignalsByUser, createRiskSignal } from '../repositories/risk-signal.repository';
-import { db } from '../../../../shared/database/connection';
+import { db } from '@shared/database/connection';
 
 export interface BehaviorAnalysisResult {
   is_suspicious: boolean;

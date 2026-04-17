@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import { db, getClient, saveEventInTransaction } from '../../../../shared/database/connection';
+import { db, getClient, saveEventInTransaction } from '@shared/database/connection';
 
 export interface Raffle {
   id: string;
