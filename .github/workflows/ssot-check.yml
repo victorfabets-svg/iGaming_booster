@@ -75,6 +75,26 @@ jobs:
       - name: Pass
         run: echo "✅ SSOT check passed - only Neon allowed"
 
+      - name: Warn on unexpected DB host patterns
+        run: |
+          echo "🔎 Scanning for suspicious DB hosts..."
+          
+          CONNS=$(git ls-files | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
+          
+          SUSPICIOUS=""
+          
+          for url in $CONNS; do
+            if echo "$url" | grep -v "neon.tech" | grep -q "postgres"; then
+              SUSPICIOUS="$SUSPICIOUS $url"
+            fi
+          done
+          
+          if [[ -n "$SUSPICIOUS" ]]; then
+            echo "::warning::Potential non-Neon DB host detected: $SUSPICIOUS"
+          fi
+          
+          echo "✅ DB host pattern scan complete"
+
       - name: Enforce ALLOWED_NEON_HOSTS for production
         if: github.base_ref == 'main'
         run: |

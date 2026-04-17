@@ -1,0 +1,43 @@
+name: Deploy Guard — DB Host Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  canary-db-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hit canary health endpoint
+        run: |
+          echo "🔎 Checking canary DB host..."
+
+          CANARY_URL="${{ secrets.CANARY_URL }}"
+          
+          if [[ -z "$CANARY_URL" ]]; then
+            echo "❌ CANARY_URL secret not set"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s -H "x-internal-check: true" "$CANARY_URL/health/db")
+
+          echo "Response: $RESPONSE"
+
+          HOST=$(echo "$RESPONSE" | jq -r '.dbHost // empty')
+
+          if [[ -z "$HOST" || "$HOST" == "null" ]]; then
+            echo "❌ No dbHost returned from canary"
+            exit 1
+          fi
+
+          if [[ "$HOST" != *"neon.tech" ]]; then
+            echo "❌ Invalid DB host in canary: $HOST"
+            exit 1
+          fi
+
+          echo "✅ Canary DB host validated: $HOST"
