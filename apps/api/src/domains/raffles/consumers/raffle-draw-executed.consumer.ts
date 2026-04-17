@@ -97,9 +97,12 @@ async function handleRaffleDrawExecuted(payload: RaffleDrawExecutedPayload): Pro
   // All business logic (idempotency, draw execution) handled by draw engine
   const raffle = await getRaffleById(raffle_id);
   
-  if (!raffle || raffle.status !== 'closed') {
-    console.log(`⚠️  Raffle ${raffle_id} not found or not closed, skipping (idempotency handled by draw engine)`);
-    return;
+  // FIX: Fail-fast instead of silent return - raffle must exist and be closed
+  if (!raffle) {
+    throw new Error(`Raffle not found: ${raffle_id}. Cannot execute draw.`);
+  }
+  if (raffle.status !== 'closed') {
+    throw new Error(`Raffle ${raffle_id} must be closed to execute draw, found status: ${raffle.status}`);
   }
 
   // Trigger draw - draw engine handles all business logic

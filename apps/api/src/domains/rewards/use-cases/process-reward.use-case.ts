@@ -165,6 +165,12 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const REWARD_VALUE = 10;
   const REWARD_TYPE = 'approval';
 
+  // Step 7a: Get active raffle BEFORE transaction for ticket creation
+  // FIX: Include raffle_id in event - required for reward→ticket pipeline
+  const { getActiveRaffle } = await import('../../raffles/application/get-active-raffle');
+  const activeRaffle = await getActiveRaffle(new Date());
+  const raffleIdForTicket = activeRaffle?.id || null;
+
   // TRANSACTIONAL OUTBOX: reward + event in SAME transaction
   // This guarantees atomicity: if reward exists, event also exists
   const reward = await withTransactionalOutbox(async (client) => {
@@ -177,6 +183,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     }, client);
 
     // Step 2: Insert event in outbox (same transaction - not published yet)
+    // FIX: Include raffle_id in event - required for ticket creation pipeline
     await insertEventInTransaction(
       client,
       'reward_granted',
@@ -186,6 +193,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
         user_id: payload.user_id,
         reward_type: createdReward.reward_type,
         value: createdReward.value,
+        raffle_id: raffleIdForTicket,
       },
       'rewards'
     );
