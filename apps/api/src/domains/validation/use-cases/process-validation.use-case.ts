@@ -40,6 +40,11 @@ export async function processValidation(input: ProcessValidationInput): Promise<
   }
 
   // Task 1 confirmed: deterministic thresholds from config only
+  // EVENT-DRIVEN ARCHITECTURE:
+  // - proof_submitted → validation consumer → emits proof_validated
+  // - proof_validated → reward consumer → emits reward_granted  
+  // - reward_granted → raffle consumer → creates ticket
+  // No cross-domain direct calls - events only
   const approvalThreshold = config.validation.approvalThreshold;
   const manualReviewThreshold = config.validation.manualReviewThreshold;
 
