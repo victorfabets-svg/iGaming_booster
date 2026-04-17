@@ -1,13 +1,10 @@
 import { findProofById, findProofByHash } from '../repositories/proof.repository';
 import { findValidationByProofId } from '../repositories/proof-validation.repository';
 import { updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
-import { createFraudScoreWithClient } from '../../fraud/repositories/fraud-score.repository';
 import { extractTextFromImage, OcrResult } from '../services/ocr.service';
 import { validateWithHeuristics, HeuristicResult } from '../services/heuristic.service';
-import { calculateFraudScore } from '../../fraud/services/fraud-score.service';
-import { createPaymentSignalWithClient } from '../../payments/repositories/payment-signal.repository';
-import { extractIdentifiers } from '../../payments/services/identifier.service';
-import { validateIdentifier, validateIdentifiers } from '../../payments/services/identifier-validation.service';
+// EVENT-DRIVEN: fraud and payments moved to consumers
+// Removed: fraudScore repository, fraud-score service, payments repository/services
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
 import { isValidationEnabled } from '../../../../../../shared/config/feature-flags';

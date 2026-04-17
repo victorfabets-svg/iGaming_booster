@@ -2,8 +2,8 @@ import { findRewardByProofId, createRewardTx } from '../repositories/reward.repo
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { queueEventInTransaction } from '@shared/events';
-import { rateLimitService } from '../../fraud/services/rate-limit.service';
-import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
+// EVENT-DRIVEN: rate limit and behavior check moved to fraud consumer
+// Removed: rateLimitService, behaviorAnalysisService
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordReward } from '../../../../../../shared/observability/metrics.service';
 import { isRewardsEnabled } from '../../../../../../shared/config/feature-flags';
