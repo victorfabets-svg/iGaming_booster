@@ -19,10 +19,22 @@ const { Client } = require('pg');
 
   const userId = userRes.rows[0].id;
 
-  // 2. insert with valid UUID
+  // 2. discover real schema
+  const columns = await client.query(`
+    SELECT column_name 
+    FROM information_schema.columns 
+    WHERE table_schema = 'validation' 
+    AND table_name = 'proofs'
+  `);
+  console.log('COLUMNS:', columns.rows);
+
+  // 3. insert with valid UUID using only existing columns
   const id = crypto.randomUUID();
 
-  await client.query("INSERT INTO validation.proofs (id, user_id, file_url, created_at) VALUES ($1, $2, $3, NOW())", [id, userId, 'test-url'])
+  await client.query(
+    "INSERT INTO validation.proofs (id, user_id, file_url) VALUES ($1, $2, $3)",
+    [id, userId, 'test-url']
+  );
 
   console.log('WRITE OK')
 
