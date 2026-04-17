@@ -97,7 +97,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: api-build
-          path: apps/api/dist
+          path: apps/api/dist/server.js
 
   pipeline-e2e-test:
     runs-on: ubuntu-latest
@@ -122,22 +122,12 @@ jobs:
           name: api-build
           path: apps/api/dist
 
-      - name: Debug build output
-        working-directory: apps/api
-        run: |
-          echo "=== DIST STRUCTURE ==="
-          ls -R dist || echo "No dist folder"
-          echo "=== DIST FILES ==="
-          find dist -type f | sort
-          echo "=== SERVER FILES ==="
-          ls -la dist/apps/api/src/server/ || true
-
       - name: Start API
         env:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/index.js > api.log 2>&1 &
+          PORT=$PORT HOST=0.0.0.0 node dist/server.js > api.log 2>&1 &
           echo $! > api.pid
           sleep 2
           echo "=== SERVER LOG ==="
