@@ -35,9 +35,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Debug path
         run: |
-          npm install
+          echo "PWD:"
+          pwd
+          echo "FILES:"
+          ls -la
+
+      - name: Install dependencies (safe)
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          elif [ -f "apps/api/package.json" ]; then
+            echo "Using API package"
+            cd apps/api
+            npm install
+          else
+            echo "❌ No package.json found"
+            pwd
+            ls -la
+            exit 1
+          fi
 
       - name: Test database connection
         env:
@@ -69,8 +87,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Debug path
+        run: |
+          echo "PWD:"
+          pwd
+          echo "FILES:"
+          ls -la
+
+      - name: Install dependencies (safe)
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          elif [ -f "apps/api/package.json" ]; then
+            echo "Using API package"
+            cd apps/api
+            npm install
+          else
+            echo "❌ No package.json found"
+            pwd
+            ls -la
+            exit 1
+          fi
 
       - name: Install minimal deps
         run: |
@@ -138,8 +175,27 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install root dependencies
-        run: npm install
+      - name: Debug path
+        run: |
+          echo "PWD:"
+          pwd
+          echo "FILES:"
+          ls -la
+
+      - name: Install root dependencies (safe)
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          elif [ -f "apps/api/package.json" ]; then
+            echo "Using API package"
+            cd apps/api
+            npm install
+          else
+            echo "❌ No package.json found"
+            pwd
+            ls -la
+            exit 1
+          fi
 
       - name: Build Worker (safe)
         run: |
@@ -158,10 +214,20 @@ jobs:
             echo "⚠️ Worker not present — skipping worker build"
           fi
 
-      - name: Install API dependencies
+      - name: Install API dependencies (safe)
         run: |
-          cd apps/api
-          npm install
+          if [ -f "apps/api/package.json" ]; then
+            cd apps/api
+            npm install
+          elif [ -f "package.json" ]; then
+            echo "Using root package"
+            npm install
+          else
+            echo "❌ No package.json found"
+            pwd
+            ls -la
+            exit 1
+          fi
 
       - name: Build API
         run: |
