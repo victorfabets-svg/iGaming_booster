@@ -130,9 +130,22 @@ jobs:
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
           echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
+          sleep 2
+          echo "=== SERVER LOG ==="
+          cat api.log || true
 
       - name: Debug port
-        run: echo "Using PORT=$PORT"
+        run: |
+          echo "Using PORT=$PORT"
+
+      - name: Check port binding
+        run: |
+          echo "=== PORT CHECK ==="
+          lsof -i :$PORT || true
+
+      - name: Test raw curl
+        run: |
+          curl -v http://localhost:$PORT/health/db || true
 
       - name: Wait for API to be ready
         run: |
@@ -262,9 +275,22 @@ jobs:
         run: |
           PORT=$PORT node dist/apps/api/src/server/index.js > api.log 2>&1 &
           echo $! > api.pid
+          sleep 2
+          echo "=== SERVER LOG ==="
+          cat api.log || true
 
       - name: Debug port
-        run: echo "Using PORT=$PORT"
+        run: |
+          echo "Using PORT=$PORT"
+
+      - name: Check port binding
+        run: |
+          echo "=== PORT CHECK ==="
+          lsof -i :$PORT || true
+
+      - name: Test raw curl
+        run: |
+          curl -v http://localhost:$PORT/health/db || true
 
       - name: Wait for API
         run: |
