@@ -172,11 +172,11 @@ jobs:
           
           cd apps/api
           
-          # Start API in background, capture PID
-          node dist/server.js &
+          # Start API in background with log capture
+          node dist/server.js > $PWD/api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
-          echo "Started API with PID $API_PID"
+          echo "Started API with PID $API_PID (logs: $PWD/api.log)"
 
       - name: Wait for API to be ready
         run: |
@@ -244,6 +244,24 @@ jobs:
           echo "Running E2E tests..."
           npm run test:e2e || { echo "E2E failed"; exit 1; }
           echo "✅ E2E tests passed"
+
+      - name: Debug snapshot on failure
+        if: failure()
+        run: |
+          echo "===== API LOG ====="
+          cat apps/api/api.log 2>/dev/null || echo "No log file"
+
+          echo ""
+          echo "===== RUNNING PROCESSES ====="
+          ps aux | grep -E "node|api" | grep -v grep || true
+
+          echo ""
+          echo "===== PORT BINDINGS ====="
+          ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null || echo "ss/netstat not available"
+
+          echo ""
+          echo "===== LAST HEALTH CHECK ====="
+          curl -sv http://localhost:3000/health/db 2>&1 || echo "Health endpoint unreachable"
 
       - name: Cleanup processes
         if: always()
