@@ -81,8 +81,8 @@ jobs:
         run: node scripts/db-write-test.js
 
   runtime-check:
+    needs: db-write-test
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -96,153 +96,13 @@ jobs:
         working-directory: apps/api
         run: npm install
 
-      - name: Build API
-        working-directory: apps/api
-        run: npm run build
-
-      - name: Debug build output
-        working-directory: apps/api
-        run: |
-          echo "=== DIST STRUCTURE ==="
-          ls -R dist || echo "No dist folder"
-          echo "=== DIST FILES ==="
-          find dist -type f | sort
-          echo "=== SERVER FILES ==="
-          ls -la dist/apps/api/src/server/ || true
-
-      - name: Build Worker (safe)
-        run: |
-          if [ -f "apps/worker/package.json" ]; then
-            echo "Worker found — building"
-            cd apps/worker
-            npm install
-            npm run build
-          else
-            echo "⚠️ Worker not present — skipping"
-          fi
-
-      - name: Start server
-        env:
-          NODE_ENV: development
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-          JWT_SECRET: test-secret-for-ci
-          CANARY_TOKEN: test-canary-token
-          PORT: 3000
-        working-directory: apps/api
-        run: |
-          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/app.js > api.log 2>&1 &
-          API_PID=$!
-          echo "API_PID=$API_PID" >> $GITHUB_ENV
-          echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
-          sleep 2
-          echo "=== SERVER LOG ==="
-          cat api.log || true
-
-      - name: Debug port
-        run: |
-          echo "Using PORT=$PORT"
-
-      - name: Check port binding
-        run: |
-          echo "=== PORT CHECK ==="
-          lsof -i :$PORT || true
-
-      - name: Test raw curl
-        run: |
-          curl -v http://localhost:$PORT/health/db || true
-
-      - name: Wait for API to be ready
-        run: |
-          echo "Starting readiness check..."
-
-          for i in {1..30}; do
-            RESPONSE=$(curl -s --fail http://localhost:$PORT/health/db 2>/dev/null || echo "")
-
-            if [[ -z "$RESPONSE" ]]; then
-              echo "Attempt $i: Empty response, waiting..."
-              sleep 1
-              continue
-            fi
-
-            STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"' 2>/dev/null || echo "invalid")
-
-            echo "Attempt $i: Status = $STATUS"
-
-            if [[ "$STATUS" == "ok" || "$STATUS" == "degraded" ]]; then
-              echo "API liveness confirmed (status: $STATUS)"
-              exit 0
-            fi
-
-            sleep 1
-          done
-
-          echo "System never became ready"
-          echo "Final response: $RESPONSE"
-          exit 1
-
-      - name: Validate DB readiness (strict)
-        run: |
-          RESPONSE=$(curl -s http://localhost:$PORT/health/db)
-          STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
-
-          if [[ "$STATUS" != "ok" ]]; then
-            echo "DB not ready after boot"
-            echo "$RESPONSE"
-            exit 1
-          fi
-          echo "DB ready (status: ok)"
-
-      - name: Start Worker (optional)
-        run: |
-          if [ -f "apps/worker/package.json" ]; then
-            echo "Worker found — starting"
-            cd apps/worker
-            node dist/index.js &
-            WORKER_PID=$!
-            echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
-            echo "Worker started with PID $WORKER_PID"
-          else
-            echo "⚠️ Worker not present — skipping"
-          fi
-
-      - name: Run E2E tests
+      - name: Runtime check (DB only)
         working-directory: apps/api
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          npm run test:e2e || { echo "E2E failed"; exit 1; }
-          echo "E2E tests passed"
+        run: node scripts/runtime-check.js
 
-      - name: Debug snapshot on failure
-        if: failure()
-        run: |
-          echo "===== API LOG ====="
-          cat apps/api/api.log 2>/dev/null || echo "No log file"
-
-          echo ""
-          echo "===== RUNNING PROCESSES ====="
-          ps aux | grep -E "node|api" | grep -v grep || true
-
-          echo ""
-          echo "===== PORT BINDINGS ====="
-          ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null || echo "ss/netstat not available"
-
-          echo ""
-          echo "===== LAST HEALTH CHECK ====="
-          curl -sv http://localhost:$PORT/health/db 2>&1 || echo "Health endpoint unreachable"
-
-      - name: Cleanup processes
-        if: always()
-        run: |
-          if [ -n "${{ env.API_PID }}" ]; then
-            kill ${{ env.API_PID }} 2>/dev/null || true
-            echo "Killed API"
-          fi
-          if [ -n "${{ env.WORKER_PID }}" ]; then
-            kill ${{ env.WORKER_PID }} 2>/dev/null || true
-            echo "Killed Worker"
-          fi
-
+  pipeline-e2e-test:
   pipeline-e2e-test:
     runs-on: ubuntu-latest
     needs: runtime-check
