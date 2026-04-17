@@ -105,6 +105,10 @@ jobs:
         run: |
           echo "=== DIST STRUCTURE ==="
           ls -R dist || echo "No dist folder"
+          echo "=== DIST FILES ==="
+          find dist -type f | sort
+          echo "=== SERVER FILES ==="
+          ls -la dist/apps/api/src/server/ || true
 
       - name: Build Worker (safe)
         run: |
@@ -126,7 +130,7 @@ jobs:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/apps/api/src/server/index.js > api.log 2>&1 &
+          PORT=$PORT node dist/apps/api/src/server/app.js > api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
           echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
@@ -265,15 +269,17 @@ jobs:
         run: |
           echo "=== DIST STRUCTURE ==="
           ls -R dist || echo "No dist folder"
-          echo "=== SERVER OUTPUT ==="
-          ls -la dist/apps/api/src/server/
+          echo "=== DIST FILES ==="
+          find dist -type f | sort
+          echo "=== SERVER FILES ==="
+          ls -la dist/apps/api/src/server/ || true
 
       - name: Start API
         env:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/apps/api/src/server/index.js > api.log 2>&1 &
+          PORT=$PORT node dist/apps/api/src/server/app.js > api.log 2>&1 &
           echo $! > api.pid
           sleep 2
           echo "=== SERVER LOG ==="
