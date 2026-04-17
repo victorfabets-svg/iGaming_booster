@@ -76,6 +76,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Validate ENV contract
+        run: |
+          test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
+          test -n "$PORT" || (echo "PORT missing" && exit 1)
+          echo "ENV CONTRACT OK"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -122,6 +128,11 @@ jobs:
           name: api-build
           path: apps/api/dist
 
+      - name: Verify artifact integrity
+        run: |
+          test -f apps/api/dist/server.js || (echo "Artifact missing: server.js" && exit 1)
+          echo "ARTIFACT OK: $(ls -lh apps/api/dist/server.js)"
+
       - name: Start API
         working-directory: apps/api
         run: |
@@ -146,20 +157,8 @@ jobs:
 
       - name: Wait for API
         run: |
-          for i in {1..30}; do
-            RESPONSE=$(curl -s http://localhost:$PORT/health/db || echo "")
-            STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"')
-
-            if [[ "$STATUS" == "ok" || "$STATUS" == "degraded" ]]; then
-              echo "API liveness confirmed (status: $STATUS)"
-              exit 0
-            fi
-
-            sleep 1
-          done
-
-          echo "API FAILED"
-          exit 1
+          curl -f --retry 5 --retry-delay 1 http://localhost:$PORT/health/db || (echo "API health check failed" && exit 1)
+          echo "API HEALTH OK"
 
       - name: Validate DB readiness (strict)
         run: |
