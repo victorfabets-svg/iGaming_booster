@@ -73,10 +73,12 @@ export function buildApp(): FastifyInstance {
         }, {} as Record<string, unknown>)
       );
 
-    // Build payload with timestamp
+    // Build payload with timestamp and request context
     const payload: Record<string, unknown> = {
       status,
-      ts: Date.now()
+      ts: Date.now(),
+      method: req.method,
+      path: req.url
     };
     
     // Add dbHost only for internal checks

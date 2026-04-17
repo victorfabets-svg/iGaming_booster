@@ -163,3 +163,16 @@ jobs:
           fi
           
           echo "✅ Signature and timestamp verified"
+
+          # Verify request context (bind to specific endpoint)
+          METHOD=$(echo "$BODY" | jq -r '.method')
+          PATH=$(echo "$BODY" | jq -r '.path')
+
+          echo "Request context: $METHOD $PATH"
+
+          if [[ "$METHOD" != "GET" || "$PATH" != "/health/db" ]]; then
+            echo "❌ Invalid request context"
+            exit 1
+          fi
+
+          echo "✅ Request context verified"
