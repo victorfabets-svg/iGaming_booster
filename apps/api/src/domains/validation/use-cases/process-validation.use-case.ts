@@ -1,13 +1,11 @@
 import { findProofById, findProofByHash } from '../repositories/proof.repository';
 import { findValidationByProofId } from '../repositories/proof-validation.repository';
 import { updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
-import { createFraudScoreWithClient } from '../../fraud/repositories/fraud-score.repository';
 import { extractTextFromImage, OcrResult } from '../services/ocr.service';
 import { validateWithHeuristics, HeuristicResult } from '../services/heuristic.service';
-import { calculateFraudScore } from '../../fraud/services/fraud-score.service';
-import { createPaymentSignalWithClient } from '../../payments/repositories/payment-signal.repository';
-import { extractIdentifiers } from '../../payments/services/identifier.service';
-import { validateIdentifier, validateIdentifiers } from '../../payments/services/identifier-validation.service';
+// EVENT-DRIVEN: fraud and payments are decoupled - no direct imports
+// fraud_check_requested → fraud consumer → fraud_scored
+// payment_identifier_requested → payments consumer → payment_identifier_extracted
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
 import { isValidationEnabled } from '../../../../../../shared/config/feature-flags';
@@ -16,7 +14,6 @@ import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransac
 
 export interface ProcessValidationInput {
   proof_id: string;
-  risk_score_modifier?: number;
 }
 
 export type ValidationDecision = 'approved' | 'rejected' | 'manual_review';
@@ -31,7 +28,7 @@ export interface ProcessValidationResult {
 }
 
 export async function processValidation(input: ProcessValidationInput): Promise<ProcessValidationResult> {
-  const { proof_id, risk_score_modifier = 0 } = input;
+  const { proof_id } = input;
 
   // Check if validation is enabled
   if (!isValidationEnabled()) {
@@ -40,10 +37,9 @@ export async function processValidation(input: ProcessValidationInput): Promise<
   }
 
   // EVENT-DRIVEN FLOW (ENFORCED):
-  // proof_submitted → validation consumer → emits proof_validated (APPROVED)
-  //                                              → emits proof_rejected (REJECTED)
-  // proof_validated → reward consumer → emits reward_granted
-  // reward_granted → raffle consumer → creates ticket
+  // proof_submitted → validation emits fraud_check_requested + payment_identifier_requested
+  // validation_aggregator → waits for fraud_scored + payment_identifier_extracted
+  // → emits proof_validated OR proof_rejected
   // NO CROSS-DOMAIN CALLS - events only
   const approvalThreshold = config.validation.approvalThreshold;
   const manualReviewThreshold = config.validation.manualReviewThreshold;
@@ -111,160 +107,103 @@ export async function processValidation(input: ProcessValidationInput): Promise<
   }
 
   alertMonitor.recordApprovalAttempt();
-  logger.info('validation_started', 'validation', `Starting validation for proof: ${proof_id}`, proof.user_id, { proof_id, risk_modifier: risk_score_modifier });
+  logger.info('validation_started', 'validation', `Starting validation for proof: ${proof_id}`, proof.user_id, { proof_id });
 
   try {
-    // Step 1: Run OCR (mock)
+    // Step 1: Run OCR (local - validation domain)
     console.log(`🔍 Running OCR...`);
     const ocrResult = extractTextFromImage(proof.file_url);
     console.log(`   Amount: ${ocrResult.amount}, Date: ${ocrResult.date}, Institution: ${ocrResult.institution}`);
 
-    // Step 2: Extract payment identifiers
-    console.log(`💳 Extracting payment identifiers...`);
-    const extractedIdentifiers = extractIdentifiers(ocrResult);
-    console.log(`   Found ${extractedIdentifiers.length} identifiers`);
-
-    // Validate identifiers
-    const identifierValidationResult = validateIdentifiers(extractedIdentifiers);
-    console.log(`   Valid: ${identifierValidationResult.valid_count}, Invalid: ${identifierValidationResult.invalid_count}`);
-    console.log(`   Has valid identifiers: ${identifierValidationResult.has_valid_identifiers}`);
-
-    // Run heuristic validation
+    // Step 2: Run heuristic validation (local - validation domain)
     console.log(`⚙️  Running heuristic validation...`);
     const heuristicResult = validateWithHeuristics(ocrResult);
     console.log(`   Valid: ${heuristicResult.is_valid}, Issues: ${heuristicResult.issues.length}`);
 
-    // Calculate fraud score (with risk + payment modifiers)
-    console.log(`🛡️  Calculating fraud score...`);
-    const paymentModifier = identifierValidationResult.has_valid_identifiers 
-      ? identifierValidationResult.total_confidence * 0.15
-      : -0.1;
-    const fraudScoreResult = calculateFraudScore(ocrResult, heuristicResult, risk_score_modifier, paymentModifier);
-    console.log(`   Score: ${fraudScoreResult.score} (risk: ${risk_score_modifier}, payment: ${paymentModifier})`);
-
-    // Determine decision based on score thresholds
-    let decision: ValidationDecision;
-    
-    if (fraudScoreResult.score >= approvalThreshold) {
-      decision = 'approved';
-      alertMonitor.recordApproved();
-    } else if (fraudScoreResult.score >= manualReviewThreshold) {
-      decision = 'manual_review';
-    } else {
-      decision = 'rejected';
-    }
-    console.log(`📊 Decision: ${decision} (confidence: ${fraudScoreResult.score})`);
-
-    logger.info('validation_completed', 'validation', `Validation completed: ${decision}`, proof.user_id, { 
-      proof_id, 
-      decision, 
-      confidence: fraudScoreResult.score,
-      signals: fraudScoreResult.signals 
-    });
-
-    recordValidationResult(decision);
-
-    // Get validation record
+    // Step 3: Get validation record
     const validation = await findValidationByProofId(proof_id);
     if (!validation) {
       throw new Error(`Validation not found for proof: ${proof_id}`);
     }
 
-    // Use transactional outbox - ALL domain writes inside single transaction
+    // Use transactional outbox - emit events to trigger async processing
     await withTransactionalOutbox(async (client) => {
-      // Domain write: Persist payment signals
-      for (const identifier of extractedIdentifiers) {
-        const identValidation = validateIdentifier(identifier.type, identifier.value);
-        await createPaymentSignalWithClient(client, {
+      // Domain write: Update validation status to processing
+      await updateValidationStatusWithClient(client, validation.id, 'processing', 0);
+      
+      // EVENT: Emit fraud_check_requested - triggers fraud consumer
+      await insertEventInTransaction(
+        client,
+        'fraud_check_requested',
+        {
           proof_id: proof_id,
-          type: identifier.type,
-          value: identifier.value,
-          confidence: identValidation.confidence,
-          metadata: {
-            source: identifier.source,
-            is_valid: identValidation.is_valid,
-            issues: identValidation.issues,
+          user_id: proof.user_id,
+          file_url: proof.file_url,
+          submitted_at: proof.submitted_at,
+          ocr_result: {
+            amount: ocrResult.amount,
+            date: ocrResult.date,
+            institution: ocrResult.institution,
           },
-        });
-      }
-      
-      // Domain write: Persist fraud score
-      await createFraudScoreWithClient(client, {
-        proof_id: proof_id,
-        score: fraudScoreResult.score,
-        signals: fraudScoreResult.signals,
-      });
+          heuristic_result: {
+            is_valid: heuristicResult.is_valid,
+            issues: heuristicResult.issues,
+          },
+          risk_score_modifier: 0,
+          payment_modifier: 0,
+        },
+        'validation'
+      );
 
-      // Domain write: Update validation status
-      await updateValidationStatusWithClient(client, validation.id, decision, fraudScoreResult.score);
-      
-      // Event: Insert based on decision
-      if (decision === 'approved') {
-        await insertEventInTransaction(client, 'proof_validated', {
+      // EVENT: Emit payment_identifier_requested - triggers payments consumer
+      await insertEventInTransaction(
+        client,
+        'payment_identifier_requested',
+        {
           proof_id: proof_id,
           user_id: proof.user_id,
           file_url: proof.file_url,
           submitted_at: proof.submitted_at,
-          validation_id: validation.id,
-          status: decision,
-          confidence_score: fraudScoreResult.score,
-        }, 'validation');
-        
-        await insertEventInTransaction(client, 'payment_identifier_extracted', {
-          proof_id: proof_id,
-          identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
-          validation: identifierValidationResult,
-        }, 'validation');
+          ocr_result: {
+            amount: ocrResult.amount,
+            date: ocrResult.date,
+            institution: ocrResult.institution,
+          },
+        },
+        'validation'
+      );
 
-        if (identifierValidationResult.has_valid_identifiers) {
-          await insertEventInTransaction(client, 'payment_signal_detected', {
-            proof_id: proof_id,
-            signal_type: 'valid_payment_identifiers',
-            count: identifierValidationResult.valid_count,
-            confidence: identifierValidationResult.total_confidence,
-          }, 'validation');
-        }
-      } else {
-        await insertEventInTransaction(client, 'proof_rejected', {
-          proof_id: proof_id,
-          user_id: proof.user_id,
-          file_url: proof.file_url,
-          submitted_at: proof.submitted_at,
-          validation_id: validation.id,
-          status: decision,
-          confidence_score: fraudScoreResult.score,
-          reason: decision === 'rejected' ? 'low_confidence' : 'manual_review_required',
-        }, 'validation');
-      }
-
-      // Audit: Insert audit log
+      // Audit: Insert audit log for validation started
       await insertAuditInTransaction(
         client,
-        'validation_completed',
+        'validation_started',
         'validation',
         validation.id,
         proof.user_id,
-        { decision, confidence_score: fraudScoreResult.score, proof_id }
+        { proof_id, status: 'processing' }
       );
     });
-    console.log(`📢 Emitted ${decision} event (transactional)`);
 
+    console.log(`📢 Emitted fraud_check_requested + payment_identifier_requested (async aggregation)`);
+    console.log(`⏳ Waiting for validation_aggregator to correlate and emit final decision...`);
+
+    // Return placeholder - actual decision comes from aggregator
     return {
       validation_id: validation.id,
       proof_id: proof_id,
-      decision: decision,
-      confidence_score: fraudScoreResult.score,
+      decision: 'processing',
+      confidence_score: 0,
       ocr_result: ocrResult,
       heuristic_result: heuristicResult,
     };
   } catch (error) {
-    // FAILSAFE - Any error → manual_review
+    // FAILSAFE - Any error → emit proof_rejected
     console.error(`❌ Validation error: ${error}`);
     
     // Get validation record
     const validation = await findValidationByProofId(proof_id);
     
-    // Use transactional outbox - ALL domain writes inside transaction
+    // Use transactional outbox - emit error event
     await withTransactionalOutbox(async (client) => {
       if (validation) {
         await updateValidationStatusWithClient(client, validation.id, 'manual_review');
