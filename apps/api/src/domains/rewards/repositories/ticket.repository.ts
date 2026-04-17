@@ -20,7 +20,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
   const result = await pool.query(
     `INSERT INTO rewards.tickets (user_id, raffle_id, number, reward_id)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (raffle_id, number) DO NOTHING
+     ON CONFLICT (reward_id) DO NOTHING
      RETURNING id, user_id, raffle_id, number, reward_id, created_at`,
     [input.user_id, input.raffle_id, input.number, input.reward_id]
   );
