@@ -71,6 +71,7 @@ jobs:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           node -e "
+          const crypto = require('crypto');
           const { Client } = require('pg');
 
           (async () => {
@@ -83,26 +84,23 @@ jobs:
 
             console.log('Connected to Neon');
 
-            // INSERT
-            const insert = await client.query(
-              \"INSERT INTO validation.proofs (id, user_id, file_url, created_at)
-               VALUES (gen_random_uuid(), 'test-user-ci', 'https://test.com/file.png', NOW())
-               RETURNING *;\"
+            // 1. get real user
+            const userRes = await client.query('SELECT id FROM identity.users LIMIT 1');
+            if (userRes.rows.length === 0) {
+              throw new Error('No users found for FK');
+            }
+
+            const userId = userRes.rows[0].id;
+
+            // 2. insert with valid UUID
+            const id = crypto.randomUUID();
+
+            await client.query(
+              'INSERT INTO validation.proofs (id, user_id, file_url, created_at) VALUES ($1, $2, $3, NOW())',
+              [id, userId, 'test-url']
             );
 
-            console.log('INSERT RESULT');
-            console.table(insert.rows);
-
-            // READ
-            const read = await client.query(
-              \"SELECT * FROM validation.proofs
-               WHERE user_id = 'test-user-ci'
-               ORDER BY created_at DESC
-               LIMIT 1;\"
-            );
-
-            console.log('READ RESULT');
-            console.table(read.rows);
+            console.log('WRITE OK');
 
             await client.end();
           })();
