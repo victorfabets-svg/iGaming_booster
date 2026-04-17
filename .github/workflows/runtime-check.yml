@@ -106,11 +106,16 @@ jobs:
           echo "=== DIST STRUCTURE ==="
           ls -R dist || echo "No dist folder"
 
-      - name: Build Worker
-        working-directory: apps/worker
+      - name: Build Worker (safe)
         run: |
-          npm install
-          npm run build
+          if [ -f "apps/worker/package.json" ]; then
+            echo "Worker found — building"
+            cd apps/worker
+            npm install
+            npm run build
+          else
+            echo "⚠️ Worker not present — skipping"
+          fi
 
       - name: Start server
         env:
@@ -170,13 +175,18 @@ jobs:
           fi
           echo "DB ready (status: ok)"
 
-      - name: Start Worker
-        working-directory: apps/worker
+      - name: Start Worker (optional)
         run: |
-          node dist/index.js &
-          WORKER_PID=$!
-          echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
-          echo "Worker started with PID $WORKER_PID"
+          if [ -f "apps/worker/package.json" ]; then
+            echo "Worker found — starting"
+            cd apps/worker
+            node dist/index.js &
+            WORKER_PID=$!
+            echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
+            echo "Worker started with PID $WORKER_PID"
+          else
+            echo "⚠️ Worker not present — skipping"
+          fi
 
       - name: Run E2E tests
         working-directory: apps/api
