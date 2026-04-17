@@ -34,10 +34,18 @@ async function start() {
   const app = buildApp();
 
   const port = config.apiPort;
+  const host = config.apiHost;
+
+  // FAIL FAST: Verify port is defined
+  if (!port) {
+    throw new Error("PORT not defined");
+  }
+
+  console.log(`Starting server on ${host}:${port}...`);
 
   try {
-    await app.listen({ port });
-    console.log(`Server running on port ${port}`);
+    await app.listen({ port, host });
+    console.log(`Server running on ${host}:${port}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

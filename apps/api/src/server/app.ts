@@ -37,5 +37,15 @@ export function buildApp(): FastifyInstance {
     }
   });
 
+  // Also check /health/db for CI compatibility
+  app.get('/health/db', async () => {
+    try {
+      await db.query('SELECT 1');
+      return { status: 'ok' };
+    } catch (err) {
+      return { status: 'error' };
+    }
+  });
+
   return app;
 }
