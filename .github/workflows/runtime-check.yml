@@ -43,7 +43,7 @@ jobs:
 
       - name: Test database connection
         env:
-          NEON_DB_URL: postgres://test:test@localhost:5432/test
+          NEON_DB_URL: postgresql://test:test@localhost:5432/test
         run: |
           node -e "
           const { Client } = require('pg');
@@ -88,8 +88,7 @@ jobs:
           const { Client } = require('pg');
 
           const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true
+            connectionString: process.env.NEON_DB_URL
           });
 
           async function run() {
