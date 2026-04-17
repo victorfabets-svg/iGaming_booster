@@ -30,12 +30,11 @@
 import { Pool } from 'pg';
 import http from 'http';
 import jwt from 'jsonwebtoken';
-import { connectWithRetry } from '../../shared/database/connection';
+import { connectWithRetry, getDb } from '../../shared/database/connection';
 
 // Import worker consumers - this is how worker starts in production
 import { startRewardGrantedConsumer } from '../../apps/api/src/domains/raffles/consumers/reward-granted.consumer';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
 const API_PORT = 3001;
 const POLL_INTERVAL_MS = 200;
 const MAX_TIMEOUT_MS = 10000;
@@ -53,14 +52,14 @@ interface PipelineState {
 }
 
 class TrueE2ETest {
-  private pool: Pool;
+  private pool;
   private results: TestResult[] = [];
   private state: PipelineState = {};
   private apiServer: any = null;
   private workerRunning = false;
 
   constructor() {
-    this.pool = new Pool({ connectionString: DATABASE_URL });
+    this.pool = getDb();
   }
 
   async setup(): Promise<void> {

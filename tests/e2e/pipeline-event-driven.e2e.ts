@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
+import { getDb } from '../../shared/database/connection';
 
 /**
  * processRewardGranted - REAL consumer function from production
@@ -27,8 +28,7 @@ import type { PoolClient } from 'pg';
  * Function: processRewardGranted(eventId, payload)
  */
 async function processRewardGranted(eventId: string, payload: any): Promise<void> {
-  const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
-  const pool = new Pool({ connectionString: DATABASE_URL });
+  const pool = getDb();
   
   const client = await pool.connect();
   try {
@@ -158,8 +158,6 @@ async function processRewardGranted(eventId: string, payload: any): Promise<void
 // Export for use in tests
 export { processRewardGranted };
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
-
 interface TestResult {
   step: string;
   success: boolean;
@@ -178,12 +176,12 @@ interface PipelineState {
 }
 
 class E2ETest {
-  private pool: Pool;
+  private pool;
   private results: TestResult[] = [];
   private state: PipelineState = { events: [] };
 
   constructor() {
-    this.pool = new Pool({ connectionString: DATABASE_URL });
+    this.pool = getDb();
   }
 
   async setup(): Promise<void> {

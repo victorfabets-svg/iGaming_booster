@@ -21,8 +21,8 @@
 
 import { Pool } from 'pg';
 import http from 'http';
+import { getDb } from '../../shared/database/connection';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
 const API_BASE = process.env.API_BASE || 'http://localhost:3000';
 
 interface TestResult {
@@ -42,12 +42,12 @@ interface PipelineState {
 }
 
 class E2ETest {
-  private pool: Pool;
+  private pool;
   private results: TestResult[] = [];
   private state: PipelineState = { events: [] };
 
   constructor() {
-    this.pool = new Pool({ connectionString: DATABASE_URL });
+    this.pool = getDb();
   }
 
   private async httpRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {

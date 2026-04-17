@@ -7,15 +7,12 @@
  *   npm run test:e2e
  * 
  * Environment:
- *   DATABASE_URL - Postgres connection string (e.g., postgresql://user:pass@localhost:5432/db)
- *   Defaults to local docker container if not set
+ *   NEON_DB_URL - Postgres Neon connection string (e.g., postgresql://user:pass@host/db)
  */
 
 import type { PoolClient } from 'pg';
 import { Pool } from 'pg';
-
-// Database connection
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
+import { getDb } from '../../shared/database/connection';
 
 interface TestResult {
   step: string;
@@ -35,14 +32,12 @@ interface PipelineState {
 }
 
 class E2ETest {
-  private pool: Pool;
+  private pool;
   private results: TestResult[] = [];
   private state: PipelineState = { events: [] };
 
   constructor() {
-    this.pool = new Pool({
-      connectionString: DATABASE_URL,
-    });
+    this.pool = getDb();
   }
 
   async setup(): Promise<void> {

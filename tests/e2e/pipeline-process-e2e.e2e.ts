@@ -33,8 +33,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { Pool } from 'pg';
 import http from 'http';
 import jwt from 'jsonwebtoken';
+import { getDb } from '../../shared/database/connection';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/igaming';
 const API_PORT = 3002;
 const POLL_INTERVAL_MS = 500;
 const MAX_TIMEOUT_MS = 15000;
@@ -51,14 +51,14 @@ interface PipelineState {
 }
 
 class TrueProcessE2ETest {
-  private pool: Pool;
+  private pool;
   private results: TestResult[] = [];
   private state: PipelineState = {};
   private apiProcess: ChildProcess | null = null;
   private workerProcess: ChildProcess | null = null;
 
   constructor() {
-    this.pool = new Pool({ connectionString: DATABASE_URL });
+    this.pool = getDb();
   }
 
   private async waitForPort(port: number, timeout: number = 10000): Promise<void> {
@@ -132,7 +132,7 @@ class TrueProcessE2ETest {
         cwd: '/workspace/project/iGaming_booster',
         env: {
           ...process.env,
-          DATABASE_URL,
+          NEON_DB_URL: process.env.NEON_DB_URL,
           PORT: String(API_PORT),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -175,7 +175,7 @@ class TrueProcessE2ETest {
         cwd: '/workspace/project/iGaming_booster',
         env: {
           ...process.env,
-          DATABASE_URL,
+          NEON_DB_URL: process.env.NEON_DB_URL,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
