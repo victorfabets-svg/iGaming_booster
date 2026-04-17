@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import { db } from '../../../../shared/database/connection';
+import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
 
 export function buildApp(): FastifyInstance {
@@ -37,6 +38,12 @@ export function buildApp(): FastifyInstance {
     } catch (err) {
       return { status: 'error' };
     }
+  });
+
+  // DB Health check - exposes active database host
+  app.get('/health/db', async () => {
+    const host = new URL(NEON_DB_URL).hostname;
+    return { status: 'ok', dbHost: host };
   });
 
   return app;

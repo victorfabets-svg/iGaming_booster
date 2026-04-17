@@ -25,9 +25,19 @@ if (removedKeys.length > 0) {
 // ============================================================
 
 import { buildApp } from './app';
-import { config } from '../../../../shared/config/env';
+import { config, NEON_DB_URL } from '../../../../shared/config/env';
 import { connectWithRetry, getDb } from '../../../../shared/database/connection';
 import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
+
+// Structured DB audit log
+const dbUrl = new URL(NEON_DB_URL);
+console.log(JSON.stringify({
+  event: "db_connection_config",
+  host: dbUrl.hostname,
+  env: process.env.NODE_ENV,
+  allowlist: process.env.ALLOWED_NEON_HOSTS ?? null,
+  timestamp: new Date().toISOString()
+}));
 
 async function start() {
   // Connect to database - MUST succeed or app fails

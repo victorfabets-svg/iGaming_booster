@@ -74,3 +74,17 @@ jobs:
 
       - name: Pass
         run: echo "✅ SSOT check passed - only Neon allowed"
+
+      - name: Enforce ALLOWED_NEON_HOSTS for production
+        if: github.base_ref == 'main'
+        run: |
+          echo "🔍 Checking production configuration..."
+          
+          # Check if ALLOWED_NEON_HOSTS is configured in production
+          if [[ -z "$ALLOWED_NEON_HOSTS" ]]; then
+            echo "❌ ALLOWED_NEON_HOSTS not set for production deployment"
+            echo "Set ALLOWED_NEON_HOSTS secret in repository settings"
+            exit 1
+          fi
+          
+          echo "✅ Production allowlist configured"
