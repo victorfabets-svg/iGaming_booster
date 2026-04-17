@@ -141,12 +141,18 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
-      - name: Build Worker (optional)
+      - name: Build Worker (safe)
         run: |
-          if [ -f "apps/worker/package.json" ]; then
-            cd apps/worker
+          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
+            echo "🔧 Worker detected"
+
+            pushd apps/worker > /dev/null
+
             npm install
             npm run build
+
+            popd > /dev/null
+
             echo "✅ Worker built"
           else
             echo "⚠️ Worker not present — skipping worker build"
@@ -220,21 +226,20 @@ jobs:
 
       - name: Start Worker (optional)
         run: |
-          if [ -f "apps/worker/package.json" ]; then
-            cd apps/worker
-            npm install
-            npm run build
-            
-            export NODE_ENV=development
-            export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
-            export JWT_SECRET=test-secret-for-ci
-            
+          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
+            echo "🚀 Starting worker"
+
+            pushd apps/worker > /dev/null
+
             node dist/index.js &
+
             WORKER_PID=$!
+            popd > /dev/null
+
             echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
             echo "✅ Worker started with PID $WORKER_PID"
           else
-            echo "⚠️ Worker not present — skipping worker"
+            echo "⚠️ Worker not present — skipping start"
           fi
 
       - name: Run E2E tests against live system
