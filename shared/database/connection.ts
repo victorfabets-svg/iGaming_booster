@@ -85,28 +85,20 @@ export async function logAuditInTransaction(
   );
 }
 
-export async function initDb(connectionString?: string): Promise<void> {
-  // Use environment variable or fallback for non-production
-  const isProduction = process.env.NODE_ENV === 'production';
-  const dbUrl = connectionString || process.env.NEON_DB_URL || (!isProduction ? 'postgres://localhost:5432/test' : undefined);
+export async function initDb(): Promise<void> {
+  const connectionString = process.env.NEON_DB_URL;
   
-  if (!dbUrl) {
-    throw new Error("NEON_DB_URL is required in production");
+  if (!connectionString) {
+    throw new Error("NEON_DB_URL is required");
   }
 
-  // Log connection mode
-  console.log("[DB] Connection mode:", process.env.NEON_DB_URL ? "NEON" : "LOCAL");
-  const sslConfig = process.env.NODE_ENV === 'production' 
-    ? { rejectUnauthorized: false }
-    : false;
+  console.log("[DB] Initializing database connection");
 
   _db = new Pool({
-    connectionString: dbUrl,
-    ssl: sslConfig,
+    connectionString: connectionString,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
-    // TASK 3: STATEMENT TIMEOUT - 5 seconds
     statement_timeout: 5000,
   });
 
