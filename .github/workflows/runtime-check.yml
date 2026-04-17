@@ -7,6 +7,21 @@ jobs:
   db-connection-check:
     runs-on: ubuntu-latest
     
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd="pg_isready -U test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -16,15 +31,21 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Wait for Postgres
+        run: |
+          for i in {1..10}; do
+            pg_isready -h localhost -p 5432 -U test && break
+            sleep 2
+          done
+
       - name: Test database connection
         env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          NEON_DB_URL: postgres://test:test@localhost:5432/test
         run: |
           node -e "
           const { Client } = require('pg');
           const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true
+            connectionString: process.env.NEON_DB_URL
           });
           client.connect()
             .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
