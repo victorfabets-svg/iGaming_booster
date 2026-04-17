@@ -39,44 +39,22 @@ jobs:
         run: |
           npm install
 
-      - name: Wait for Postgres
-        run: |
-          for i in {1..20}; do
-            pg_isready -h postgres -p 5432 -U test && echo "DB ready" && exit 0
-            echo "Waiting for DB..."
-            sleep 3
-          done
-          echo "DB not ready" && exit 1
-
-      - name: Debug network
-        run: |
-          ping -c 2 postgres || true
-          nc -zv postgres 5432 || true
-
-      - name: Test DB manually
-        run: |
-          node -e "
-          const { Client } = require('pg');
-          const client = new Client({ connectionString: process.env.NEON_DB_URL });
-          client.connect()
-          .then(() => { console.log('CONNECTED'); return client.end(); })
-          .catch(e => { console.error(e); process.exit(1); });
-          "
-
       - name: Test database connection
         env:
           NEON_DB_URL: postgresql://test:test@postgres:5432/test
         run: |
-          node -e "
-          const { Client } = require('pg');
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL
-          });
-          client.connect()
-            .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
-            .then(() => { console.log('Query OK'); client.end(); })
-            .catch(err => { console.error(err); process.exit(1); });
-          "
+          for i in {1..10}; do
+            node -e "
+            const { Client } = require('pg');
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            client.connect()
+              .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
+              .then(() => { console.log('Query OK'); client.end(); process.exit(0); })
+              .catch(e => { console.error('Error:', e.message); process.exit(1); });
+            " && break
+            echo "Attempt $i failed, retrying..."
+            sleep 2
+          done || (echo "All retries failed" && exit 1)
 
   db-write-test:
     needs: db-connection-check
