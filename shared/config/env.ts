@@ -185,16 +185,7 @@ try {
 }
 
 /**
- * ALLOWED_NEON_HOSTS: Only these specific endpoints are authorized
- * Add your production endpoint here
- */
-const ALLOWED_NEON_HOSTS = [
-  // TODO: Replace with your actual Neon endpoint
-  // Example: "ep-12345.us-east-1.aws.neon.tech"
-];
-
-/**
- * Strict Neon pattern for additional validation:
+ * Strict Neon pattern for validation:
  * - Must match: ep-<id>.<region>.aws.neon.tech
  * - Prevents: fake.neon.tech, subdomain bypass, etc.
  */
@@ -204,8 +195,16 @@ if (!NEON_HOST_REGEX.test(host)) {
   throw new Error(`Invalid database host: ${host} — only official Neon endpoints allowed`);
 }
 
+// ALLOWED_NEON_HOSTS: Comma-separated list from environment (optional, enforced in prod)
+const allowedHosts = process.env.ALLOWED_NEON_HOSTS?.split(",").map(h => h.trim()).filter(Boolean) ?? [];
+
+// Production enforcement: must have allowed hosts configured
+if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
+  throw new Error("ALLOWED_NEON_HOSTS must be set in production");
+}
+
 // If ALLOWED_NEON_HOSTS is configured, enforce exact match
-if (ALLOWED_NEON_HOSTS.length > 0 && !ALLOWED_NEON_HOSTS.includes(host)) {
+if (allowedHosts.length > 0 && !allowedHosts.includes(host)) {
   throw new Error(`Unauthorized Neon host: ${host} — not in allowed list`);
 }
 
