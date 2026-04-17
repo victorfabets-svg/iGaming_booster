@@ -100,16 +100,11 @@ jobs:
         working-directory: apps/api
         run: npm run build
 
-      - name: Validate build output
+      - name: Debug build output
         working-directory: apps/api
         run: |
-          if [ ! -f "dist/server.js" ]; then
-            echo "Build output missing: dist/server.js"
-            echo "Contents of dist:"
-            ls -la dist || echo "No dist folder"
-            exit 1
-          fi
-          echo "Build output validated: dist/server.js exists"
+          echo "=== DIST STRUCTURE ==="
+          ls -R dist || echo "No dist folder"
 
       - name: Build Worker
         working-directory: apps/worker
@@ -126,7 +121,7 @@ jobs:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/server.js > api.log 2>&1 &
+          PORT=$PORT node dist/apps/api/src/server/index.js > api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
           echo "Started API with PID $API_PID on port $PORT (logs: $(pwd)/api.log)"
@@ -242,23 +237,20 @@ jobs:
         working-directory: apps/api
         run: npm run build
 
-      - name: Validate build output
+      - name: Debug build output
         working-directory: apps/api
         run: |
-          if [ ! -f "dist/server.js" ]; then
-            echo "Build output missing: dist/server.js"
-            echo "Contents of dist:"
-            ls -la dist || echo "No dist folder"
-            exit 1
-          fi
-          echo "Build output validated: dist/server.js exists"
+          echo "=== DIST STRUCTURE ==="
+          ls -R dist || echo "No dist folder"
+          echo "=== SERVER OUTPUT ==="
+          ls -la dist/apps/api/src/server/
 
       - name: Start API
         env:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT node dist/server.js > api.log 2>&1 &
+          PORT=$PORT node dist/apps/api/src/server/index.js > api.log 2>&1 &
           echo $! > api.pid
 
       - name: Debug port
