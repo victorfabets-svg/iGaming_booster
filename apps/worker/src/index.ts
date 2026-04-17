@@ -3,6 +3,25 @@
  * Starts all event consumers for the iGaming Booster pipeline
  */
 
+// ============================================================
+// SECURITY KILL SWITCH - Block forbidden env vars
+// ============================================================
+const forbidden = Object.keys(process.env).filter(k =>
+  k.toLowerCase().includes('supabase') ||
+  k === 'DATABASE_URL'
+);
+
+if (forbidden.length > 0) {
+  console.error('🚨 FORBIDDEN ENV DETECTED:', forbidden);
+  process.exit(1);
+}
+
+// Force clean env - delete any remaining forbidden vars
+delete process.env.DATABASE_URL;
+delete process.env.SUPABASE_DB_URL;
+delete process.env.Supabase_DB_URL;
+// ============================================================
+
 import { connectWithRetry } from '../../../shared/database/connection';
 
 // Import all consumers
