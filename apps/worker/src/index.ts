@@ -25,10 +25,9 @@ delete process.env.Supabase_DB_URL;
 import { connectWithRetry } from '../../../shared/database/connection';
 
 // Import all consumers
-const { startRewardGrantedConsumer, CONSUMER_NAME: REWARD_GRANTED_CONSUMER } = require('../../api/src/domains/raffles/consumers/reward-granted.consumer');
-import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consumers/proof-validated.consumer';
 import { startProofSubmittedConsumer } from '../../api/src/domains/validation/consumers/proof-submitted.consumer';
-import { startRaffleDrawExecutedConsumer } from '../../api/src/domains/raffles/consumers/raffle-draw-executed.consumer';
+import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consumers/proof-validated.consumer';
+import { startRewardGrantedConsumer, CONSUMER_NAME as REWARD_GRANTED_CONSUMER_NAME } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
 
 async function start() {
   console.log('🔧 Connecting to database...');
@@ -41,18 +40,15 @@ async function start() {
   // Start all consumers - they run continuously via setInterval
   console.log('📡 Starting consumers...');
   
-  startProofSubmittedConsumer();
+  await startProofSubmittedConsumer();
   console.log('  ✓ proof_submitted consumer started');
   
-  startProofValidatedConsumer();
+  await startProofValidatedConsumer();
   console.log('  ✓ proof_validated consumer started');
   
-  startRewardGrantedConsumer();
-  console.log('  ✓ reward_granted consumer loaded');
-  console.log('    consumer_name:', REWARD_GRANTED_CONSUMER);
-  
-  startRaffleDrawExecutedConsumer();
-  console.log('  ✓ raffle_draw_executed consumer started');
+  await startRewardGrantedConsumer();
+  console.log('  ✓ reward_granted consumer started');
+  console.log('    consumer_name:', REWARD_GRANTED_CONSUMER_NAME);
   
   console.log('\n🚀 Worker started - all consumers polling for events\n');
   
