@@ -66,19 +66,19 @@ jobs:
           npm install pg
 
       - name: Run write test
+        working-directory: apps/api
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-          NODE_PATH: ./tmp-write-test/node_modules
         run: |
           node -e "
           const { Client } = require('pg');
 
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true
-          });
+          (async () => {
+            const client = new Client({
+              connectionString: process.env.NEON_DB_URL,
+              ssl: true
+            });
 
-          async function run() {
             await client.connect();
 
             console.log('Connected to Neon');
@@ -105,12 +105,7 @@ jobs:
             console.table(read.rows);
 
             await client.end();
-          }
-
-          run().catch(err => {
-            console.error(err);
-            process.exit(1);
-          });
+          })();
           "
 
   runtime-check:
