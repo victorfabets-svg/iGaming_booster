@@ -20,14 +20,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: |
-          npm install
-          cd apps/api
-          npm install
+      - name: Install API dependencies
+        run: npm install
+        working-directory: apps/api
 
       - name: Verify pg module
         run: node -e "require('pg'); console.log('pg loaded')"
+        working-directory: apps/api
 
       - name: Test database connection
         env:
@@ -44,6 +43,7 @@ jobs:
             .then(() => { console.log('Query OK'); client.end(); })
             .catch(err => { console.error(err); process.exit(1); });
           "
+        working-directory: apps/api
 
   db-write-test:
     needs: db-connection-check
