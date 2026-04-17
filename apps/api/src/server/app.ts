@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
+import crypto from 'crypto';
 import { db, getDb } from '../../../../shared/database/connection';
 import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
@@ -61,12 +62,28 @@ export function buildApp(): FastifyInstance {
       dbOk = false;
     }
 
+    const status = dbOk ? 'ok' : 'degraded';
+    
+    const payload: Record<string, unknown> = { status };
+    
+    // Add dbHost only for internal checks
+    if (internal) {
+      payload.dbHost = host;
+    }
+
+    // Sign response for internal checks with CANARY_TOKEN (anti-spoof)
+    if (internal && process.env.CANARY_TOKEN) {
+      const body = JSON.stringify(payload);
+      const sig = crypto
+        .createHmac('sha256', process.env.CANARY_TOKEN)
+        .update(body)
+        .digest('hex');
+      
+      reply.header('x-canary-signature', sig);
+    }
+
     // Public: only status. Internal: full visibility.
-    return reply.send(
-      internal
-        ? { status: dbOk ? 'ok' : 'degraded', dbHost: host }
-        : { status: dbOk ? 'ok' : 'degraded' }
-    );
+    return reply.send(payload);
   });
 
   return app;

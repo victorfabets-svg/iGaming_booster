@@ -13,6 +13,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Ensure jq installed
+        run: |
+          if ! command -v jq &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
       - name: Hit canary health endpoint (with retries)
         run: |
           set -e
@@ -21,12 +27,14 @@ jobs:
           HEADER="x-internal-check: true"
           AUTH="x-canary-token: ${{ secrets.CANARY_TOKEN }}"
 
+          # Fetch response
+          RESPONSE=""
           for i in 1 2 3; do
             echo "Attempt $i..."
-            RESPONSE=$(curl -s -m 5 -H "$HEADER" -H "$AUTH" "$URL" || true)
+            RESPONSE=$(curl -s -m 5 -H "$HEADER" -H "$AUTH" -D - "$URL" || true)
 
-            if [[ -n "$RESPONSE" ]]; then
-              echo "Got response: $RESPONSE"
+            if [[ -n "$RESPONSE" && "$RESPONSE" != *"Connection refused"* ]]; then
+              echo "Got response"
               break
             fi
 
@@ -34,18 +42,20 @@ jobs:
             sleep $((i * 2))
           done
 
+          # Save raw response to file for subsequent steps
+          echo "$RESPONSE" > canary_response.txt
+
           if [[ -z "$RESPONSE" ]]; then
             echo "❌ Canary endpoint unreachable after 3 attempts"
             exit 1
           fi
 
-          echo "RESPONSE=$RESPONSE" >> $GITHUB_ENV
-
       - name: Validate health status
         run: |
-          RESPONSE="${{ env.RESPONSE }}"
+          RESPONSE=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
           
           STATUS=$(echo "$RESPONSE" | jq -r '.status')
+          echo "Status: $STATUS"
 
           if [[ -z "$STATUS" || "$STATUS" == "null" ]]; then
             echo "❌ No status returned"
@@ -61,9 +71,10 @@ jobs:
 
       - name: Validate DB host against allowlist
         run: |
-          RESPONSE="${{ env.RESPONSE }}"
+          BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
           
-          HOST=$(echo "$RESPONSE" | jq -r '.dbHost')
+          HOST=$(echo "$BODY" | jq -r '.dbHost')
+          echo "Host: $HOST"
 
           if [[ -z "$HOST" || "$HOST" == "null" ]]; then
             echo "❌ No dbHost returned from canary"
@@ -71,6 +82,7 @@ jobs:
           fi
 
           ALLOWED="${{ secrets.ALLOWED_NEON_HOSTS }}"
+          echo "Allowlist: $ALLOWED"
 
           if [[ -z "$ALLOWED" ]]; then
             echo "❌ ALLOWED_NEON_HOSTS secret not set"
@@ -80,7 +92,6 @@ jobs:
           MATCH=0
           IFS=',' read -ra LIST <<< "$ALLOWED"
           for h in "${LIST[@]}"; do
-            # Trim whitespace
             h=$(echo "$h" | xargs)
             if [[ "$HOST" == "$h" ]]; then
               MATCH=1
@@ -89,8 +100,36 @@ jobs:
           done
 
           if [[ $MATCH -ne 1 ]]; then
-            echo "❌ Host '$HOST' not in allowlist: $ALLOWED"
+            echo "❌ Host '$HOST' not in allowlist"
             exit 1
           fi
 
           echo "✅ Canary DB host validated: $HOST"
+
+      - name: Verify canary signature (if token provided)
+        if: secrets.CANARY_TOKEN != ''
+        run: |
+          BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
+          
+          # Compute expected signature
+          EXPECTED=$(node -e "
+            const crypto = require('crypto');
+            const body = '$BODY';
+            const token = '${{ secrets.CANARY_TOKEN }}';
+            const sig = crypto.createHmac('sha256', token).update(body).digest('hex');
+            console.log(sig);
+          ")
+          
+          # Get signature from response headers
+          HEADERS=$(cat canary_response.txt | sed -n '1,/^\r*$/p')
+          ACTUAL_SIG=$(echo "$HEADERS" | grep -i "x-canary-signature" | cut -d: -f2 | tr -d ' \r')
+          
+          echo "Expected: $EXPECTED"
+          echo "Actual: $ACTUAL_SIG"
+          
+          if [[ "$EXPECTED" != "$ACTUAL_SIG" ]]; then
+            echo "❌ Invalid canary signature"
+            exit 1
+          fi
+          
+          echo "✅ Signature verified"
