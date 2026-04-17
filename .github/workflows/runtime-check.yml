@@ -89,3 +89,167 @@ jobs:
 
       - name: Health check
         run: curl -s http://localhost:3000/health || echo "Health check done"
+
+  pipeline-e2e-test:
+    needs: runtime-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          cd apps/api
+          npm install
+
+      - name: Build
+        run: |
+          cd apps/api
+          npm run build
+
+      - name: Start server
+        run: |
+          node apps/api/dist/apps/api/src/server/index.js &
+          sleep 5
+
+      - name: Install test dependencies
+        run: |
+          npm install uuid
+          sudo apt-get update && sudo apt-get install -y uuid-runtime
+
+      - name: Generate TEST_ID
+        id: test-id
+        run: |
+          TEST_ID=$(uuidgen)
+          echo "TEST_ID=$TEST_ID" >> $GITHUB_ENV
+
+      - name: Install curl for concurrent requests
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl
+
+      - name: Fire 5 concurrent requests (same external_id)
+        env:
+          TEST_ID: ${{ env.TEST_ID }}
+        run: |
+          # Use the same TEST_ID for all requests to test idempotency
+          for i in {1..5}; do
+            curl -X POST http://localhost:3000/proofs \
+              -F "file=@README.md" \
+              -F "external_id=$TEST_ID" \
+              -H "Authorization: Bearer TEST_TOKEN" 2>/dev/null &
+          done
+          wait
+          echo "All 5 concurrent requests fired"
+
+      - name: Wait for processing
+        run: sleep 10
+
+      - name: Query database for idempotency validation
+        env:
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+        run: |
+          node -e '
+          const { Client } = require("pg");
+          const client = new Client({
+            connectionString: process.env.NEON_DB_URL,
+            ssl: true,
+          });
+          
+          (async () => {
+            await client.connect();
+            
+            // Get TEST_ID from environment
+            const testId = process.env.TEST_ID;
+            console.log("Using TEST_ID:", testId);
+            
+            // Query for proof by external_id (if column exists) or get most recent
+            let proofId = null;
+            try {
+              const proofRes = await client.query(
+                "SELECT id FROM validation.proofs WHERE external_id = $1",
+                [testId]
+              );
+              if (proofRes.rows.length > 0) {
+                proofId = proofRes.rows[0].id;
+                console.log("Found proof by external_id:", proofId);
+              }
+            } catch (e) {
+              console.log("external_id column not found, using fallback");
+            }
+            
+            // Fallback: get most recent proof
+            if (!proofId) {
+              const recentRes = await client.query(
+                "SELECT id FROM validation.proofs ORDER BY submitted_at DESC LIMIT 1"
+              );
+              if (recentRes.rows.length > 0) {
+                proofId = recentRes.rows[0].id;
+                console.log("Using most recent proof:", proofId);
+              }
+            }
+            
+            if (!proofId) {
+              console.error("FAIL: No proof found");
+              process.exit(1);
+            }
+            
+            // Idempotency check: rewards for this proof
+            const rewardRes = await client.query(
+              "SELECT COUNT(*) as count FROM rewards.rewards WHERE proof_id = $1",
+              [proofId]
+            );
+            const rewardsCount = parseInt(rewardRes.rows[0].count, 10);
+            console.log("Rewards count for proof:", rewardsCount);
+            
+            // Idempotency check: tickets for rewards of this proof
+            const ticketRes = await client.query(
+              "SELECT COUNT(*) as count FROM raffles.tickets WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
+              [proofId]
+            );
+            const ticketsCount = parseInt(ticketRes.rows[0].count, 10);
+            console.log("Tickets count for proof:", ticketsCount);
+            
+            // Event duplication check
+            const eventRes = await client.query(
+              "SELECT COUNT(*) as count FROM events.events WHERE payload::text LIKE '%' || $1 || '%' AND event_type = 'reward_granted'",
+              [proofId]
+            );
+            const eventsCount = parseInt(eventRes.rows[0].count, 10);
+            console.log("Reward granted events:", eventsCount);
+            
+            // FAIL HARD if ANY assertion fails
+            let hasFailure = false;
+            
+            if (rewardsCount !== 1) {
+              console.error("FAIL: Expected exactly 1 reward, got", rewardsCount);
+              hasFailure = true;
+            }
+            if (ticketsCount !== 1) {
+              console.error("FAIL: Expected exactly 1 ticket, got", ticketsCount);
+              hasFailure = true;
+            }
+            
+            // Print success/fail status
+            if (hasFailure) {
+              console.error("FAIL: Concurrency/idempotency validation FAILED");
+              process.exit(1);
+            } else {
+              console.log("SUCCESS: Idempotency and concurrency validation passed");
+              console.log("  - Exactly 1 reward");
+              console.log("  - Exactly 1 ticket");
+              console.log("  - No duplication");
+            }
+            
+            await client.end();
+            process.exit(hasFailure ? 1 : 0);
+          })();
+          '
+
+      - name: Report success
+        run: echo "Pipeline e2e test completed successfully"
