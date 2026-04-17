@@ -30,10 +30,11 @@ const { Client } = require('pg');
 
   // 3. insert with valid UUID using only existing columns
   const id = crypto.randomUUID();
+  const hash = crypto.randomUUID();
 
   await client.query(
-    "INSERT INTO validation.proofs (id, user_id, file_url) VALUES ($1, $2, $3)",
-    [id, userId, 'test-url']
+    "INSERT INTO validation.proofs (id, user_id, file_url, hash) VALUES ($1, $2, $3, $4)",
+    [id, userId, 'test-url', hash]
   );
 
   console.log('WRITE OK')
