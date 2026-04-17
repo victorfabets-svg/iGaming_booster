@@ -2,6 +2,7 @@ import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWit
 import { createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { findActiveRaffle } from '../../rewards/repositories/raffle.repository';
 import { logger } from '../../../../../../shared/observability';
+import { db } from 'shared/database/connection';
 
 export const CONSUMER_NAME = 'reward_granted_consumer';
 
@@ -66,46 +67,102 @@ async function processEvent(event: Event): Promise<void> {
 
   logger.info('event_processing', 'raffles', `Processing event ${eventId}, reward_id: ${payload.reward_id}, retry: ${retryCount}`, payload.user_id);
 
-  // STEP 1: Acquire row-level lock with FOR UPDATE SKIP LOCKED
-  // This ensures only ONE worker can process this event at a time
-  // If another worker has locked this event, the query returns no rows
-  const lockedEvent = await query<Event>(
-    `SELECT id, event_type, version, producer, correlation_id, payload, 
-            retry_count, processed, timestamp, locked_at
-     FROM events.events
-     WHERE id = $1
-     FOR UPDATE SKIP LOCKED`,
-    [eventId]
-  );
+  const client = await db.connect();
 
-  if (lockedEvent.length === 0) {
-    // Another worker is processing this event - skip
-    logger.info('event_locked_by_other', 'raffles', `Event ${eventId} is locked by another worker, skipping`, payload.user_id);
-    return;
-  }
-
-  // STEP 2: Check if already processed (idempotency)
-  const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);
-  
-  if (alreadyProcessed) {
-    logger.info('event_skipped', 'raffles', `Event already processed, skipping: ${eventId}`, payload.user_id);
-    return;
-  }
-
-  // STEP 3: Process the event (create ticket)
   try {
-    await createTicketForReward(payload);
+    // STEP 1: BEGIN TRANSACTION
+    await client.query('BEGIN');
+
+    // STEP 2: Acquire row-level lock with FOR UPDATE SKIP LOCKED
+    const lockedResult = await client.query(
+      `SELECT id, event_type, version, producer, correlation_id, payload, 
+              retry_count, processed, timestamp, locked_at
+       FROM events.events
+       WHERE id = $1
+       FOR UPDATE SKIP LOCKED`,
+      [eventId]
+    );
+
+    if (lockedResult.rows.length === 0) {
+      // Another worker has this event locked - rollback and skip
+      await client.query('ROLLBACK');
+      logger.info('event_locked_by_other', 'raffles', `Event ${eventId} is locked by another worker, skipping`, payload.user_id);
+      client.release();
+      return;
+    }
+
+    // STEP 3: Check if already processed (idempotency)
+    const alreadyProcessed = await isEventProcessed(eventId, CONSUMER_NAME);
+    
+    if (alreadyProcessed) {
+      await client.query('ROLLBACK');
+      logger.info('event_skipped', 'raffles', `Event already processed, skipping: ${eventId}`, payload.user_id);
+      client.release();
+      return;
+    }
+
+    // STEP 4: Process the event (create ticket)
+    // Pass client for transaction support
+    await createTicketForRewardWithClient(payload, client);
+
+    // STEP 5: Mark as processed AFTER successful processing (idempotency)
+    await markEventAsProcessed(eventId, CONSUMER_NAME);
+
+    // STEP 6: COMMIT
+    await client.query('COMMIT');
+    logger.info('event_processed', 'raffles', `Event processed successfully: ${eventId}, reward_id: ${payload.reward_id}`, payload.user_id);
+
   } catch (err) {
+    // ERROR HANDLING - rollback on any error
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      logger.error('rollback_failed', 'raffles', `Rollback failed: ${rollbackErr}`);
+    }
     logger.error('ticket_creation_failed', 'raffles', `Failed to create ticket: ${err instanceof Error ? err.message : String(err)}`, payload.user_id);
     throw err; // Re-throw to trigger retry/DLQ
+  } finally {
+    client.release();
   }
-
-  // STEP 4: Mark as processed AFTER successful processing (idempotency)
-  await markEventAsProcessed(eventId, CONSUMER_NAME);
-
-  logger.info('event_processed', 'raffles', `Event processed successfully: ${eventId}, reward_id: ${payload.reward_id}`, payload.user_id);
 }
 
+// New function that accepts client for transaction support
+async function createTicketForRewardWithClient(payload: RewardGrantedPayload, client: any): Promise<void> {
+  // Get the active raffle to associate the ticket with (within same transaction)
+  const result = await client.query(
+    `SELECT id, name, prize, total_numbers, draw_date, status
+     FROM raffles.raffles
+     WHERE status = 'active'
+       AND draw_date > NOW()
+     ORDER BY draw_date ASC
+     LIMIT 1`
+  );
+  
+  const activeRaffle = result.rows[0];
+  
+  if (!activeRaffle) {
+    logger.warn('no_active_raffle', 'raffles', 'No active raffle found, skipping ticket creation', payload.user_id);
+    return;
+  }
+
+  // Create ticket - idempotent via ON CONFLICT (reward_id) DO NOTHING
+  const ticketResult = await client.query(
+    `INSERT INTO rewards.tickets (user_id, raffle_id, number, reward_id)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (reward_id) DO NOTHING
+     RETURNING id, user_id, raffle_id, number, reward_id, created_at`,
+    [payload.user_id, activeRaffle.id, generateTicketNumber(), payload.reward_id]
+  );
+
+  if (ticketResult.rows.length > 0) {
+    logger.info('ticket_created', 'raffles', `Ticket created for reward ${payload.reward_id}, ticket_id: ${ticketResult.rows[0].id}, raffle_id: ${activeRaffle.id}`, payload.user_id);
+  } else {
+    // Ticket already exists (idempotent - reward_id already has ticket)
+    logger.info('ticket_already_exists', 'raffles', `Ticket already exists for reward ${payload.reward_id}`, payload.user_id);
+  }
+}
+
+// Keep original function for backward compatibility
 async function createTicketForReward(payload: RewardGrantedPayload): Promise<void> {
   // Get the active raffle to associate the ticket with
   const activeRaffle = await findActiveRaffle();
