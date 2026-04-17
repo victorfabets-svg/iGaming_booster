@@ -1,4 +1,3 @@
-import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createRewardTx } from '../repositories/reward.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
 import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '@shared/events/transactional-outbox';
@@ -100,11 +99,9 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     });
   }
 
-  // Step 5: Get proof details for amount
-  const proof = await findProofByIdInValidation(payload.proof_id);
-  if (!proof) {
-    throw new Error(`Proof not found: ${payload.proof_id}`);
-  }
+  // Step 5: Proof already validated and passed via event payload
+  // NO CROSS-DOMAIN CALLS - proof validated by validation domain before emitting event
+  // Event payload contains: proof_id, user_id, file_url, submitted_at, validation_id, status, confidence_score
 
   // Check risk first - if high risk, don't create reward
   if (!shouldGrantReward) {
