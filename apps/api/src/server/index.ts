@@ -1,20 +1,25 @@
 // ============================================================
-// SECURITY HARDENING - Env Sanitization & SSOT Enforcement
+// SECURITY HARDENING - Targeted Provider Blocklist
 // ============================================================
 
-// ALLOWED_ENV Whitelist - ONLY these vars can exist
-const ALLOWED_ENV = ["NODE_ENV", "NEON_DB_URL", "PORT", "LOG_LEVEL"];
+// Block forbidden database providers (not a full wipe)
+const FORBIDDEN_PATTERNS = [
+  "supabase",
+  "SUPABASE",
+  "database_url",
+  "DATABASE_URL"
+];
 
 const removedKeys: string[] = [];
 for (const key of Object.keys(process.env)) {
-  if (!ALLOWED_ENV.includes(key)) {
+  if (FORBIDDEN_PATTERNS.some(p => key.toLowerCase().includes(p.toLowerCase()))) {
     delete process.env[key];
     removedKeys.push(key);
   }
 }
 
 if (removedKeys.length > 0) {
-  console.log('🧹 ENV SANITIZED - Removed:', removedKeys.join(', '));
+  console.log('🛡️ BLOCKED FORBIDDEN VARS:', removedKeys.join(', '));
 }
 
 // ============================================================
