@@ -103,7 +103,6 @@ jobs:
         run: node scripts/runtime-check.js
 
   pipeline-e2e-test:
-  pipeline-e2e-test:
     runs-on: ubuntu-latest
     needs: runtime-check
 
