@@ -137,7 +137,7 @@ jobs:
           PORT: 3000
         working-directory: apps/api
         run: |
-          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/app.js > api.log 2>&1 &
+          PORT=$PORT HOST=0.0.0.0 node dist/apps/api/src/server/index.js > api.log 2>&1 &
           echo $! > api.pid
           sleep 2
           echo "=== SERVER LOG ==="
