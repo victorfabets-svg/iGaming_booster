@@ -25,24 +25,13 @@ jobs:
         working-directory: apps/api
 
       - name: Verify pg module
-        run: node -e "require('pg'); console.log('pg loaded')"
+        run: node scripts/verify-pg.js
         working-directory: apps/api
 
       - name: Test database connection
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          node -e "
-          const { Client } = require('pg');
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true
-          });
-          client.connect()
-            .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
-            .then(() => { console.log('Query OK'); client.end(); })
-            .catch(err => { console.error(err); process.exit(1); });
-          "
+        run: node scripts/db-connection-test.js
         working-directory: apps/api
 
   db-write-test:
@@ -69,39 +58,7 @@ jobs:
         working-directory: apps/api
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          node -e "
-          const crypto = require('crypto');
-          const { Client } = require('pg');
-
-          (async () => {
-            const client = new Client({
-              connectionString: process.env.NEON_DB_URL,
-              ssl: true
-            });
-
-            await client.connect();
-
-            console.log('Connected to Neon');
-
-            // 1. get real user
-            const userRes = await client.query('SELECT id FROM identity.users LIMIT 1');
-            if (userRes.rows.length === 0) {
-              throw new Error('No users found for FK');
-            }
-
-            const userId = userRes.rows[0].id;
-
-            // 2. insert with valid UUID
-            const id = crypto.randomUUID();
-
-            await client.query("INSERT INTO validation.proofs (id, user_id, file_url, created_at) VALUES ($1, $2, $3, NOW())", [id, userId, 'test-url'])
-
-            console.log('WRITE OK')
-
-            await client.end();
-          })();
-          "
+        run: node scripts/db-write-test.js
 
   runtime-check:
     runs-on: ubuntu-latest
