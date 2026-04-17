@@ -36,7 +36,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm ci --workspaces
+        run: npm install --workspaces
 
       - name: Wait for Postgres
         run: |
@@ -91,7 +91,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm ci --workspaces
+        run: npm install
 
       - name: Install minimal deps
         run: |
@@ -160,7 +160,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm ci --workspaces
+        run: npm install
 
       - name: Install deps
         run: |
