@@ -4,6 +4,15 @@ import { connectWithRetry, getDb } from '../../../../shared/database/connection'
 import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 
 async function start() {
+  // Validate environment variables
+  if (!process.env.NEON_DB_URL) {
+    throw new Error("NEON_DB_URL missing");
+  }
+
+  if (process.env.NEON_DB_URL.includes("localhost")) {
+    throw new Error("INVALID DB: localhost is not allowed for pre-audit");
+  }
+
   // Connect to database - MUST succeed or app fails
   try {
     console.log('[DB] Attempting to connect to database...');
