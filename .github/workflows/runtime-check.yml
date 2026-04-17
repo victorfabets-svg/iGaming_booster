@@ -20,6 +20,15 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install dependencies
+        run: |
+          npm install
+          cd apps/api
+          npm install
+
+      - name: Verify pg module
+        run: node -e "require('pg'); console.log('pg loaded')"
+
       - name: Test database connection
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
