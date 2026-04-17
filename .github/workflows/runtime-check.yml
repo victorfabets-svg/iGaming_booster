@@ -168,36 +168,37 @@ jobs:
             const testId = process.env.TEST_ID;
             console.log("Using TEST_ID:", testId);
             
-            // Query for proof by external_id (if column exists) or get most recent
-            let proofId = null;
-            try {
-              const proofRes = await client.query(
-                "SELECT id FROM validation.proofs WHERE external_id = $1",
-                [testId]
-              );
-              if (proofRes.rows.length > 0) {
-                proofId = proofRes.rows[0].id;
-                console.log("Found proof by external_id:", proofId);
-              }
-            } catch (e) {
-              console.log("external_id column not found, using fallback");
-            }
-            
-            // Fallback: get most recent proof
-            if (!proofId) {
-              const recentRes = await client.query(
-                "SELECT id FROM validation.proofs ORDER BY submitted_at DESC LIMIT 1"
-              );
-              if (recentRes.rows.length > 0) {
-                proofId = recentRes.rows[0].id;
-                console.log("Using most recent proof:", proofId);
-              }
-            }
-            
-            if (!proofId) {
-              console.error("FAIL: No proof found");
+            // TASK 3: Check if external_id column exists in validation.proofs
+            const columnCheck = await client.query(
+              "SELECT column_name FROM information_schema.columns WHERE table_schema = '\''validation'\'' AND table_name = '\''proofs'\'' AND column_name = '\''external_id'\''"
+            );
+            if (columnCheck.rows.length === 0) {
+              console.error("FAIL: external_id column not found in validation.proofs");
+              await client.end();
               process.exit(1);
             }
+            console.log("external_id column verified in validation.proofs");
+            
+            // TASK 4: Strict query - only allow SELECT id FROM validation.proofs WHERE external_id = $1
+            const proofRes = await client.query(
+              "SELECT id FROM validation.proofs WHERE external_id = $1",
+              [testId]
+            );
+            
+            // TASK 5: Assert exactly 1 proof - FAIL if 0 or >1
+            if (proofRes.rows.length === 0) {
+              console.error("FAIL: No proof found for external_id:", testId);
+              await client.end();
+              process.exit(1);
+            }
+            if (proofRes.rows.length > 1) {
+              console.error("FAIL: Multiple proofs found for external_id:", testId, "Count:", proofRes.rows.length);
+              await client.end();
+              process.exit(1);
+            }
+            
+            const proofId = proofRes.rows[0].id;
+            console.log("Found exactly 1 proof:", proofId);
             
             // Idempotency check: rewards for this proof
             const rewardRes = await client.query(
