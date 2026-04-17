@@ -142,26 +142,92 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y curl
 
-      - name: TASK 1 — CREATE SINGLE PROOF
-        env:
-          PROOF_ID: ${{ env.PROOF_ID }}
+      # ========================================================================
+      # TASK 1 — GENERATE SHARED TEST ID
+      # ========================================================================
+      - name: Generate SHARED TEST_ID
+        id: test-id
         run: |
-          echo "Creating single proof with PROOF_ID: $PROOF_ID"
-          curl -X POST http://localhost:3000/proofs \
-            -F "file=@README.md" \
-            -F "external_id=$PROOF_ID" \
-            -H "Authorization: Bearer TEST_TOKEN" \
-            -w "\n%{http_code}" \
-            -s -o /tmp/proofresponse.json
-          cat /tmp/proofresponse.json
-          echo ""
+          TEST_ID=$(uuidgen)
+          echo "TEST_ID=$TEST_ID" >> $GITHUB_ENV
+          echo "EXTERNAL_ID=$TEST_ID" >> $GITHUB_ENV
+          echo "Created SHARED TEST_ID: $TEST_ID"
 
-      - name: TASK 2 — ENSURE EVENT EXISTS (Wait for reward_granted)
+      # ========================================================================
+      # TASK 2 — START WORKERS FIRST (TWO independent workers)
+      # ========================================================================
+      - name: Start TWO competing workers
+        run: |
+          echo "Starting TWO independent workers..."
+          node apps/worker/dist/index.js > /tmp/worker1.log 2>&1 &
+          WORKER1_PID=$!
+          echo "Worker 1 started with PID: $WORKER1_PID"
+          
+          node apps/worker/dist/index.js > /tmp/worker2.log 2>&1 &
+          WORKER2_PID=$!
+          echo "Worker 2 started with PID: $WORKER2_PID"
+          
+          echo "Both workers started - they will compete for events"
+
+      - name: Wait for workers to start
+        run: |
+          echo "Waiting for workers to initialize..."
+          sleep 2
+          echo "Workers ready for contention"
+
+      # ========================================================================
+      # TASK 3 — SIMULATE TWO AGENTS (each sends 2 requests = 4 total)
+      # ========================================================================
+      - name: Simulate Agent A (2 parallel requests)
         env:
-          PROOF_ID: ${{ env.PROOF_ID }}
+          TEST_ID: ${{ env.TEST_ID }}
+        run: |
+          echo "Agent A: Sending 2 parallel requests with TEST_ID: $TEST_ID"
+          (
+            curl -X POST http://localhost:3000/proofs \
+              -F "file=@README.md" \
+              -F "external_id=$TEST_ID" \
+              -H "Authorization: Bearer TEST_TOKEN" \
+              -s -o /tmp/agentA_req1.json &
+            
+            curl -X POST http://localhost:3000/proofs \
+              -F "file=@README.md" \
+              -F "external_id=$TEST_ID" \
+              -H "Authorization: Bearer TEST_TOKEN" \
+              -s -o /tmp/agentA_req2.json &
+          ) &
+          echo "Agent A requests sent"
+
+      - name: Simulate Agent B (2 parallel requests)
+        env:
+          TEST_ID: ${{ env.TEST_ID }}
+        run: |
+          echo "Agent B: Sending 2 parallel requests with TEST_ID: $TEST_ID"
+          (
+            curl -X POST http://localhost:3000/proofs \
+              -F "file=@README.md" \
+              -F "external_id=$TEST_ID" \
+              -H "Authorization: Bearer TEST_TOKEN" \
+              -s -o /tmp/agentB_req1.json &
+            
+            curl -X POST http://localhost:3000/proofs \
+              -F "file=@README.md" \
+              -F "external_id=$TEST_ID" \
+              -H "Authorization: Bearer TEST_TOKEN" \
+              -s -o /tmp/agentB_req2.json &
+          ) &
+          echo "Agent B requests sent"
+          wait
+          echo "All 4 concurrent requests completed"
+
+      # ========================================================================
+      # TASK 4 — FETCH PROOF (STRICT)
+      # ========================================================================
+      - name: Fetch proof and assert exactly 1
+        env:
+          TEST_ID: ${{ env.TEST_ID }}
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
-          echo "Waiting for reward_granted event with PROOF_ID: $PROOF_ID"
           node -e '
           const { Client } = require("pg");
           const client = new Client({
@@ -169,62 +235,37 @@ jobs:
             ssl: true,
           });
           
-          const proofId = process.env.PROOF_ID;
-          let attempts = 0;
-          const maxAttempts = 15;
+          const testId = process.env.TEST_ID;
           
           (async () => {
             await client.connect();
             
-            while (attempts < maxAttempts) {
-              const result = await client.query(
-                "SELECT id FROM events.events WHERE payload::text LIKE $1 AND event_type = '\''reward_granted'\''",
-                ["%" + proofId + "%"]
-              );
-              
-              if (result.rows.length > 0) {
-                console.log("Found reward_granted event for PROOF_ID:", proofId);
-                await client.end();
-                process.exit(0);
-              }
-              
-              attempts++;
-              console.log("Waiting for event... attempt", attempts, "/", maxAttempts);
-              await new Promise(r => setTimeout(r, 1000));
+            const result = await client.query(
+              "SELECT id FROM validation.proofs WHERE external_id = $1",
+              [testId]
+            );
+            
+            const proofCount = result.rows.length;
+            console.log("Proofs found for external_id:", testId, "Count:", proofCount);
+            
+            if (proofCount !== 1) {
+              console.error("FAIL: Expected exactly 1 proof, got", proofCount);
+              await client.end();
+              process.exit(1);
             }
             
-            console.error("FAIL: No reward_granted event found after", maxAttempts, "seconds");
+            console.log("VALIDATED: Exactly 1 proof created");
             await client.end();
-            process.exit(1);
+            process.exit(0);
           })();
           '
 
-      - name: TASK 3 — SPAWN COMPETING WORKERS (Start TWO simultaneously)
+      # ========================================================================
+      # TASK 5 — WAIT FOR PROCESSING (POLL)
+      # ========================================================================
+      - name: Wait for processing (Poll for ticket)
         env:
-          PROOF_ID: ${{ env.PROOF_ID }}
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          echo "Starting TWO competing workers..."
-          # Start worker 1 in background
-          node apps/worker/dist/index.js > /tmp/worker1.log 2>&1 &
-          WORKER1_PID=$!
-          echo "Worker 1 started with PID: $WORKER1_PID"
-          
-          # Start worker 2 in background
-          node apps/worker/dist/index.js > /tmp/worker2.log 2>&1 &
-          WORKER2_PID=$!
-          echo "Worker 2 started with PID: $WORKER2_PID"
-          
-          echo "Both workers started - they will compete for events"
-
-      - name: TASK 4 — FORCE CONTENTION WINDOW
-        run: |
-          echo "Contention window opened - workers polling for events"
-          sleep 2
-
-      - name: TASK 5 — WAIT FOR COMPLETION (Polling for ticket)
-        env:
-          PROOF_ID: ${{ env.PROOF_ID }}
+          TEST_ID: ${{ env.TEST_ID }}
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           echo "Polling for ticket existence..."
@@ -235,7 +276,7 @@ jobs:
             ssl: true,
           });
           
-          const proofId = process.env.PROOF_ID;
+          const testId = process.env.TEST_ID;
           let attempts = 0;
           const maxAttempts = 15;
           
@@ -243,6 +284,22 @@ jobs:
             await client.connect();
             
             while (attempts < maxAttempts) {
+              // First get proof_id from external_id
+              const proofResult = await client.query(
+                "SELECT id FROM validation.proofs WHERE external_id = $1",
+                [testId]
+              );
+              
+              if (proofResult.rows.length === 0) {
+                attempts++;
+                console.log("Waiting for proof... attempt", attempts, "/", maxAttempts);
+                await new Promise(r => setTimeout(r, 1000));
+                continue;
+              }
+              
+              const proofId = proofResult.rows[0].id;
+              
+              // Then check for ticket
               const result = await client.query(
                 "SELECT COUNT(*) as count FROM raffles.tickets WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
                 [proofId]
@@ -250,7 +307,7 @@ jobs:
               
               const count = parseInt(result.rows[0].count, 10);
               if (count > 0) {
-                console.log("Ticket found for PROOF_ID:", proofId, "Count:", count);
+                console.log("Ticket found for TEST_ID:", testId, "Proof ID:", proofId, "Count:", count);
                 await client.end();
                 process.exit(0);
               }
@@ -266,9 +323,12 @@ jobs:
           })();
           '
 
-      - name: TASK 6 — VALIDATE EXACTLY-ONCE (tickets_count == 1)
+      # ========================================================================
+      # TASK 6 — VALIDATE EXACTLY-ONCE
+      # ========================================================================
+      - name: Validate exactly-once (rewards == 1 && tickets == 1)
         env:
-          PROOF_ID: ${{ env.PROOF_ID }}
+          TEST_ID: ${{ env.TEST_ID }}
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           node -e '
@@ -278,108 +338,66 @@ jobs:
             ssl: true,
           });
           
-          const proofId = process.env.PROOF_ID;
+          const testId = process.env.TEST_ID;
           
           (async () => {
             await client.connect();
             
-            // TASK 6: Validate exactly 1 ticket
-            const ticketRes = await client.query(
-              "SELECT COUNT(*) as count FROM raffles.tickets WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
-              [proofId]
+            // Get proof_id from external_id
+            const proofRes = await client.query(
+              "SELECT id FROM validation.proofs WHERE external_id = $1",
+              [testId]
             );
-            const ticketsCount = parseInt(ticketRes.rows[0].count, 10);
-            console.log("TASK 6 - Tickets count:", ticketsCount);
             
-            if (ticketsCount !== 1) {
-              console.error("FAIL: Expected exactly 1 ticket, got", ticketsCount);
+            if (proofRes.rows.length === 0) {
+              console.error("FAIL: No proof found for external_id:", testId);
               await client.end();
               process.exit(1);
             }
-            console.log("TASK 6 PASSED: Exactly 1 ticket");
             
-            await client.end();
-            process.exit(0);
-          })();
-          '
-
-      - name: TASK 7 — VALIDATE PROCESSED_EVENTS (count == 1)
-        env:
-          PROOF_ID: ${{ env.PROOF_ID }}
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          node -e '
-          const { Client } = require("pg");
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true,
-          });
-          
-          const proofId = process.env.PROOF_ID;
-          
-          (async () => {
-            await client.connect();
+            const proofId = proofRes.rows[0].id;
+            console.log("Validating exactly-once for proof_id:", proofId);
             
-            // TASK 7: Validate processed_events count == 1
-            const processedRes = await client.query(
-              "SELECT COUNT(*) as count FROM events.processed_events WHERE consumer_name = '\''reward_granted_consumer'\'' AND event_id IN (SELECT id FROM events.events WHERE payload::text LIKE $1)",
-              ["%" + proofId + "%"]
-            );
-            const processedCount = parseInt(processedRes.rows[0].count, 10);
-            console.log("TASK 7 - Processed events count:", processedCount);
-            
-            if (processedCount !== 1) {
-              console.error("FAIL: Expected exactly 1 processed event, got", processedCount);
-              await client.end();
-              process.exit(1);
-            }
-            console.log("TASK 7 PASSED: Exactly 1 processed event");
-            
-            await client.end();
-            process.exit(0);
-          })();
-          '
-
-      - name: TASK 8 — VALIDATE NO DUPLICATE REWARD (count == 1)
-        env:
-          PROOF_ID: ${{ env.PROOF_ID }}
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-        run: |
-          node -e '
-          const { Client } = require("pg");
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL,
-            ssl: true,
-          });
-          
-          const proofId = process.env.PROOF_ID;
-          
-          (async () => {
-            await client.connect();
-            
-            // TASK 8: Validate no duplicate reward
+            // Validate rewards count == 1
             const rewardRes = await client.query(
               "SELECT COUNT(*) as count FROM rewards.rewards WHERE proof_id = $1",
               [proofId]
             );
             const rewardsCount = parseInt(rewardRes.rows[0].count, 10);
-            console.log("TASK 8 - Rewards count:", rewardsCount);
+            console.log("Rewards count:", rewardsCount);
             
             if (rewardsCount !== 1) {
               console.error("FAIL: Expected exactly 1 reward, got", rewardsCount);
               await client.end();
               process.exit(1);
             }
-            console.log("TASK 8 PASSED: Exactly 1 reward (no duplicate)");
             
+            // Validate tickets count == 1
+            const ticketRes = await client.query(
+              "SELECT COUNT(*) as count FROM raffles.tickets WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
+              [proofId]
+            );
+            const ticketsCount = parseInt(ticketRes.rows[0].count, 10);
+            console.log("Tickets count:", ticketsCount);
+            
+            if (ticketsCount !== 1) {
+              console.error("FAIL: Expected exactly 1 ticket, got", ticketsCount);
+              await client.end();
+              process.exit(1);
+            }
+            
+            console.log("VALIDATED: Exactly 1 reward and 1 ticket");
             await client.end();
             process.exit(0);
           })();
           '
 
-      - name: TASK 9 — FAIL HARD
+      # ========================================================================
+      # TASK 7 — VALIDATE PROCESSED EVENTS
+      # ========================================================================
+      - name: Validate processed events count == 1
         env:
-          PROOF_ID: ${{ env.PROOF_ID }}
+          TEST_ID: ${{ env.TEST_ID }}
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
           node -e '
@@ -389,27 +407,88 @@ jobs:
             ssl: true,
           });
           
-          const proofId = process.env.PROOF_ID;
+          const testId = process.env.TEST_ID;
           
           (async () => {
             await client.connect();
             
-            let hasFailure = false;
+            // Get proof_id from external_id
+            const proofRes = await client.query(
+              "SELECT id FROM validation.proofs WHERE external_id = $1",
+              [testId]
+            );
             
-            // Check tickets
-            const ticketRes = await client.query(
-              "SELECT COUNT(*) as count FROM raffles.tickets WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
+            if (proofRes.rows.length === 0) {
+              console.error("FAIL: No proof found for external_id:", testId);
+              await client.end();
+              process.exit(1);
+            }
+            
+            const proofId = proofRes.rows[0].id;
+            console.log("Validating processed_events for proof_id:", proofId);
+            
+            // Validate processed_events count == 1
+            const processedRes = await client.query(
+              "SELECT COUNT(*) as count FROM events.processed_events \
+               WHERE consumer_name = '\''reward_granted_consumer'\'' \
+               AND event_id IN (SELECT id FROM events.events WHERE payload::text LIKE '\''%' || $1 || '%'\'')",
               [proofId]
             );
-            const ticketsCount = parseInt(ticketRes.rows[0].count, 10);
-            console.log("FAIL CHECK - Tickets:", ticketsCount);
-            if (ticketsCount > 1) {
-              console.error("FAIL: Duplicate tickets detected!");
-              hasFailure = true;
-            } else if (ticketsCount === 0) {
-              console.error("FAIL: No ticket created!");
-              hasFailure = true;
+            const processedCount = parseInt(processedRes.rows[0].count, 10);
+            console.log("Processed events count:", processedCount);
+            
+            if (processedCount !== 1) {
+              console.error("FAIL: Expected exactly 1 processed event, got", processedCount);
+              await client.end();
+              process.exit(1);
             }
+            
+            console.log("VALIDATED: Exactly 1 processed event");
+            await client.end();
+            process.exit(0);
+          })();
+          '
+
+      # ========================================================================
+      # TASK 8 — FAIL HARD IF ANY VALIDATION FAILS
+      # ========================================================================
+      - name: Final validation (fail hard if duplicates)
+        env:
+          TEST_ID: ${{ env.TEST_ID }}
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+        run: |
+          node -e '
+          const { Client } = require("pg");
+          const client = new Client({
+            connectionString: process.env.NEON_DB_URL,
+            ssl: true,
+          });
+          
+          const testId = process.env.TEST_ID;
+          
+          (async () => {
+            await client.connect();
+            
+            // Get proof_id from external_id
+            const proofRes = await client.query(
+              "SELECT id FROM validation.proofs WHERE external_id = $1",
+              [testId]
+            );
+            
+            if (proofRes.rows.length === 0) {
+              console.error("FAIL: No proof for external_id:", testId);
+              await client.end();
+              process.exit(1);
+            }
+            
+            const proofId = proofRes.rows[0].id;
+            console.log("Final validation for proof_id:", proofId);
+            let hasFailure = false;
+            
+            // Check proofs
+            const proofCount = proofRes.rows.length;
+            console.log("Proofs:", proofCount, proofCount === 1 ? "✓" : "✗ FAIL");
+            if (proofCount !== 1) hasFailure = true;
             
             // Check rewards
             const rewardRes = await client.query(
@@ -417,38 +496,46 @@ jobs:
               [proofId]
             );
             const rewardsCount = parseInt(rewardRes.rows[0].count, 10);
-            console.log("FAIL CHECK - Rewards:", rewardsCount);
-            if (rewardsCount > 1) {
-              console.error("FAIL: Duplicate rewards detected!");
-              hasFailure = true;
-            }
+            console.log("Rewards:", rewardsCount, rewardsCount === 1 ? "✓" : "✗ FAIL");
+            if (rewardsCount !== 1) hasFailure = true;
             
-            // Check processed events
+            // Check tickets
+            const ticketRes = await client.query(
+              "SELECT COUNT(*) as count FROM raffles.tickets \
+               WHERE reward_id IN (SELECT id FROM rewards.rewards WHERE proof_id = $1)",
+              [proofId]
+            );
+            const ticketsCount = parseInt(ticketRes.rows[0].count, 10);
+            console.log("Tickets:", ticketsCount, ticketsCount === 1 ? "✓" : "✗ FAIL");
+            if (ticketsCount !== 1) hasFailure = true;
+            
+            // Check processed_events
             const processedRes = await client.query(
-              "SELECT COUNT(*) as count FROM events.processed_events WHERE consumer_name = '\''reward_granted_consumer'\'' AND event_id IN (SELECT id FROM events.events WHERE payload::text LIKE $1)",
-              ["%" + proofId + "%"]
+              "SELECT COUNT(*) as count FROM events.processed_events \
+               WHERE consumer_name = '\''reward_granted_consumer'\'' \
+               AND event_id IN (SELECT id FROM events.events WHERE payload::text LIKE '\''%' || $1 || '%'\'')",
+              [proofId]
             );
             const processedCount = parseInt(processedRes.rows[0].count, 10);
-            console.log("FAIL CHECK - Processed events:", processedCount);
-            if (processedCount > 1) {
-              console.error("FAIL: Event processed multiple times!");
-              hasFailure = true;
-            }
+            console.log("Processed events:", processedCount, processedCount === 1 ? "✓" : "✗ FAIL");
+            if (processedCount !== 1) hasFailure = true;
+            
+            await client.end();
             
             if (hasFailure) {
-              console.error("\n❌ TASK 9 FAILED: Race condition validation FAILED");
+              console.error("\n❌ MULTI-AGENT CONCURRENCY TEST FAILED");
+              console.error("Exactly-once behavior NOT guaranteed under parallel execution!");
               process.exit(1);
             }
             
-            console.log("\n✅ TASK 9 PASSED: All validations passed");
-            console.log("  - Exactly 1 ticket");
-            console.log("  - Exactly 1 reward");
-            console.log("  - Exactly 1 processed event");
-            console.log("  - Exactly-once behavior proven!");
-            
-            await client.end();
+            console.log("\n✅ SUCCESS: Multi-agent concurrency validation PASSED");
+            console.log("  - 4 concurrent requests from 2 agents");
+            console.log("  - Exactly 1 proof created");
+            console.log("  - Exactly 1 reward granted");
+            console.log("  - Exactly 1 ticket issued");
+            console.log("  - Exactly-once guaranteed under multi-agent pressure");
             process.exit(0);
-          })();
+          ')();
           '
 
       # ========================================================================
