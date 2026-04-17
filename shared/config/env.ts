@@ -164,3 +164,15 @@ export const environment = config.environment;
 export const isProduction = config.isProduction;
 export const isDevelopment = config.isDevelopment;
 export const featureFlags = config.featureFlags;
+
+// NEON database URL with non-production fallback
+const envIsProduction = process.env.NODE_ENV === 'production';
+
+export const NEON_DB_URL =
+  process.env.NEON_DB_URL ||
+  (!envIsProduction ? 'postgres://localhost:5432/test' : undefined);
+
+// Throw error in production if NEON_DB_URL is missing
+if (envIsProduction && !process.env.NEON_DB_URL) {
+  throw new Error('NEON_DB_URL is required in production');
+}

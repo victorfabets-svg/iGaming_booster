@@ -86,14 +86,16 @@ export async function logAuditInTransaction(
 }
 
 export async function initDb(connectionString?: string): Promise<void> {
-  // Fail-fast: NEON_DB_URL is required
-  const dbUrl = process.env.NEON_DB_URL;
+  // Use environment variable or fallback for non-production
+  const isProduction = process.env.NODE_ENV === 'production';
+  const dbUrl = connectionString || process.env.NEON_DB_URL || (!isProduction ? 'postgres://localhost:5432/test' : undefined);
   
   if (!dbUrl) {
-    throw new Error("NEON_DB_URL is required");
+    throw new Error("NEON_DB_URL is required in production");
   }
 
-  // Configure SSL for cloud providers
+  // Log connection mode
+  console.log("[DB] Connection mode:", process.env.NEON_DB_URL ? "NEON" : "LOCAL");
   const sslConfig = process.env.NODE_ENV === 'production' 
     ? { rejectUnauthorized: false }
     : false;
