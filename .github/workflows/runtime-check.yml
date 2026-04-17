@@ -164,8 +164,70 @@ jobs:
 
       - name: Start server
         run: |
-          node apps/api/dist/apps/api/src/server/index.js &
-          sleep 5
+          # Set env for local testing
+          export NODE_ENV=development
+          export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
+          export JWT_SECRET=test-secret-for-ci
+          export CANARY_TOKEN=test-canary-token
+          
+          cd apps/api
+          
+          # Start API in background, capture PID
+          node dist/server.js &
+          API_PID=$!
+          echo "API_PID=$API_PID" >> $GITHUB_ENV
+          echo "Started API with PID $API_PID"
 
-      - name: Health check
-        run: curl -s http://localhost:3000/health || echo "Health check done"
+      - name: Wait for API to be ready
+        run: |
+          for i in {1..30}; do
+            RESP=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:3000/health/db || echo "000")
+            if [[ "$RESP" == "200" ]]; then
+              echo "✅ API is up and ready"
+              exit 0
+            fi
+            echo "Attempt $i: API not ready (HTTP $RESP), waiting..."
+            sleep 1
+          done
+          
+          echo "❌ API failed to start"
+          exit 1
+
+      - name: Start Worker (optional)
+        run: |
+          if [ -f "apps/worker/package.json" ]; then
+            cd apps/worker
+            npm install
+            npm run build
+            
+            export NODE_ENV=development
+            export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
+            export JWT_SECRET=test-secret-for-ci
+            
+            node dist/index.js &
+            WORKER_PID=$!
+            echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
+            echo "✅ Worker started with PID $WORKER_PID"
+          else
+            echo "⚠️ Worker not present — skipping worker"
+          fi
+
+      - name: Run E2E tests against live system
+        env:
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+        run: |
+          echo "Running E2E tests..."
+          npm run test:e2e || { echo "E2E failed"; exit 1; }
+          echo "✅ E2E tests passed"
+
+      - name: Cleanup processes
+        if: always()
+        run: |
+          if [ -n "${{ env.API_PID }}" ]; then
+            kill ${{ env.API_PID }} 2>/dev/null || true
+            echo "Killed API"
+          fi
+          if [ -n "${{ env.WORKER_PID }}" ]; then
+            kill ${{ env.WORKER_PID }} 2>/dev/null || true
+            echo "Killed Worker"
+          fi
