@@ -6,6 +6,7 @@ export interface Ticket {
   proof_id: string;
   reward_id: string;
   raffle_id: string;
+  number: number;
   created_at: Date;
 }
 
@@ -14,22 +15,23 @@ export interface CreateTicketInput {
   proof_id: string;
   reward_id: string;
   raffle_id: string;
+  number: number;
 }
 
 export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
   const result = await getDb().query(
-    `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (reward_id) DO NOTHING
-     RETURNING id, user_id, proof_id, raffle_id, reward_id, created_at`,
-    [input.user_id, input.proof_id, input.raffle_id, input.reward_id]
+     RETURNING id, user_id, proof_id, raffle_id, reward_id, number, created_at`,
+    [input.user_id, input.proof_id, input.raffle_id, input.reward_id, input.number]
   );
   return result.rows[0];
 }
 
 export async function findTicketByRewardId(rewardId: string): Promise<Ticket | null> {
   const result = await getDb().query(
-    `SELECT id, user_id, proof_id, raffle_id, reward_id, created_at
+    `SELECT id, user_id, proof_id, raffle_id, reward_id, number, created_at
      FROM raffles.tickets
      WHERE reward_id = $1`,
     [rewardId]
@@ -39,7 +41,7 @@ export async function findTicketByRewardId(rewardId: string): Promise<Ticket | n
 
 export async function findTicketsByRewardId(rewardId: string): Promise<Ticket[]> {
   const result = await getDb().query(
-    `SELECT id, user_id, proof_id, raffle_id, reward_id, created_at
+    `SELECT id, user_id, proof_id, raffle_id, reward_id, number, created_at
      FROM raffles.tickets
      WHERE reward_id = $1`,
     [rewardId]
@@ -57,10 +59,10 @@ export async function countTicketsByRewardId(rewardId: string): Promise<number> 
 
 export async function findTicketsByRaffleId(raffleId: string): Promise<Ticket[]> {
   const result = await getDb().query(
-    `SELECT id, user_id, proof_id, raffle_id, reward_id, created_at
+    `SELECT id, user_id, proof_id, raffle_id, reward_id, number, created_at
      FROM raffles.tickets
      WHERE raffle_id = $1
-     ORDER BY created_at ASC`,
+     ORDER BY number ASC`,
     [raffleId]
   );
   return result.rows;
