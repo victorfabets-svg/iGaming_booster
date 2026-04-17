@@ -1,20 +1,22 @@
 // ============================================================
-// SECURITY KILL SWITCH - Block forbidden env vars
+// SECURITY HARDENING - Env Sanitization & SSOT Enforcement
 // ============================================================
-const forbidden = Object.keys(process.env).filter(k =>
-  k.toLowerCase().includes('supabase') ||
-  k === 'DATABASE_URL'
-);
 
-if (forbidden.length > 0) {
-  console.error('🚨 FORBIDDEN ENV DETECTED:', forbidden);
-  process.exit(1);
+// ALLOWED_ENV Whitelist - ONLY these vars can exist
+const ALLOWED_ENV = ["NODE_ENV", "NEON_DB_URL", "PORT", "LOG_LEVEL"];
+
+const removedKeys: string[] = [];
+for (const key of Object.keys(process.env)) {
+  if (!ALLOWED_ENV.includes(key)) {
+    delete process.env[key];
+    removedKeys.push(key);
+  }
 }
 
-// Force clean env - delete any remaining forbidden vars
-delete process.env.DATABASE_URL;
-delete process.env.SUPABASE_DB_URL;
-delete process.env.Supabase_DB_URL;
+if (removedKeys.length > 0) {
+  console.log('🧹 ENV SANITIZED - Removed:', removedKeys.join(', '));
+}
+
 // ============================================================
 
 import { buildApp } from './app';
