@@ -198,8 +198,8 @@ jobs:
           " || true
           
           # Run migrations
-          cd /home/runner/work/iGaming_booster/iGaming_booster
-          npx ts-node -T apps/api/src/scripts/run-migrations.ts
+          cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
+          npx ts-node --project tsconfig.json -T src/scripts/run-migrations.ts
           echo "=== MIGRATIONS COMPLETE ==="
           
           # STEP 2: START API
