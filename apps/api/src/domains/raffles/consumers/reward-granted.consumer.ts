@@ -1,7 +1,7 @@
 export const CONSUMER_NAME = "reward_granted_consumer";
 
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
-import { findTicketByRewardId } from '../../rewards/repositories/ticket.repository';
+import { findTicketByRewardId, createTicketWithSequence, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
 import { db, getClient } from '@shared/database/connection';
 
@@ -101,7 +101,7 @@ async function processEvent(event: Event): Promise<void> {
       }
       
       // Create ticket with deterministic sequential number
-      // Uses transaction: SELECT FOR UPDATE → UPDATE → INSERT
+      // Uses repository: createTicketWithSequence
       let ticket = null;
       
       // Check if ticket already exists for this reward (idempotency)
@@ -114,72 +114,30 @@ async function processEvent(event: Event): Promise<void> {
           user_id: payload.user_id
         });
       } else {
-        // Get client for transaction
-        const client = await getClient();
+        // Use repository function for deterministic sequence ticket creation
+        const ticketInput: CreateTicketInput = {
+          user_id: payload.user_id,
+          raffle_id: payload.raffle_id,
+          reward_id: payload.reward_id,
+          proof_id: reward.proof_id,
+        };
         
-        try {
-          await client.query('BEGIN');
-          
-          // Step 1: Get next_number with lock
-          const raffleResult = await client.query<{ id: string; next_number: number; total_numbers: number }>(
-            `SELECT id, next_number, total_numbers 
-             FROM raffles.raffles 
-             WHERE id = $1 
-             FOR UPDATE`,
-            [payload.raffle_id]
-          );
-          
-          if (raffleResult.rows.length === 0) {
-            throw new Error(`Raffle not found: ${payload.raffle_id}`);
-          }
-          
-          const { next_number, total_numbers } = raffleResult.rows[0];
-          
-          // Step 2: Check if numbers exhausted
-          if (next_number > total_numbers) {
-            throw new Error(`Raffle numbers exhausted: ${payload.raffle_id}`);
-          }
-          
-          // Step 3: Update next_number
-          await client.query(
-            `UPDATE raffles.raffles 
-             SET next_number = next_number + 1 
-             WHERE id = $1`,
-            [payload.raffle_id]
-          );
-          
-          // Step 4: Insert ticket with deterministic number
-          const ticketResult = await client.query(
-            `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (reward_id) DO NOTHING
-             RETURNING id, user_id, proof_id, raffle_id, reward_id, number, created_at`,
-            [payload.user_id, reward.proof_id, payload.raffle_id, payload.reward_id, next_number]
-          );
-          
-          await client.query('COMMIT');
-          
-          if (ticketResult.rows.length > 0) {
-            ticket = ticketResult.rows[0];
-            logger.info({
-              event: 'ticket_created',
-              context: 'raffles',
-              data: { event_id: eventId, ticket_id: ticket.id, number: next_number, reward_id: payload.reward_id },
-              user_id: payload.user_id
-            });
-          } else {
-            logger.warn({
-              event: 'ticket_creation_failed',
-              context: 'raffles',
-              data: { event_id: eventId, reward_id: payload.reward_id, reason: 'insert_conflict' },
-              user_id: payload.user_id
-            });
-          }
-        } catch (err) {
-          await client.query('ROLLBACK');
-          throw err;
-        } finally {
-          client.release();
+        ticket = await createTicketWithSequence(null, ticketInput);
+        
+        if (ticket) {
+          logger.info({
+            event: 'ticket_created',
+            context: 'raffles',
+            data: { event_id: eventId, ticket_id: ticket.id, number: ticket.number, reward_id: payload.reward_id },
+            user_id: payload.user_id
+          });
+        } else {
+          logger.warn({
+            event: 'ticket_creation_failed',
+            context: 'raffles',
+            data: { event_id: eventId, reward_id: payload.reward_id, reason: 'insert_conflict' },
+            user_id: payload.user_id
+          });
         }
       }
     }
