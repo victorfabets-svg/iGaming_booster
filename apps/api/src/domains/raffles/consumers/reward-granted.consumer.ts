@@ -1,7 +1,7 @@
 export const CONSUMER_NAME = "reward_granted_consumer";
 
 import { fetchAndLockEvents, processWithRetry, getRetryCount, markEventAsProcessed, Event } from '../../../../../../shared/events/event-consumer.repository';
-import { createTicket, findTicketByRewardId, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
+import { findTicketByRewardId, createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { logger } from '../../../../../../shared/observability/logger';
 import { db, getClient } from '@shared/database/connection';
 
@@ -136,7 +136,7 @@ async function processEvent(event: Event): Promise<void> {
           logger.warn({
             event: 'ticket_creation_failed',
             context: 'raffles',
-            data: { event_id: eventId, reward_id: payload.reward_id, reason: 'max_retries_exceeded' },
+            data: { event_id: eventId, reward_id: payload.reward_id, reason: 'insert_conflict' },
             user_id: payload.user_id
           });
         }
