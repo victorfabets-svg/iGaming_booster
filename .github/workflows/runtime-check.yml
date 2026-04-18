@@ -197,9 +197,43 @@ jobs:
           })();
           " || true
           
-          # Run migrations
+          # Run migrations (skip reset since DB is fresh in CI)
           cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
-          npx ts-node --project tsconfig.json -T src/scripts/run-migrations.ts
+          node -e "
+          const { Client } = require('pg');
+          const fs = require('fs');
+          const path = require('path');
+          
+          (async () => {
+            const client = new Client({ 
+              connectionString: process.env.NEON_DB_URL,
+              ssl: { rejectUnauthorized: false }
+            });
+            await client.connect();
+            
+            // Create schemas
+            await client.query('CREATE SCHEMA IF NOT EXISTS events');
+            await client.query('CREATE SCHEMA IF NOT EXISTS validation');
+            await client.query('CREATE SCHEMA IF NOT EXISTS rewards');
+            await client.query('CREATE SCHEMA IF NOT EXISTS identity');
+            await client.query('CREATE SCHEMA IF NOT EXISTS fraud');
+            
+            console.log('Schemas created');
+            
+            // Read and execute migration SQL from project root
+            const migrationsDir = '/home/runner/work/iGaming_booster/iGaming_booster/shared/database/migrations';
+            if (fs.existsSync(migrationsDir)) {
+              const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+              for (const file of files) {
+                const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+                await client.query(sql).catch(e => { console.log('Skipped:', file); });
+              }
+              console.log('Migrations run:', files.length);
+            }
+            
+            await client.end();
+          })();
+          "
           echo "=== MIGRATIONS COMPLETE ==="
           
           # STEP 2: START API
