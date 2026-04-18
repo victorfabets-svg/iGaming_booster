@@ -34,7 +34,20 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket | n
   try {
     await client.query('BEGIN');
     
-    // Step 1: Get and lock the raffle's next_number
+    // Step 1: Pre-check - return existing ticket if any (idempotency)
+    const existingResult = await client.query(
+      `SELECT id, user_id, proof_id, raffle_id, reward_id, number, created_at
+       FROM raffles.tickets
+       WHERE reward_id = $1`,
+      [input.reward_id]
+    );
+    
+    if (existingResult.rows[0]) {
+      await client.query('COMMIT');
+      return existingResult.rows[0]; // Return existing ticket - idempotency
+    }
+    
+    // Step 2: Get and lock the raffle's next_number
     const raffleResult = await client.query(
       `SELECT next_number, total_numbers 
        FROM raffles.raffles 
@@ -48,16 +61,16 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket | n
       throw new Error(`Raffle not found: ${input.raffle_id}`);
     }
     
-    // Step 2: Check if there are tickets available
+    // Step 3: Check if there are tickets available
     if (raffle.next_number > raffle.total_numbers) {
       throw new Error(`No tickets available in raffle ${input.raffle_id}. Next number: ${raffle.next_number}, Total: ${raffle.total_numbers}`);
     }
     
-    // Use the deterministic next_number (not input.number to ensure determinism)
+    // Use the deterministic next_number
     const ticketNumber = raffle.next_number;
     
-    // Step 3: Insert ticket with the deterministic number
-    // Using ON CONFLICT (reward_id) for idempotency
+    // Step 4: Insert ticket with the deterministic number
+    // ON CONFLICT handles race condition (another request created ticket)
     const ticketResult = await client.query(
       `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number)
        VALUES ($1, $2, $3, $4, $5)
@@ -66,11 +79,19 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket | n
       [input.user_id, input.proof_id, input.raffle_id, input.reward_id, ticketNumber]
     );
     
-    const ticket = ticketResult.rows[0];
+    let ticket = ticketResult.rows[0];
     
-    // Only increment next_number if ticket was actually created (not a conflict)
-    if (ticket) {
-      // Step 4: Increment the raffle's next_number
+    // Handle race: if conflict, fetch and return existing ticket
+    if (!ticket) {
+      const conflictResult = await client.query(
+        `SELECT id, user_id, proof_id, raffle_id, reward_id, number, created_at
+         FROM raffles.tickets
+         WHERE reward_id = $1`,
+        [input.reward_id]
+      );
+      ticket = conflictResult.rows[0];
+    } else {
+      // Only increment next_number if we actually created a new ticket
       await client.query(
         `UPDATE raffles.raffles 
          SET next_number = next_number + 1 
