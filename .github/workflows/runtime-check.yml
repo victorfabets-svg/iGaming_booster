@@ -253,6 +253,24 @@ jobs:
           curl -f http://localhost:3000/health/db || exit 1
           echo "=== API STARTED ==="
           
+          # STEP 2b: START WORKER (Consumer)
+          echo "=== STEP 2b: START WORKER ==="
+          cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
+          # Start all event consumers as background process
+          node -e "
+          require('ts-node/register');
+          // Start all consumers
+          require('./src/domains/validation/consumers/proof-submitted.consumer');
+          require('./src/domains/rewards/consumers/proof-validated.consumer');
+          require('./src/domains/raffles/consumers/reward-granted.consumer');
+          require('./src/domains/raffles/consumers/raffle-draw-executed.consumer');
+          console.log('All consumers started');
+          " > worker.log 2>&1 &
+          WORKER_PID=$!
+          echo $WORKER_PID > worker.pid
+          sleep 3
+          echo "=== WORKER STARTED ==="
+          
           # STEP 3: EXECUTE POST /proofs
           echo "=== STEP 3: EXECUTE POST /proofs ==="
           
