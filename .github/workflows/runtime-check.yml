@@ -174,7 +174,183 @@ jobs:
 
       - name: Run E2E
         run: |
-          echo "E2E running..."
+          # STEP 1: RESET DB - Drop all tables and run migrations
+          echo "=== STEP 1: RESET DB ==="
+          cd apps/api
+          
+          # Drop all schemas (clean slate)
+          node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            
+            // Drop all tables and schemas
+            await client.query(\`DROP SCHEMA IF EXISTS public CASCADE\`);
+            await client.query(\`CREATE SCHEMA public\`);
+            
+            console.log('DB RESET: All tables dropped');
+            await client.end();
+          })();
+          " || true
+          
+          # Run migrations
+          npm run migrate
+          echo "=== MIGRATIONS COMPLETE ==="
+          
+          # STEP 2: START API
+          echo "=== STEP 2: START API ==="
+          node dist/server.js > api.log 2>&1 &
+          API_PID=$!
+          echo $API_PID > api.pid
+          sleep 5
+          
+          # Check API is running
+          curl -f http://localhost:3000/health/db || exit 1
+          echo "=== API STARTED ==="
+          
+          # STEP 3: EXECUTE POST /proofs
+          echo "=== STEP 3: EXECUTE POST /proofs ==="
+          
+          # Get a user ID from DB for the test
+          USER_ID=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT id FROM identity.users LIMIT 1');
+            console.log(res.rows[0].id);
+            await client.end();
+          })();
+          ")
+          
+          # Create a test file
+          echo "test content" > /tmp/test.txt
+          
+          # Make the POST request
+          RESPONSE=$(curl -s -X POST http://localhost:3000/proofs \
+            -H "Authorization: Bearer test-token" \
+            -F "file=@/tmp/test.txt")
+          
+          echo "Proof submission response: $RESPONSE"
+          
+          # Wait for async processing
+          sleep 5
+          
+          # STEP 4: TRACE events
+          echo "=== STEP 4: TRACE EVENTS ==="
+          EVENTS=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT event_type FROM events.events ORDER BY created_at');
+            console.log(JSON.stringify(res.rows.map(r => r.event_type)));
+            await client.end();
+          })();
+          ")
+          echo "Events: $EVENTS"
+          
+          # Required events to verify
+          REQUIRED_EVENTS=("proof_submitted" "fraud_check_requested" "payment_identifier_requested" "fraud_scored" "payment_identifier_extracted" "proof_validated" "reward_granted" "ticket_created")
+          
+          for event in "${REQUIRED_EVENTS[@]}"; do
+            if echo "$EVENTS" | grep -q "$event"; then
+              echo "✓ $event found"
+            else
+              echo "✗ $event NOT FOUND"
+              exit 1
+            fi
+          done
+          
+          # STEP 5: VERIFY DB counts
+          echo "=== STEP 5: VERIFY DB COUNTS ==="
+          
+          PROOF_COUNT=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT COUNT(*) as cnt FROM validation.proofs');
+            console.log(res.rows[0].cnt);
+            await client.end();
+          })();
+          ")
+          echo "Proofs: $PROOF_COUNT"
+          
+          VALIDATION_COUNT=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT COUNT(*) as cnt FROM validation.proof_validations');
+            console.log(res.rows[0].cnt);
+            await client.end();
+          })();
+          ")
+          echo "Validations: $VALIDATION_COUNT"
+          
+          REWARD_COUNT=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.rewards');
+            console.log(res.rows[0].cnt);
+            await client.end();
+          })();
+          ")
+          echo "Rewards: $REWARD_COUNT"
+          
+          TICKET_COUNT=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.tickets');
+            console.log(res.rows[0].cnt);
+            await client.end();
+          })();
+          ")
+          echo "Tickets: $TICKET_COUNT"
+          
+          # Verify counts
+          if [ "$PROOF_COUNT" != "1" ] || [ "$VALIDATION_COUNT" != "1" ] || [ "$REWARD_COUNT" != "1" ] || [ "$TICKET_COUNT" != "1" ]; then
+            echo "DB counts mismatch! Expected 1 of each."
+            exit 1
+          fi
+          
+          # STEP 6: REPEAT SAME REQUEST - idempotency check
+          echo "=== STEP 6: IDEMPOTENCY CHECK ==="
+          echo "test content" > /tmp/test2.txt
+          
+          curl -s -X POST http://localhost:3000/proofs \
+            -H "Authorization: Bearer test-token" \
+            -F "file=@/tmp/test2.txt" > /dev/null
+          
+          sleep 5
+          
+          TICKET_COUNT_AFTER=$(node -e "
+          const { Client } = require('pg');
+          (async () => {
+            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            await client.connect();
+            const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.tickets');
+            console.log(res.rows[0].cnt);
+            await client.end();
+          })();
+          ")
+          echo "Tickets after second request: $TICKET_COUNT_AFTER"
+          
+          if [ "$TICKET_COUNT_AFTER" != "1" ]; then
+            echo "IDEMPOTENCY FAILED: New ticket was created!"
+            exit 1
+          fi
+          
+          echo "=== ALL E2E STEPS PASSED ==="
+          
+          # Cleanup
+          kill $(cat api.pid) 2>/dev/null || true
 
       - name: Debug logs
         if: failure()
