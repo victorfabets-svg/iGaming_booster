@@ -312,6 +312,11 @@ jobs:
           
           # STEP 4: TRACE events
           echo "=== STEP 4: TRACE EVENTS ==="
+          
+          # First check worker logs
+          echo "=== CHECKING WORKER LOGS ==="
+          cat worker.log 2>/dev/null || echo "No worker log"
+          
           EVENTS=$(node -e "
           const { Client } = require('pg');
           (async () => {
