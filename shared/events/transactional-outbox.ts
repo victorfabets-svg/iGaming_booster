@@ -74,7 +74,7 @@ export async function insertEventInTransaction(
   const correlation_id = randomUUID();
   
   await client.query(
-    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
+    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, timestamp)
      VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
     [event_id, event_type, version, producer, correlation_id, JSON.stringify(payload)]
   );
