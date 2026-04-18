@@ -261,6 +261,8 @@ jobs:
           echo "=== STEP 2b: START WORKER ==="
           cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
           # Start all event consumers as background process
+          # Must set NODE_PATH to find modules
+          NODE_PATH=/home/runner/work/iGaming_booster/iGaming_booster/apps/api/node_modules \
           node -e "
           require('ts-node/register');
           // Start all consumers
