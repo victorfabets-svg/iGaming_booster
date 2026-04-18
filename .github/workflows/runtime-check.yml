@@ -30,7 +30,9 @@ jobs:
 
       - name: Install API dependencies
         working-directory: apps/api
-        run: npm install
+        run: |
+          npm install
+          npm install jsonwebtoken
 
       - name: Test database connection
         working-directory: apps/api
@@ -269,9 +271,18 @@ jobs:
           # Create a test file
           echo "test content" > /tmp/test.txt
           
-          # Make the POST request
+          # Generate JWT token for the test user
+          JWT_TOKEN=$(node -e "
+          const jwt = require('jsonwebtoken');
+          const payload = { user_id: '$USER_ID' };
+          const secret = 'dev-secret-change-in-production';
+          const token = jwt.sign(payload, secret, { expiresIn: '1h' });
+          console.log(token);
+          ")
+
+          # Make the POST request using JWT token
           RESPONSE=$(curl -s -X POST http://localhost:3000/proofs \
-            -H "Authorization: Bearer test-token" \
+            -H "Authorization: Bearer $JWT_TOKEN" \
             -F "file=@/tmp/test.txt")
           
           echo "Proof submission response: $RESPONSE"
