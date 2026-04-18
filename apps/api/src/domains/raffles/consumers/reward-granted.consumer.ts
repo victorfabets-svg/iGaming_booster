@@ -100,9 +100,8 @@ async function processEvent(event: Event): Promise<void> {
         throw new Error(`Reward not found: ${payload.reward_id}`);
       }
       
-      // Create ticket with retry loop for unique number
-      // Uses UNIQUE(raffle_id, number) constraint - retries on conflict
-      // First check idempotency - if ticket exists for reward_id, skip
+      // Create ticket - uses deterministic next_number from raffle
+      // No retry loop needed - createTicket handles sequential numbering
       let ticket = null;
       
       // Check if ticket already exists for this reward (idempotency)
@@ -115,31 +114,16 @@ async function processEvent(event: Event): Promise<void> {
           user_id: payload.user_id
         });
       } else {
-        // Generate unique ticket number with retry loop
-        const maxRetries = 100;
-        const raffleTotalNumbers = 1000; // TODO: fetch from raffle config
-
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          const number = Math.floor(Math.random() * raffleTotalNumbers) + 1;
-          
-          try {
-            const ticketInput: CreateTicketInput = {
-              user_id: payload.user_id,
-              raffle_id: payload.raffle_id,
-              reward_id: payload.reward_id,
-              proof_id: reward.proof_id,
-              number
-            };
-            ticket = await createTicket(ticketInput);
-            break; // Success
-          } catch (err: any) {
-            // Unique constraint violation (23505) - retry with new number
-            if (err.code === '23505') {
-              continue;
-            }
-            throw err;
-          }
-        }
+        // Create ticket - createTicket handles deterministic number internally
+        // Uses SELECT FOR UPDATE to ensure unique sequential numbers
+        const ticketInput: CreateTicketInput = {
+          user_id: payload.user_id,
+          raffle_id: payload.raffle_id,
+          reward_id: payload.reward_id,
+          proof_id: reward.proof_id,
+        };
+        
+        ticket = await createTicket(ticketInput);
 
         if (ticket) {
           logger.info({
