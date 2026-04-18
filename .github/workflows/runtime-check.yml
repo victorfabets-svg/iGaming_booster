@@ -195,7 +195,7 @@ jobs:
           " || true
           
           # Run migrations
-          npm run migrate
+          npx ts-node -T src/scripts/run-migrations.ts
           echo "=== MIGRATIONS COMPLETE ==="
           
           # STEP 2: START API
