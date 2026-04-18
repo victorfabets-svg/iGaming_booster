@@ -15,6 +15,7 @@ export interface CreateTicketInput {
   proof_id: string;
   reward_id: string;
   raffle_id: string;
+  number?: number; // Optional - will be assigned deterministically if not provided
 }
 
 /**
@@ -52,7 +53,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket | n
       throw new Error(`No tickets available in raffle ${input.raffle_id}. Next number: ${raffle.next_number}, Total: ${raffle.total_numbers}`);
     }
     
-    // Use the deterministic next_number
+    // Use the deterministic next_number (not input.number to ensure determinism)
     const ticketNumber = raffle.next_number;
     
     // Step 3: Insert ticket with the deterministic number
