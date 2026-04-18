@@ -32,7 +32,7 @@ jobs:
         working-directory: apps/api
         run: |
           npm install
-          npm install jsonwebtoken
+          npm install jsonwebtoken tsconfig-paths
 
       - name: Test database connection
         working-directory: apps/api
@@ -261,9 +261,11 @@ jobs:
           echo "=== STEP 2b: START WORKER ==="
           cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
           # Start all event consumers as background process
-          # Must set NODE_PATH to find modules
+          # Must set NODE_PATH and TS_NODE_PROJECT for path aliases
           NODE_PATH=/home/runner/work/iGaming_booster/iGaming_booster/apps/api/node_modules \
+          TS_NODE_PROJECT=/home/runner/work/iGaming_booster/iGaming_booster/apps/api/tsconfig.json \
           node -e "
+          require('tsconfig-paths/register');
           require('ts-node/register');
           // Start all consumers
           const p1 = require('./src/domains/validation/consumers/proof-submitted.consumer');
