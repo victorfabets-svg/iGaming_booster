@@ -268,12 +268,13 @@ jobs:
           const p2 = require('./src/domains/rewards/consumers/proof-validated.consumer');
           const r1 = require('./src/domains/raffles/consumers/reward-granted.consumer');
           const r2 = require('./src/domains/raffles/consumers/raffle-draw-executed.consumer');
-          // Actually start the consumers
-          p1.startProofSubmittedConsumer();
-          p2.startProofValidatedConsumer();
-          r1.startRewardGrantedConsumer();
-          r2.startRaffleDrawExecutedConsumer();
-          console.log('All consumers started');
+          // Actually start the consumers (async functions must be awaited)
+          Promise.all([
+            p1.startProofSubmittedConsumer(),
+            p2.startProofValidatedConsumer(),
+            r1.startRewardGrantedConsumer(),
+            r2.startRaffleDrawExecutedConsumer()
+          ]).then(() => console.log('All consumers started'));
           " > worker.log 2>&1 &
           WORKER_PID=$!
           echo $WORKER_PID > worker.pid
@@ -286,8 +287,9 @@ jobs:
           # Get user ID (use seeded test user)
           USER_ID="00000000-0000-0000-0000-000000000001"
           
-          # Create a test file with unique content
-          echo "test content $(date +%s)" > /tmp/test.txt
+          # Create a test file
+          UNIQUE_CONTENT="test content $(date +%s)"
+          echo "$UNIQUE_CONTENT" > /tmp/test.txt
           
           # Generate JWT token for the test user
           JWT_TOKEN=$(node -e "
@@ -393,11 +395,21 @@ jobs:
           
           # STEP 6: REPEAT SAME REQUEST - idempotency check
           echo "=== STEP 6: IDEMPOTENCY CHECK ==="
-          echo "test content" > /tmp/test2.txt
+          # Use SAME content as step 3 for idempotency test (same hash = duplicate proof)
+          echo "$UNIQUE_CONTENT" > /tmp/test.txt
+          
+          # Get JWT token again
+          JWT_TOKEN2=$(node -e "
+          const jwt = require('jsonwebtoken');
+          const payload = { user_id: '$USER_ID' };
+          const secret = 'dev-secret-change-in-production';
+          const token = jwt.sign(payload, secret, { expiresIn: '1h' });
+          console.log(token);
+          ")
           
           curl -s -X POST http://localhost:3000/proofs \
-            -H "Authorization: Bearer test-token" \
-            -F "file=@/tmp/test2.txt" > /dev/null
+            -H "Authorization: Bearer $JWT_TOKEN2" \
+            -F "file=@/tmp/test.txt" > /dev/null
           
           sleep 5
           
