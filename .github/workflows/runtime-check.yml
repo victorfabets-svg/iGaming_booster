@@ -181,6 +181,9 @@ jobs:
           cd apps/api
           
           # Drop all schemas (clean slate)
+          cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
+          npm install jsonwebtoken
+          
           node -e "
           const { Client } = require('pg');
           (async () => {
