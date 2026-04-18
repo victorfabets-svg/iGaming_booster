@@ -286,7 +286,7 @@ jobs:
           (async () => {
             const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
-            const res = await client.query('SELECT event_type FROM events.events ORDER BY created_at');
+            const res = await client.query('SELECT event_type FROM events.events ORDER BY timestamp');
             console.log(JSON.stringify(res.rows.map(r => r.event_type)));
             await client.end();
           })();
