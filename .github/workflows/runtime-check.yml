@@ -225,6 +225,10 @@ jobs:
             
             console.log('Schemas created');
             
+            // Insert test user for E2E
+            await client.query(\`INSERT INTO identity.users (id, email, created_at) VALUES ('00000000-0000-0000-0000-000000000001', 'test@example.com', NOW()) ON CONFLICT DO NOTHING\`);
+            console.log('Test user seeded');
+            
             // Read and execute migration SQL from project root
             const migrationsDir = '/home/runner/work/iGaming_booster/iGaming_booster/shared/database/migrations';
             if (fs.existsSync(migrationsDir)) {
@@ -274,23 +278,11 @@ jobs:
           # STEP 3: EXECUTE POST /proofs
           echo "=== STEP 3: EXECUTE POST /proofs ==="
           
-          # Get a user ID from DB for the test
-          USER_ID=$(node -e "
-          const { Client } = require('pg');
-          (async () => {
-            const client = new Client({ 
-              connectionString: process.env.NEON_DB_URL,
-              ssl: { rejectUnauthorized: false }
-            });
-            await client.connect();
-            const res = await client.query('SELECT id FROM identity.users LIMIT 1');
-            console.log(res.rows[0].id);
-            await client.end();
-          })();
-          ")
+          # Get user ID (use seeded test user)
+          USER_ID="00000000-0000-0000-0000-000000000001"
           
-          # Create a test file
-          echo "test content" > /tmp/test.txt
+          # Create a test file with unique content
+          echo "test content $(date +%s)" > /tmp/test.txt
           
           # Generate JWT token for the test user
           JWT_TOKEN=$(node -e "
@@ -308,8 +300,8 @@ jobs:
           
           echo "Proof submission response: $RESPONSE"
           
-          # Wait for async processing
-          sleep 5
+          # Wait for async processing by worker
+          sleep 15
           
           # STEP 4: TRACE events
           echo "=== STEP 4: TRACE EVENTS ==="
