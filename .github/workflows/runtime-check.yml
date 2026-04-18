@@ -264,10 +264,15 @@ jobs:
           node -e "
           require('ts-node/register');
           // Start all consumers
-          require('./src/domains/validation/consumers/proof-submitted.consumer');
-          require('./src/domains/rewards/consumers/proof-validated.consumer');
-          require('./src/domains/raffles/consumers/reward-granted.consumer');
-          require('./src/domains/raffles/consumers/raffle-draw-executed.consumer');
+          const p1 = require('./src/domains/validation/consumers/proof-submitted.consumer');
+          const p2 = require('./src/domains/rewards/consumers/proof-validated.consumer');
+          const r1 = require('./src/domains/raffles/consumers/reward-granted.consumer');
+          const r2 = require('./src/domains/raffles/consumers/raffle-draw-executed.consumer');
+          // Actually start the consumers
+          p1.startProofSubmittedConsumer();
+          p2.startProofValidatedConsumer();
+          r1.startRewardGrantedConsumer();
+          r2.startRaffleDrawExecutedConsumer();
           console.log('All consumers started');
           " > worker.log 2>&1 &
           WORKER_PID=$!
