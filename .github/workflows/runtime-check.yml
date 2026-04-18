@@ -38,7 +38,7 @@ jobs:
           for i in {1..10}; do
             node -e "
             const { Client } = require('pg');
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             client.connect()
               .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
               .then(() => { console.log('Query OK'); client.end(); process.exit(0); })
@@ -182,7 +182,10 @@ jobs:
           node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ 
+              connectionString: process.env.NEON_DB_URL,
+              ssl: { rejectUnauthorized: false }
+            });
             await client.connect();
             
             // Drop all tables and schemas
@@ -195,11 +198,13 @@ jobs:
           " || true
           
           # Run migrations
-          npx ts-node -T src/scripts/run-migrations.ts
+          cd /home/runner/work/iGaming_booster/iGaming_booster
+          npx ts-node -T apps/api/src/scripts/run-migrations.ts
           echo "=== MIGRATIONS COMPLETE ==="
           
           # STEP 2: START API
           echo "=== STEP 2: START API ==="
+          cd /home/runner/work/iGaming_booster/iGaming_booster/apps/api
           node dist/server.js > api.log 2>&1 &
           API_PID=$!
           echo $API_PID > api.pid
@@ -216,7 +221,10 @@ jobs:
           USER_ID=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ 
+              connectionString: process.env.NEON_DB_URL,
+              ssl: { rejectUnauthorized: false }
+            });
             await client.connect();
             const res = await client.query('SELECT id FROM identity.users LIMIT 1');
             console.log(res.rows[0].id);
@@ -242,7 +250,7 @@ jobs:
           EVENTS=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT event_type FROM events.events ORDER BY created_at');
             console.log(JSON.stringify(res.rows.map(r => r.event_type)));
@@ -269,7 +277,7 @@ jobs:
           PROOF_COUNT=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT COUNT(*) as cnt FROM validation.proofs');
             console.log(res.rows[0].cnt);
@@ -281,7 +289,7 @@ jobs:
           VALIDATION_COUNT=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT COUNT(*) as cnt FROM validation.proof_validations');
             console.log(res.rows[0].cnt);
@@ -293,7 +301,7 @@ jobs:
           REWARD_COUNT=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.rewards');
             console.log(res.rows[0].cnt);
@@ -305,7 +313,7 @@ jobs:
           TICKET_COUNT=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.tickets');
             console.log(res.rows[0].cnt);
@@ -333,7 +341,7 @@ jobs:
           TICKET_COUNT_AFTER=$(node -e "
           const { Client } = require('pg');
           (async () => {
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
+            const client = new Client({ connectionString: process.env.NEON_DB_URL, ssl: { rejectUnauthorized: false } });
             await client.connect();
             const res = await client.query('SELECT COUNT(*) as cnt FROM rewards.tickets');
             console.log(res.rows[0].cnt);
