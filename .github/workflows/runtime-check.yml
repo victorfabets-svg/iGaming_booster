@@ -47,6 +47,7 @@ jobs:
       - name: Build API
         run: |
           cd apps/api
+          npx tsc --version
           npm run build
 
       - name: Build Worker
