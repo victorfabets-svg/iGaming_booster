@@ -131,13 +131,13 @@ async function processRewardGranted(eventId: string, payload: any): Promise<void
     if (ticketResult.rowCount === 1 && ticketResult.rows[0]?.id) {
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-         VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())`,
+         VALUES (gen_random_uuid(), 'numbers_generated', 'ticket', $1, $2, $3, NOW())`,
         [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]
       );
     } else {
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-         VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())`,
+         VALUES (gen_random_uuid(), 'numbers_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())`,
         [payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]
       );
     }
@@ -516,12 +516,12 @@ class E2ETest {
         
         if (ticketResult.rowCount === 1) {
           await client.query(`INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-          VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())
+          VALUES (gen_random_uuid(), 'numbers_generated', 'ticket', $1, $2, $3, NOW())
           `, [ticketResult.rows[0].id, userId, JSON.stringify({ reward_id: rewardId })]);
-          return 'ticket_created';
+          return 'numbers_generated';
         } else {
           await client.query(`INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-          VALUES (gen_random_uuid(), 'ticket_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
+          VALUES (gen_random_uuid(), 'numbers_duplicate_ignored', 'ticket', NULL, $1, $2, NOW())
           `, [userId, JSON.stringify({ reward_id: rewardId, reason: 'idempotency_conflict' })]);
           return 'duplicate';
         }
@@ -548,11 +548,11 @@ class E2ETest {
       // Check audit logs
       const auditResult = await client1.query(`
         SELECT action FROM audit.audit_logs 
-        WHERE action IN ('ticket_created', 'ticket_duplicate_ignored')
+        WHERE action IN ('numbers_generated', 'numbers_duplicate_ignored')
         ORDER BY created_at
       `);
       
-      // Should have at least ticket_created OR duplicate_ignored
+      // Should have at least numbers_generated OR duplicate_ignored
       if (auditResult.rows.length > 0) {
         console.log('  ✅ Audit logs:', auditResult.rows.map(r => r.action).join(', '));
       }

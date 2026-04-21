@@ -8,7 +8,7 @@
  * 5. payment_identifier_extracted → extraction complete
  * 6. proof_validated → validation approved
  * 7. reward_granted → reward created
- * 8. ticket_created → numbers generated
+ * 8. numbers_generated → tickets generated
  */
 export const PIPELINE_EVENTS = [
   'proof_submitted',
@@ -18,7 +18,7 @@ export const PIPELINE_EVENTS = [
   'payment_identifier_extracted',
   'proof_validated',
   'reward_granted',
-  'ticket_created',
+  'numbers_generated',
 ] as const;
 
 export const DOMAIN_EVENTS = [

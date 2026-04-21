@@ -126,11 +126,11 @@ async function processEvent(event: Event): Promise<void> {
         ticket = await createTicket(ticketInput);
 
         if (ticket) {
-          // Emit ticket_created event via transactional outbox (same transaction)
+          // Emit numbers_generated event via transactional outbox (same transaction)
           const { insertEventInTransaction } = await import('@shared/events/transactional-outbox');
           await insertEventInTransaction(
             client,
-            'ticket_created',
+            'numbers_generated',
             {
               ticket_id: ticket.id,
               number: ticket.number,
@@ -143,7 +143,7 @@ async function processEvent(event: Event): Promise<void> {
           );
           
           logger.info({
-            event: 'ticket_created',
+            event: 'numbers_generated',
             context: 'raffles',
             data: { event_id: eventId, ticket_id: ticket.id, number: ticket.number, reward_id: payload.reward_id },
             user_id: payload.user_id
@@ -211,7 +211,7 @@ async function processEventExactlyOnce(
     await client.query('COMMIT');
     
     logger.info({ 
-      event: 'ticket_created', 
+      event: 'numbers_generated', 
       context: 'raffles', 
       data: { event_id: eventId, status: 'success' },
       user_id: 'N/A'

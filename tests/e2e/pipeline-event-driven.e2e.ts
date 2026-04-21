@@ -134,7 +134,7 @@ async function processRewardGranted(eventId: string, payload: any): Promise<void
     if (ticketResult.rowCount === 1 && ticketResult.rows[0]?.id) {
       await client.query(
         `INSERT INTO audit.audit_logs (id, action, entity_type, entity_id, user_id, metadata, created_at)
-         VALUES (gen_random_uuid(), 'ticket_created', 'ticket', $1, $2, $3, NOW())`,
+         VALUES (gen_random_uuid(), 'numbers_generated', 'ticket', $1, $2, $3, NOW())`,
         [ticketResult.rows[0].id, payload.user_id, JSON.stringify({ reward_id: payload.reward_id })]
       );
     } else {
