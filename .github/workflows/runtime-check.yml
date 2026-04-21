@@ -20,13 +20,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Check merge conflicts
         run: grep -rn "<<<<<<< HEAD" . --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules" && echo "Conflict found" && exit 1 || echo "OK"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
