@@ -41,23 +41,8 @@ jobs:
             apps/api/package-lock.json
             apps/worker/package-lock.json
 
-      - name: Clean install dependencies
-        run: |
-          echo "Cleaning any corrupted node_modules..."
-          rm -rf node_modules
-          rm -rf apps/api/node_modules
-          rm -rf apps/worker/node_modules
-          npm install
-
-      - name: Install API dependencies
-        run: |
-          cd apps/api
-          npm install
-
-      - name: Install Worker dependencies
-        run: |
-          cd apps/worker
-          npm install
+      - name: Install dependencies
+        run: npm ci
 
       - name: Validate ENV
         run: |
