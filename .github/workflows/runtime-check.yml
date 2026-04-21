@@ -12,7 +12,7 @@ on:
 jobs:
   db-connection-check:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -25,7 +25,7 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=5
-    
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
             cd apps/api
             npm install
           else
-            echo "❌ No package.json found"
+            echo "No package.json found"
             pwd
             ls -la
             exit 1
@@ -103,7 +103,7 @@ jobs:
             cd apps/api
             npm install
           else
-            echo "❌ No package.json found"
+            echo "No package.json found"
             pwd
             ls -la
             exit 1
@@ -182,68 +182,40 @@ jobs:
           echo "FILES:"
           ls -la
 
-      - name: Install root dependencies (safe)
+      - name: Install root dependencies
         run: |
-          if [ -f "package.json" ]; then
-            npm install
-          elif [ -f "apps/api/package.json" ]; then
-            echo "Using API package"
-            cd apps/api
-            npm install
-          else
-            echo "❌ No package.json found"
-            pwd
-            ls -la
-            exit 1
-          fi
+          npm install
 
-      - name: Build Worker (safe)
+      - name: Install API dependencies
         run: |
-          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
-            echo "🔧 Worker detected"
+          cd apps/api
+          npm install
 
-            pushd apps/worker > /dev/null
-
-            npm install
-            npm run build
-
-            popd > /dev/null
-
-            echo "✅ Worker built"
-          else
-            echo "⚠️ Worker not present — skipping worker build"
-          fi
-
-      - name: Install API dependencies (safe)
+      - name: Install Worker dependencies
         run: |
-          if [ -f "apps/api/package.json" ]; then
-            cd apps/api
-            npm install
-          elif [ -f "package.json" ]; then
-            echo "Using root package"
-            npm install
-          else
-            echo "❌ No package.json found"
-            pwd
-            ls -la
-            exit 1
-          fi
+          cd apps/worker
+          npm install
 
       - name: Build API
         run: |
           cd apps/api
           npm run build
 
-      - name: Start server
+      - name: Build Worker
+        run: |
+          cd apps/worker
+          npm run build
+
+      - name: Start API
         run: |
           # Set env for local testing
           export NODE_ENV=development
           export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
           export JWT_SECRET=test-secret-for-ci
           export CANARY_TOKEN=test-canary-token
-          
+
           cd apps/api
-          
+
           # Start API in background with log capture
           npm run start > $PWD/api.log 2>&1 &
           API_PID=$!
@@ -277,7 +249,7 @@ jobs:
 
             # Strict validation
             if [[ "$STATUS" == "ok" ]]; then
-              echo "✅ System ready (DB connected)"
+              echo "System ready (DB connected)"
               exit 0
             fi
 
@@ -286,27 +258,23 @@ jobs:
           done
 
           # Failed after all retries
-          echo "❌ System never became ready"
+          echo "System never became ready"
           echo "Final response: $RESPONSE"
           exit 1
 
-      - name: Start Worker (optional)
+      - name: Start Worker
         run: |
-          if [ -d "apps/worker" ] && [ -f "apps/worker/package.json" ]; then
-            echo "🚀 Starting worker"
+          cd apps/worker
+          # Use npm run start which includes preload.js for path alias resolution
+          npm run start > worker.log 2>&1 &
+          WORKER_PID=$!
+          echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
+          echo "Worker started with PID $WORKER_PID"
 
-            pushd apps/worker > /dev/null
-
-            node dist/index.js &
-
-            WORKER_PID=$!
-            popd > /dev/null
-
-            echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
-            echo "✅ Worker started with PID $WORKER_PID"
-          else
-            echo "⚠️ Worker not present — skipping start"
-          fi
+      - name: Wait for services to stabilize
+        run: |
+          echo "Waiting for services to stabilize..."
+          sleep 8
 
       - name: Run E2E tests against live system
         env:
@@ -314,13 +282,17 @@ jobs:
         run: |
           echo "Running E2E tests..."
           npm run test:e2e || { echo "E2E failed"; exit 1; }
-          echo "✅ E2E tests passed"
+          echo "E2E tests passed"
 
       - name: Debug snapshot on failure
         if: failure()
         run: |
           echo "===== API LOG ====="
           cat apps/api/api.log 2>/dev/null || echo "No log file"
+
+          echo ""
+          echo "===== WORKER LOG ====="
+          cat apps/worker/worker.log 2>/dev/null || echo "No log file"
 
           echo ""
           echo "===== RUNNING PROCESSES ====="
