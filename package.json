@@ -1,7 +1,6 @@
 {
   "name": "igaming-booster",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "build": "npm run build:api && npm run build:worker",
     "build:api": "cd apps/api && npm run build",
