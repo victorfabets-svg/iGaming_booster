@@ -55,15 +55,10 @@ jobs:
           (cd apps/worker && npm run build) &
           wait
 
-      - name: Debug dist structure
+      - name: Verify artifacts
         run: |
-          echo "=== API DIST ==="
-          ls -R apps/api/dist || true
-          echo "=== WORKER DIST ==="
-          ls -R apps/worker/dist || true
-
-      - name: Skip artifact check
-        run: echo "Skipping artifact validation"
+          test -f apps/api/dist/apps/api/src/server/index.js || exit 1
+          test -f apps/worker/dist/worker.js || exit 1
 
       - name: Start services
         run: |
