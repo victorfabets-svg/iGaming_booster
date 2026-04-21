@@ -20,8 +20,9 @@ esbuild.buildSync({
   entryPoints: [path.join(appDir, 'src/index.ts')],
   bundle: true,
   platform: 'node',
+  target: 'node20',
   outfile: outfile,
-  external: ['pg', 'pg-protocol', 'pg-cloudflare'],
+  external: [],
   sourcemap: false,
   minify: false,
 });
