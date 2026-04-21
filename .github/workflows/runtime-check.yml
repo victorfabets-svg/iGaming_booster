@@ -38,6 +38,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          npm cache clean --force
           rm -rf node_modules
           npm install
 
