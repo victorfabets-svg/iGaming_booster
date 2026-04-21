@@ -16,6 +16,6 @@
     "test:e2e:process": "ts-node --esm tests/e2e/pipeline-process-e2e.e2e.ts"
   },
   "devDependencies": {
-    "typescript": "^5.9.0"
+    "typescript": "~5.8.0"
   }
 }
