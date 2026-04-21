@@ -55,14 +55,37 @@ jobs:
           (cd apps/worker && npm run build) &
           wait
 
-      - name: Verify artifacts
+      - name: Verify artifacts (robust)
         run: |
-          test -f apps/api/dist/apps/api/src/server/index.js || exit 1
-          test -f apps/worker/dist/worker.js || exit 1
+          echo "Checking API artifact..."
+
+          if [ -f apps/api/dist/server.js ]; then
+            echo "API: flat bundle detected"
+            API_ENTRY="apps/api/dist/server.js"
+          elif [ -f apps/api/dist/apps/api/src/server/index.js ]; then
+            echo "API: nested build detected"
+            API_ENTRY="apps/api/dist/apps/api/src/server/index.js"
+          else
+            echo "API artifact NOT FOUND"
+            ls -R apps/api/dist || true
+            exit 1
+          fi
+
+          echo "Checking Worker artifact..."
+
+          if [ -f apps/worker/dist/worker.js ]; then
+            echo "Worker OK"
+          else
+            echo "Worker artifact NOT FOUND"
+            ls -R apps/worker/dist || true
+            exit 1
+          fi
+
+          echo "API_ENTRY=$API_ENTRY" >> $GITHUB_ENV
 
       - name: Start services
         run: |
-          node apps/api/dist/apps/api/src/server/index.js > api.log 2>&1 &
+          node $API_ENTRY > api.log 2>&1 &
           echo $! > api.pid
           node apps/worker/dist/worker.js > worker.log 2>&1 &
           echo $! > worker.pid
