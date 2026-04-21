@@ -3,11 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "../../",
-    "baseUrl": "../../",
-    "paths": {
-      "@shared/*": ["shared/*"],
-      "@domains/*": ["apps/api/src/domains/*"]
-    },
     "skipLibCheck": true,
     "strict": false,
     "noEmitOnError": false
