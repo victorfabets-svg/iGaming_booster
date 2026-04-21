@@ -42,13 +42,17 @@ console.log(JSON.stringify({
 }));
 
 async function start() {
+  console.log('='.repeat(50));
+  console.log('🔌 API BOOTING...');
+  console.log('='.repeat(50));
+
   // Connect to database - MUST succeed or app fails
   try {
     console.log('[DB] Attempting to connect to database...');
     await connectWithRetry();
-    console.log('[DB] Connection successful');
+    console.log('[DB] ✅ Connection successful');
   } catch (error) {
-    console.error('[DB] Connection failed');
+    console.error('[DB] ❌ Connection failed:', error);
     process.exit(1);
   }
 
@@ -60,9 +64,12 @@ async function start() {
   const port = config.apiPort;
 
   try {
-    await app.listen({ port });
-    console.log(`Server running on port ${port}`);
+    await app.listen({ port: port, host: '0.0.0.0' });
+    console.log(`✅ API LISTENING on port ${port}`);
+    console.log(`🌍 http://localhost:${port}`);
+    console.log('='.repeat(50));
   } catch (err) {
+    console.error('❌ API FAILED TO START:', err);
     app.log.error(err);
     process.exit(1);
   }

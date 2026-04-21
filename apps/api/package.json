@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node src/server/index.ts",
     "build": "tsc",
-    "start": "node dist/apps/api/src/server/app.js",
+    "start": "node dist/apps/api/src/server/index.js",
     "migrate": "ts-node scripts/run-migrations.ts"
   },
   "dependencies": {
