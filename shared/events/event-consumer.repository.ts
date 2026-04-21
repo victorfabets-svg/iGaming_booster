@@ -79,12 +79,14 @@ export function startStuckEventRecovery(): void {
   // Run immediately on startup
   recoverStuckEvents().catch(err => {
     console.error('[RECOVERY] Initial run failed:', err.message);
+    process.exit(1);
   });
 
   // Then run every 60 seconds
   recoveryInterval = setInterval(() => {
     recoverStuckEvents().catch(err => {
       console.error('[RECOVERY] Periodic run failed:', err.message);
+      process.exit(1);
     });
   }, 60000);
 }

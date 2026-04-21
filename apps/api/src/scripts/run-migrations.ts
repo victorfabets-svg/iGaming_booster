@@ -36,7 +36,9 @@ async function markMigrationExecuted(filename: string): Promise<void> {
 }
 
 async function runMigrations(): Promise<void> {
-  console.log('🔄 Starting migration runner...');
+  console.log('===================================================');
+  console.log('🔄 Migration Runner STARTED');
+  console.log('===================================================');
   console.log(`📁 Migrations directory: ${MIGRATIONS_DIR}`);
 
   // Connect to database first
@@ -64,42 +66,64 @@ async function runMigrations(): Promise<void> {
     return;
   }
 
-  let executed = 0;
-  let skipped = 0;
+  let executedCount = 0;
 
   for (const file of files) {
-    if (executedFilenames.has(file)) {
-      console.log(`⏭️  Skipping: ${file} (already executed)`);
-      skipped++;
-      continue;
-    }
-
     const filePath = path.join(MIGRATIONS_DIR, file);
     const sql = fs.readFileSync(filePath, 'utf8');
 
-    console.log(`🚀 Executing: ${file}`);
+    if (executedFilenames.has(file)) {
+      console.log(`⏭️  ALREADY RUN: ${file}`);
+      continue;
+    }
 
+    console.log(`🚀 EXECUTING: ${file}`);
+
+    // Execute migration - HARD FAIL on any error
     try {
       await db.query(sql);
-      await markMigrationExecuted(file);
-      console.log(`✅ Completed: ${file}`);
-      executed++;
     } catch (error) {
-      console.error(`❌ Failed: ${file}`);
-      console.error(error);
+      console.error('===================================================');
+      console.error('❌ MIGRATION FAILED');
+      console.error(`   File: ${file}`);
+      console.error(`   Error: ${error}`);
+      console.error('===================================================');
+      await db.end();
       process.exit(1);
     }
+
+    // Mark as executed
+    try {
+      await markMigrationExecuted(file);
+    } catch (error) {
+      console.error('===================================================');
+      console.error('❌ FAILED TO MARK MIGRATION EXECUTED');
+      console.error(`   File: ${file}`);
+      console.error(`   Error: ${error}`);
+      console.error('===================================================');
+      await db.end();
+      process.exit(1);
+    }
+
+    console.log(`✅ Migration executed: ${file}`);
+    executedCount++;
   }
 
-  console.log('\n📈 Migration Summary:');
-  console.log(`   Executed: ${executed}`);
-  console.log(`   Skipped: ${skipped}`);
+  console.log('===================================================');
+  console.log('📈 Migration Summary:');
+  console.log(`   Executed: ${executedCount}`);
+  console.log('===================================================');
   console.log('✨ Migration runner finished');
+  console.log('===================================================');
 
   await db.end();
 }
 
+// HARD FAIL - no silent failures
 runMigrations().catch((error) => {
-  console.error('Fatal error:', error);
+  console.error('===================================================');
+  console.error('❌ FATAL ERROR - Migration runner crashed');
+  console.error(`   Error: ${error}`);
+  console.error('===================================================');
   process.exit(1);
 });
