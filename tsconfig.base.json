@@ -7,10 +7,10 @@
     "noImplicitAny": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["shared/*"],
-      "@domains/*": ["apps/api/src/domains/*"]
+      "@shared/*": ["./shared/*"],
+      "@domains/*": ["./apps/api/src/domains/*"],
+      "shared/*": ["./shared/*"]
     }
   }
 }
