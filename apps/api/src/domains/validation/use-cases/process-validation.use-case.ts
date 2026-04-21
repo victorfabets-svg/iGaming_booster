@@ -16,7 +16,7 @@ export interface ProcessValidationInput {
   proof_id: string;
 }
 
-export type ValidationDecision = 'approved' | 'rejected' | 'manual_review';
+export type ValidationDecision = 'approved' | 'rejected' | 'manual_review' | 'processing';
 
 export interface ProcessValidationResult {
   validation_id: string;
@@ -144,6 +144,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
             amount: ocrResult.amount,
             date: ocrResult.date,
             institution: ocrResult.institution,
+            identifier: ocrResult.identifier || null,
           },
           heuristic_result: {
             is_valid: heuristicResult.is_valid,
@@ -168,6 +169,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
             amount: ocrResult.amount,
             date: ocrResult.date,
             institution: ocrResult.institution,
+            identifier: ocrResult.identifier || null,
           },
         },
         'validation'

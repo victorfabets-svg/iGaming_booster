@@ -1,4 +1,4 @@
-import { pool, queryOne } from 'shared/database/connection';
+import { db, queryOne } from 'shared/database/connection';
 
 export interface RaffleDraw {
   id: string;
@@ -19,7 +19,7 @@ export interface CreateRaffleDrawInput {
 }
 
 export async function createRaffleDraw(input: CreateRaffleDrawInput): Promise<RaffleDraw> {
-  const result = await pool.query(
+  const result = await db.query(
     `INSERT INTO raffles.raffle_draws (raffle_id, seed, algorithm, result_number)
      VALUES ($1, $2, $3, $4)
      RETURNING id, raffle_id, seed, algorithm, result_number, winner_user_id, winner_ticket_id, executed_at`,
@@ -42,7 +42,7 @@ export async function updateRaffleDrawWinner(
   winnerUserId: string,
   winnerTicketId: string
 ): Promise<void> {
-  await pool.query(
+  await db.query(
     `UPDATE raffles.raffle_draws 
      SET winner_user_id = $1, winner_ticket_id = $2
      WHERE id = $3`,
@@ -51,7 +51,7 @@ export async function updateRaffleDrawWinner(
 }
 
 export async function markRaffleExecuted(raffleId: string): Promise<void> {
-  await pool.query(
+  await db.query(
     `UPDATE raffles.raffles 
      SET status = 'executed'
      WHERE id = $1`,

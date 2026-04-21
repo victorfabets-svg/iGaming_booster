@@ -16,7 +16,7 @@ export function extractIdentifiers(ocrResult: {
   amount: number;
   date: string;
   institution: string;
-  identifier: string | null;
+  identifier?: string | null;
 }): ExtractedIdentifier[] {
   const identifiers: ExtractedIdentifier[] = [];
 

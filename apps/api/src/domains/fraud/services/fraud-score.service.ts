@@ -11,7 +11,7 @@ export interface FraudScoreResult {
  * Can be adjusted by risk score modifier and payment signals
  */
 export function calculateFraudScore(
-  ocrResult: { amount: number; date: string; institution: string; identifier: string | null },
+  ocrResult: { amount: number; date: string; institution: string; identifier?: string | null },
   heuristicResult: { is_valid: boolean; issues: string[] },
   riskScoreModifier: number = 0,
   paymentModifier: number = 0

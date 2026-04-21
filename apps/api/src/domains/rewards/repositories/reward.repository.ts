@@ -72,3 +72,12 @@ export async function updateRewardStatus(id: string, status: string): Promise<vo
   // Deprecated - status field no longer exists
   console.log(`[WARNING] updateRewardStatus is deprecated, status field removed`);
 }
+
+export async function findAllRewards(): Promise<Reward[]> {
+  const result = await db.query<Reward>(
+    `SELECT id, user_id, proof_id, reward_type, value, status, created_at
+     FROM rewards.rewards
+     ORDER BY created_at DESC`
+  );
+  return result.rows;
+}

@@ -213,7 +213,7 @@ async function tryMakeDecision(proofId: string, triggeringEventId: string): Prom
           status: decision,
           confidence_score: finalScore,
           fraud_score: fraudPayload.score,
-          payment_modifier,
+          payment_modifier: paymentModifier,
         },
         'validation'
       );

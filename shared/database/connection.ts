@@ -1,5 +1,8 @@
 import pg from 'pg';
 
+// Re-export types
+export type { Pool, PoolClient } from 'pg';
+
 // Use the Pool from the imported module
 const Pool = pg.Pool;
 
@@ -11,6 +14,14 @@ export function getDb(): pg.Pool {
     throw new Error('Database not initialized. Call initDb() first.');
   }
   return _db;
+}
+
+export function getPool(): pg.Pool {
+  return _db!;
+}
+
+export function pool(): pg.Pool {
+  return _db!;
 }
 
 /**
@@ -137,6 +148,24 @@ export const db = {
     }
   },
 };
+
+// Legacy exports for compatibility
+export async function query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> {
+  return db.query<T>(text, params);
+}
+
+export async function queryOne<T = any>(text: string, params?: unknown[]): Promise<T | null> {
+  const result = await db.query<T>(text, params);
+  return result.rows[0] || null;
+}
+
+export async function execute(text: string, params?: unknown[]): Promise<void> {
+  await db.query(text, params);
+}
+
+export async function closePool(): Promise<void> {
+  await db.end();
+}
 
 export async function connectWithRetry(maxRetries = 5, delayMs = 2000): Promise<void> {
   let lastError: Error | null = null;

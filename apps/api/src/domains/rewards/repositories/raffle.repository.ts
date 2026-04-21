@@ -1,4 +1,4 @@
-import { pool, queryOne } from 'shared/database/connection';
+import { db, queryOne } from 'shared/database/connection';
 
 export interface Raffle {
   id: string;
@@ -36,7 +36,7 @@ export async function createRaffle(input: {
   draw_date: Date;
   status: string;
 }): Promise<Raffle> {
-  const result = await pool.query(
+  const result = await db.query(
     `INSERT INTO raffles.raffles (name, prize, total_numbers, draw_date, status)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, name, prize, total_numbers, draw_date, status`,
@@ -46,14 +46,14 @@ export async function createRaffle(input: {
 }
 
 export async function updateRaffleStatus(id: string, status: string): Promise<void> {
-  await pool.query(
+  await db.query(
     `UPDATE raffles.raffles SET status = $1 WHERE id = $2`,
     [status, id]
   );
 }
 
 export async function findAllRaffles(): Promise<Raffle[]> {
-  const result = await pool.query(
+  const result = await db.query(
     `SELECT id, name, prize, total_numbers, draw_date, status
      FROM raffles.raffles
      ORDER BY draw_date DESC`

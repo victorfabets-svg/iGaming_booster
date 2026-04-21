@@ -101,7 +101,7 @@ async function handlePaymentIdentifierRequested(payload: PaymentIdentifierReques
   const { proof_id, ocr_result } = payload;
 
   // Extract payment identifiers using payments domain services
-  const ocrData = ocr_result || { amount: 0, date: '', institution: '' };
+  const ocrData = ocr_result || { amount: 0, date: '', institution: '', identifier: null };
   const extractedIdentifiers = extractIdentifiers(ocrData);
   
   // Validate identifiers

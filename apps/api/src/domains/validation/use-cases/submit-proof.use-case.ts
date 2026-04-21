@@ -1,8 +1,9 @@
 import * as crypto from 'crypto';
 import { createProofInTransaction, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
 import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
-// EVENT-DRIVEN: rate limit and behavior check moved to fraud consumer
-// Removed: rateLimitService, behaviorAnalysisService
+// Import rate limit and behavior services
+import { rateLimitService } from '../../fraud/services/rate-limit.service';
+import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordProofSubmission } from '../../../../../../shared/observability/metrics.service';
 
