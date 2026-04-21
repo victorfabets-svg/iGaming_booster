@@ -49,11 +49,24 @@ jobs:
           echo "Validating NEON_DB_URL..."
           test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
 
-      - name: Build API & Worker
+      - name: Build API
         run: |
-          (cd apps/api && npm run build) &
-          (cd apps/worker && npm run build) &
-          wait
+          cd apps/api
+          npm run build
+
+      - name: Build Worker
+        run: |
+          cd apps/worker
+          npm run build
+
+      - name: Verify worker dist exists
+        run: |
+          if [ ! -d apps/worker/dist ]; then
+            echo "Worker dist NOT generated"
+            ls -R apps/worker || true
+            exit 1
+          fi
+          echo "Worker dist OK"
 
       - name: Verify artifacts (robust)
         run: |
