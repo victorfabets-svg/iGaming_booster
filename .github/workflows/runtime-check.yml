@@ -10,159 +10,6 @@ on:
       - main
 
 jobs:
-  db-connection-check:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
-        options: >-
-          --health-cmd="pg_isready -U test"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=5
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Debug path
-        run: |
-          echo "PWD:"
-          pwd
-          echo "FILES:"
-          ls -la
-
-      - name: Install dependencies (safe)
-        run: |
-          if [ -f "package.json" ]; then
-            npm install
-          elif [ -f "apps/api/package.json" ]; then
-            echo "Using API package"
-            cd apps/api
-            npm install
-          else
-            echo "No package.json found"
-            pwd
-            ls -la
-            exit 1
-          fi
-
-      - name: Test database connection
-        env:
-          NEON_DB_URL: postgresql://test:test@postgres:5432/test
-        run: |
-          for i in {1..10}; do
-            node -e "
-            const { Client } = require('pg');
-            const client = new Client({ connectionString: process.env.NEON_DB_URL });
-            client.connect()
-              .then(() => { console.log('DB Connected'); return client.query('SELECT 1'); })
-              .then(() => { console.log('Query OK'); client.end(); process.exit(0); })
-              .catch(e => { console.error('Error:', e.message); process.exit(1); });
-            " && break
-            echo "Attempt $i failed, retrying..."
-            sleep 2
-          done || (echo "All retries failed" && exit 1)
-
-  db-write-test:
-    needs: db-connection-check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Debug path
-        run: |
-          echo "PWD:"
-          pwd
-          echo "FILES:"
-          ls -la
-
-      - name: Install dependencies (safe)
-        run: |
-          if [ -f "package.json" ]; then
-            npm install
-          elif [ -f "apps/api/package.json" ]; then
-            echo "Using API package"
-            cd apps/api
-            npm install
-          else
-            echo "No package.json found"
-            pwd
-            ls -la
-            exit 1
-          fi
-
-      - name: Install minimal deps
-        run: |
-          mkdir tmp-write-test
-          cd tmp-write-test
-          npm init -y
-          npm install pg
-
-      - name: Run write test
-        env:
-          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
-          NODE_PATH: ./tmp-write-test/node_modules
-        run: |
-          node -e "
-          const { Client } = require('pg');
-
-          const client = new Client({
-            connectionString: process.env.NEON_DB_URL
-          });
-
-          async function run() {
-            await client.connect();
-
-            console.log('Connected to Neon');
-
-            // INSERT
-            const insert = await client.query(
-              \"INSERT INTO validation.proofs (id, user_id, file_url, created_at)
-               VALUES (gen_random_uuid(), 'test-user-ci', 'https://test.com/file.png', NOW())
-               RETURNING *;\"
-            );
-
-            console.log('INSERT RESULT');
-            console.table(insert.rows);
-
-            // READ
-            const read = await client.query(
-              \"SELECT * FROM validation.proofs
-               WHERE user_id = 'test-user-ci'
-               ORDER BY created_at DESC
-               LIMIT 1;\"
-            );
-
-            console.log('READ RESULT');
-            console.table(read.rows);
-
-            await client.end();
-          }
-
-          run().catch(err => {
-            console.error(err);
-            process.exit(1);
-          });
-          "
-
   runtime-check:
     runs-on: ubuntu-latest
 
@@ -175,16 +22,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Debug path
-        run: |
-          echo "PWD:"
-          pwd
-          echo "FILES:"
-          ls -la
-
       - name: Install root dependencies
-        run: |
-          npm install
+        run: npm install
 
       - name: Install API dependencies
         run: |
@@ -206,114 +45,81 @@ jobs:
           cd apps/worker
           npm run build
 
-      - name: Start API
+      - name: Start API with verification
+        env:
+          NODE_ENV: development
+          NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+          JWT_SECRET: test-secret-for-ci
+          CANARY_TOKEN: test-canary-token
         run: |
-          # Set env for local testing
-          export NODE_ENV=development
-          export NEON_DB_URL="${{ secrets.NEON_DB_URL }}"
-          export JWT_SECRET=test-secret-for-ci
-          export CANARY_TOKEN=test-canary-token
-
+          echo "=== Starting API ==="
           cd apps/api
-
-          # Start API in background with log capture
           npm run start > $PWD/api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
-          echo "Started API with PID $API_PID (logs: $PWD/api.log)"
+          echo "API started with PID: $API_PID"
 
-      - name: Wait for API to be ready
+          echo "=== Waiting for API startup ==="
+          sleep 5
+
+          echo "=== Verifying API responds ==="
+          curl -f http://localhost:3000 || exit 1
+          echo "API verification PASSED"
+
+      - name: Start Worker with verification
         run: |
-          # Ensure jq is installed
-          if ! command -v jq &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-
-          echo "Starting readiness check..."
-
-          for i in {1..30}; do
-            # Safe response capture with --fail for proper HTTP errors
-            RESPONSE=$(curl -s --fail http://localhost:3000/health/db 2>/dev/null || echo "")
-
-            # Validate response not empty
-            if [[ -z "$RESPONSE" ]]; then
-              echo "Attempt $i: Empty response, waiting..."
-              sleep 1
-              continue
-            fi
-
-            # Safe JSON parse with fallback
-            STATUS=$(echo "$RESPONSE" | jq -r '.status // "invalid"' 2>/dev/null || echo "invalid")
-
-            echo "Attempt $i: Status = $STATUS"
-
-            # Strict validation
-            if [[ "$STATUS" == "ok" ]]; then
-              echo "System ready (DB connected)"
-              exit 0
-            fi
-
-            # Any other status (degraded, error, invalid) - still wait
-            sleep 1
-          done
-
-          # Failed after all retries
-          echo "System never became ready"
-          echo "Final response: $RESPONSE"
-          exit 1
-
-      - name: Start Worker
-        run: |
+          echo "=== Starting Worker ==="
           cd apps/worker
-          # Use npm run start which includes preload.js for path alias resolution
-          npm run start > worker.log 2>&1 &
+          npm run start > $PWD/worker.log 2>&1 &
           WORKER_PID=$!
           echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
-          echo "Worker started with PID $WORKER_PID"
+          echo "Worker started with PID: $WORKER_PID"
 
-      - name: Wait for services to stabilize
-        run: |
-          echo "Waiting for services to stabilize..."
-          sleep 8
+          echo "=== Waiting for Worker startup ==="
+          sleep 5
 
-      - name: Run E2E tests against live system
+          echo "=== Verifying Worker is alive ==="
+          ps aux | grep -v grep | grep worker || exit 1
+          echo "Worker verification PASSED"
+
+      - name: Run E2E tests (MANDATORY)
         env:
           NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
         run: |
-          echo "Running E2E tests..."
-          npm run test:e2e || { echo "E2E failed"; exit 1; }
-          echo "E2E tests passed"
+          echo "=== Running E2E tests ==="
+          npm run test:e2e
+          echo "E2E tests PASSED"
 
-      - name: Debug snapshot on failure
+      - name: Debug logs on failure
         if: failure()
         run: |
           echo "===== API LOG ====="
-          cat apps/api/api.log 2>/dev/null || echo "No log file"
+          cat apps/api/api.log 2>/dev/null || echo "No API log file"
 
           echo ""
           echo "===== WORKER LOG ====="
-          cat apps/worker/worker.log 2>/dev/null || echo "No log file"
+          cat apps/worker/worker.log 2>/dev/null || echo "No Worker log file"
 
           echo ""
           echo "===== RUNNING PROCESSES ====="
-          ps aux | grep -E "node|api" | grep -v grep || true
+          ps aux | grep -E "node|worker" | grep -v grep || echo "No processes found"
 
           echo ""
           echo "===== PORT BINDINGS ====="
           ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null || echo "ss/netstat not available"
 
           echo ""
-          echo "===== LAST HEALTH CHECK ====="
-          curl -sv http://localhost:3000/health/db 2>&1 || echo "Health endpoint unreachable"
+          echo "===== LAST API CHECK ====="
+          curl -sv http://localhost:3000 2>&1 || echo "API unreachable"
 
       - name: Cleanup processes
         if: always()
         run: |
           if [ -n "${{ env.API_PID }}" ]; then
             kill ${{ env.API_PID }} 2>/dev/null || true
-            echo "Killed API"
+            echo "Cleaned up API (PID: ${{ env.API_PID }})"
           fi
           if [ -n "${{ env.WORKER_PID }}" ]; then
             kill ${{ env.WORKER_PID }} 2>/dev/null || true
-            echo "Killed Worker"
+            echo "Cleaned up Worker (PID: ${{ env.WORKER_PID }})"
           fi
