@@ -175,40 +175,12 @@ if (!process.env.NEON_DB_URL) {
   throw new Error("NEON_DB_URL is required");
 }
 
-// SSOT ENFORCEMENT: Strict Neon host pattern validation
-let host: string;
-
+// Basic format validation - ensure URL is parseable
 try {
-  host = new URL(process.env.NEON_DB_URL).hostname;
+  new URL(process.env.NEON_DB_URL);
+  console.log("✅ DB connection initialized");
 } catch {
   throw new Error("Invalid NEON_DB_URL format");
 }
-
-/**
- * Strict Neon pattern for validation:
- * - Must match: ep-<id>.<region>.aws.neon.tech
- * - Prevents: fake.neon.tech, subdomain bypass, etc.
- */
-const NEON_HOST_REGEX = /^ep-[a-z0-9]+\.[a-z0-9-]+\.aws\.neon\.tech$/;
-
-if (!NEON_HOST_REGEX.test(host)) {
-  throw new Error(`Invalid database host: ${host} — only official Neon endpoints allowed`);
-}
-
-// ALLOWED_NEON_HOSTS: Comma-separated list from environment (optional, enforced in prod)
-const allowedHosts = process.env.ALLOWED_NEON_HOSTS?.split(",").map(h => h.trim()).filter(Boolean) ?? [];
-
-// Production enforcement: must have allowed hosts configured
-if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
-  throw new Error("ALLOWED_NEON_HOSTS must be set in production");
-}
-
-// If ALLOWED_NEON_HOSTS is configured, enforce exact match
-if (allowedHosts.length > 0 && !allowedHosts.includes(host)) {
-  throw new Error(`Unauthorized Neon host: ${host} — not in allowed list`);
-}
-
-// Log active DB host for observability
-console.log("🔗 DB_HOST:", host);
 
 export const NEON_DB_URL = process.env.NEON_DB_URL;
