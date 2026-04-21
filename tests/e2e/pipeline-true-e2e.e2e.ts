@@ -1,27 +1,18 @@
 /**
-<<<<<<< HEAD
- * TRUE E2E Pipeline Test - API + Worker Only
-=======
  * TRUE E2E Pipeline Test - REAL System Execution
->>>>>>> origin/feature/backend-foundation-sprint-0.1
- * 
+ *
  * THIS TEST USES ZERO HACKS:
  * - NO direct DB inserts (validation.proofs, rewards.rewards, etc.)
  * - NO direct event inserts (INSERT INTO events.events)
-<<<<<<< HEAD
- * - NO direct consumer calls
-=======
  * - NO direct consumer calls (processRewardGranted, etc.)
->>>>>>> origin/feature/backend-foundation-sprint-0.1
  * - NO inlined business logic
- * 
+ *
  * ONLY REAL SYSTEM:
  * - HTTP API call (POST /proofs)
-<<<<<<< HEAD
  * - Real worker process (spawned)
  * - Real event processing (transactional outbox)
  * - Real ticket creation (via worker consumer)
- * 
+ *
  * Execution flow:
  * 1. Start API server (spawn node apps/api/dist/server/index.js)
  * 2. Start worker (spawn node apps/worker/dist/index.js)
@@ -30,11 +21,11 @@
  * 5. Test verifies exactly 1 ticket exists
  * 6. Call POST /proofs again -> still 1 ticket (idempotent)
  * 7. Send 2 parallel requests -> still 1 ticket (concurrent safe)
- * 
+ *
  * Usage:
  *   npm run build
  *   npx ts-node tests/e2e/pipeline-true-e2e.e2e.ts
- * 
+ *
  * Prerequisite: Database running, migrations applied, dist built
  */
 
@@ -1212,12 +1203,10 @@ class TrueE2ETest {
     } finally {
       await this.stopServer();
       await this.pool.end();
->>>>>>> origin/feature/backend-foundation-sprint-0.1
     }
   }
 }
 
-<<<<<<< HEAD
 // ============================================================================
 // Main
 // ============================================================================
@@ -1227,8 +1216,3 @@ test.run().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
-=======
-// Run the test
-const test = new TrueE2ETest();
-test.run();
->>>>>>> origin/feature/backend-foundation-sprint-0.1

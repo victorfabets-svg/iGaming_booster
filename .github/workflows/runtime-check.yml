@@ -22,6 +22,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check merge conflicts
+        run: |
+          echo "Checking for merge conflict markers..."
+          if grep -rn "<<<<<<< HEAD" . --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules"; then
+            echo "❌ Merge conflict markers found"
+            exit 1
+          fi
+          echo "✅ No merge conflict markers found"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
