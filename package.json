@@ -16,11 +16,6 @@
     "test:e2e:process": "ts-node --esm tests/e2e/pipeline-process-e2e.e2e.ts"
   },
   "devDependencies": {
-    "@types/pg": "^8.20.0",
-    "esbuild": "^0.28.0",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.20.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "~5.4.0"
   }
 }
