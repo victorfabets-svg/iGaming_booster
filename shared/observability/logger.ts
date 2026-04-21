@@ -83,30 +83,48 @@ class Logger {
     }
   }
 
-  debug(event: string, domain: string, message: string, userId?: string, metadata?: LogMetadata): void {
+  debug(event?: string, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      const log = this.formatLog(LogLevel.DEBUG, event, domain, message, userId, metadata);
+      const log = this.formatLog(LogLevel.DEBUG, event || 'unknown', domain || 'app', message || event || '', userId, metadata);
       this.output(log);
     }
   }
 
-  info(event: string, domain: string, message: string, userId?: string, metadata?: LogMetadata): void {
+  info(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
+    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
+    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
+    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    
     if (this.shouldLog(LogLevel.INFO)) {
-      const log = this.formatLog(LogLevel.INFO, event, domain, message, userId, metadata);
+      const log = this.formatLog(LogLevel.INFO, eventStr || 'unknown', domainStr, msgStr, uid, meta);
       this.output(log);
     }
   }
 
-  warn(event: string, domain: string, message: string, userId?: string, metadata?: LogMetadata): void {
+  warn(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
+    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
+    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
+    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    
     if (this.shouldLog(LogLevel.WARN)) {
-      const log = this.formatLog(LogLevel.WARN, event, domain, message, userId, metadata);
+      const log = this.formatLog(LogLevel.WARN, eventStr || 'unknown', domainStr, msgStr, uid, meta);
       this.output(log);
     }
   }
 
-  error(event: string, domain: string, message: string, userId?: string, metadata?: LogMetadata): void {
+  error(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
+    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
+    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
+    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    
     if (this.shouldLog(LogLevel.ERROR)) {
-      const log = this.formatLog(LogLevel.ERROR, event, domain, message, userId, metadata);
+      const log = this.formatLog(LogLevel.ERROR, eventStr || 'unknown', domainStr, msgStr, uid, meta);
       this.output(log);
     }
   }

@@ -1,7 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageService } from './StorageService';
-import { config } from 'shared/config/env';
 
 /**
  * R2 Storage Configuration
@@ -15,25 +14,12 @@ interface R2StorageConfig {
 }
 
 function getR2Config(): R2StorageConfig {
-  const { storage } = config;
-  
-  // If no endpoint is configured, return empty config
-  if (!storage.r2Endpoint) {
-    return {
-      endpoint: '',
-      accessKeyId: '',
-      secretAccessKey: '',
-      bucket: '',
-      region: 'auto',
-    };
-  }
-  
   return {
-    endpoint: storage.r2Endpoint,
-    accessKeyId: storage.r2AccessKeyId,
-    secretAccessKey: storage.r2SecretAccessKey,
-    bucket: storage.r2Bucket,
-    region: storage.r2Region,
+    endpoint: process.env.R2_ENDPOINT || '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    bucket: process.env.R2_BUCKET || 'igamingbooster',
+    region: process.env.R2_REGION || 'auto',
   };
 }
 
@@ -70,14 +56,6 @@ export class R2StorageAdapter implements StorageService {
    * @param contentType - The MIME type of the file
    */
   async upload(file: Buffer, path: string, contentType: string): Promise<{ key: string }> {
-    const r2Config = getR2Config();
-    
-    // Skip upload if R2 is not configured (CI/local without storage)
-    if (!r2Config.endpoint) {
-      console.log('[R2] Storage not configured - skipping upload, using mock path:', path);
-      return { key: path };
-    }
-    
     try {
       const command = new PutObjectCommand({
         Bucket: this.bucket,
@@ -105,15 +83,9 @@ export class R2StorageAdapter implements StorageService {
    * Get the public URL for an uploaded file
    */
   getPublicUrl(path: string): string {
-    const r2Config = getR2Config();
-    
-    // Return placeholder URL if R2 is not configured
-    if (!r2Config.endpoint) {
-      return `http://localhost:3000/storage/${path}`;
-    }
-    
+    const config = getR2Config();
     // R2 public URL format
-    return `${r2Config.endpoint}/${this.bucket}/${path}`;
+    return `${config.endpoint}/${this.bucket}/${path}`;
   }
 
   /**

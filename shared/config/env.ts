@@ -3,11 +3,6 @@
  * Manages environment-specific settings
  */
 
-// TASK 2 — STRICT ENV CHECK (without freeze - runtime libraries modify process.env)
-if (!process.env.NEON_DB_URL) {
-  throw new Error("NEON_DB_URL missing");
-}
-
 export type Environment = 'development' | 'production' | 'test';
 
 export interface AppConfig {
@@ -28,8 +23,6 @@ export interface AppConfig {
   featureFlags: {
     ENABLE_REWARDS: boolean;
     ENABLE_VALIDATION: boolean;
-    ENABLE_AUTOMATIC_APPROVAL: boolean;
-    ENABLE_RAFFLE: boolean;
   };
   
   // Limits
@@ -55,20 +48,6 @@ export interface AppConfig {
     costPerTicket: number;
     revenuePerTicket: number;
   };
-  
-  // Storage (R2) settings
-  storage: {
-    r2Endpoint: string;
-    r2AccessKeyId: string;
-    r2SecretAccessKey: string;
-    r2Bucket: string;
-    r2Region: string;
-  };
-  
-  // JWT settings
-  jwt: {
-    secret: string;
-  };
 }
 
 function getEnvironment(): Environment {
@@ -81,11 +60,10 @@ function getEnvironment(): Environment {
 function getFeatureFlags(): AppConfig['featureFlags'] {
   // SAFE DEFAULTS: All production features disabled until explicitly enabled
   // Only ENABLE_REWARDS and ENABLE_VALIDATION default to true (core functionality)
+  // NOTE: ENABLE_AUTOMATIC_APPROVAL removed - thresholds always from config
   return {
     ENABLE_REWARDS: process.env.ENABLE_REWARDS !== 'false',
     ENABLE_VALIDATION: process.env.ENABLE_VALIDATION !== 'false',
-    ENABLE_AUTOMATIC_APPROVAL: process.env.ENABLE_AUTOMATIC_APPROVAL === 'true', // Disabled by default
-    ENABLE_RAFFLE: process.env.ENABLE_RAFFLE === 'true', // Disabled by default
   };
 }
 
@@ -117,22 +95,6 @@ function getRewardsConfig(): AppConfig['rewards'] {
   };
 }
 
-function getStorageConfig(): AppConfig['storage'] {
-  return {
-    r2Endpoint: process.env.R2_ENDPOINT || '',
-    r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-    r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    r2Bucket: process.env.R2_BUCKET || 'igamingbooster',
-    r2Region: process.env.R2_REGION || 'auto',
-  };
-}
-
-function getJwtConfig(): AppConfig['jwt'] {
-  return {
-    secret: process.env.JWT_SECRET || 'dev-secret-change-in-production',
-  };
-}
-
 // Singleton config instance
 class ConfigManager {
   private static instance: AppConfig;
@@ -151,7 +113,7 @@ class ConfigManager {
         isDevelopment: env === 'development',
         isTest: env === 'test',
         
-        databaseUrl: process.env.NEON_DB_URL || '',
+        databaseUrl: process.env.NEON_DB_URL,
         
         apiPort: parseInt(process.env.PORT || '3000', 10),
         apiHost: process.env.API_HOST || '0.0.0.0',
@@ -165,10 +127,6 @@ class ConfigManager {
         raffle: getRaffleConfig(),
         
         rewards: getRewardsConfig(),
-        
-        storage: getStorageConfig(),
-        
-        jwt: getJwtConfig(),
       };
 
       this.initialized = true;
@@ -205,3 +163,52 @@ export const environment = config.environment;
 export const isProduction = config.isProduction;
 export const isDevelopment = config.isDevelopment;
 export const featureFlags = config.featureFlags;
+
+// NEON database URL - Single Source of Truth (SSOT)
+
+// FAIL FAST: Supabase is forbidden
+if (process.env.SUPABASE_DB_URL) {
+  throw new Error("SUPABASE_DB_URL is forbidden - use NEON_DB_URL only");
+}
+
+if (!process.env.NEON_DB_URL) {
+  throw new Error("NEON_DB_URL is required");
+}
+
+// SSOT ENFORCEMENT: Strict Neon host pattern validation
+let host: string;
+
+try {
+  host = new URL(process.env.NEON_DB_URL).hostname;
+} catch {
+  throw new Error("Invalid NEON_DB_URL format");
+}
+
+/**
+ * Strict Neon pattern for validation:
+ * - Must match: ep-<id>.<region>.aws.neon.tech
+ * - Prevents: fake.neon.tech, subdomain bypass, etc.
+ */
+const NEON_HOST_REGEX = /^ep-[a-z0-9]+\.[a-z0-9-]+\.aws\.neon\.tech$/;
+
+if (!NEON_HOST_REGEX.test(host)) {
+  throw new Error(`Invalid database host: ${host} — only official Neon endpoints allowed`);
+}
+
+// ALLOWED_NEON_HOSTS: Comma-separated list from environment (optional, enforced in prod)
+const allowedHosts = process.env.ALLOWED_NEON_HOSTS?.split(",").map(h => h.trim()).filter(Boolean) ?? [];
+
+// Production enforcement: must have allowed hosts configured
+if (process.env.NODE_ENV === "production" && allowedHosts.length === 0) {
+  throw new Error("ALLOWED_NEON_HOSTS must be set in production");
+}
+
+// If ALLOWED_NEON_HOSTS is configured, enforce exact match
+if (allowedHosts.length > 0 && !allowedHosts.includes(host)) {
+  throw new Error(`Unauthorized Neon host: ${host} — not in allowed list`);
+}
+
+// Log active DB host for observability
+console.log("🔗 DB_HOST:", host);
+
+export const NEON_DB_URL = process.env.NEON_DB_URL;

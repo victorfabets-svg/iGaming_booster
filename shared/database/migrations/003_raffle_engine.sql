@@ -5,6 +5,6 @@ raffle_id UUID NOT NULL REFERENCES raffles.raffles(id),
 seed TEXT NOT NULL,
 algorithm_version TEXT NOT NULL DEFAULT 'v1',
 winner_user_id UUID REFERENCES identity.users(id),
-winner_ticket_id UUID REFERENCES rewards.tickets(id),
+winner_ticket_id UUID REFERENCES raffles.tickets(id),
 UNIQUE (raffle_id)
 );

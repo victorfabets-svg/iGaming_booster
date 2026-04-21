@@ -5,22 +5,34 @@
   "main": "src/server/index.ts",
   "scripts": {
     "dev": "ts-node src/server/index.ts",
+<<<<<<< HEAD
     "build": "node scripts/build.js",
+=======
+    "build": "tsc",
+>>>>>>> origin/feature/backend-foundation-sprint-0.1
     "start": "node dist/apps/api/src/server/app.js",
     "migrate": "ts-node scripts/run-migrations.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1029.0",
     "@aws-sdk/s3-request-presigner": "^3.1029.0",
+<<<<<<< HEAD
     "@fastify/jwt": "^8.0.0",
+=======
+    "@fastify/jwt": "^8.0.1",
+>>>>>>> origin/feature/backend-foundation-sprint-0.1
     "@fastify/multipart": "^8.1.0",
     "fastify": "^4.25.0",
-    "pg": "^8.11.3"
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
+<<<<<<< HEAD
     "@types/pg": "^8.10.9",
     "esbuild": "^0.28.0",
+=======
+    "@types/pg": "^8.20.0",
+>>>>>>> origin/feature/backend-foundation-sprint-0.1
     "ts-node": "^10.9.2",
     "typescript": "^5.3.2"
   }

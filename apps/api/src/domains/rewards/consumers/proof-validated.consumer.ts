@@ -1,17 +1,25 @@
 import { fetchAndLockEvents, markEventProcessed, incrementRetryCount, processWithRetry, getRetryCount, Event } from '../../../../../../shared/events/event-consumer.repository';
 import { processReward } from '../../rewards/use-cases/process-reward.use-case';
-import { logger } from '../../../../../../shared/observability';
+import { logger } from '../../../../../../shared/observability/logger';
 
 const EVENT_TYPE = 'proof_validated';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
 export async function startProofValidatedConsumer(): Promise<void> {
-  logger.info('consumer_starting', 'rewards', `Starting proof validated consumer: ${EVENT_TYPE}, poll: ${POLL_INTERVAL_MS}ms, batch: ${BATCH_SIZE}`);
+  logger.info({
+    event: 'consumer_starting',
+    context: 'rewards',
+    data: { event_type: EVENT_TYPE, poll_interval_ms: POLL_INTERVAL_MS, batch_size: BATCH_SIZE }
+  });
 
   // Schema now handled by migration (009_hardening_layer.sql)
   // Fail-fast if schema missing - intentional
-  logger.info('schema_expected', 'rewards', 'Event schema expected from migration');
+  logger.info({
+    event: 'schema_expected',
+    context: 'rewards',
+    data: { message: 'Event schema expected from migration' }
+  });
 
   // Initial poll
   await pollEvents();
@@ -34,7 +42,11 @@ async function pollEvents(): Promise<void> {
       return;
     }
 
-    logger.info('events_found', 'rewards', `Found ${events.length} events for ${EVENT_TYPE}, batch_size: ${BATCH_SIZE}`);
+    logger.info({
+      event: 'events_found',
+      context: 'rewards',
+      data: { event_type: EVENT_TYPE, count: events.length, batch_size: BATCH_SIZE }
+    });
 
     for (const event of events) {
       await processEvent(event);
@@ -63,7 +75,12 @@ async function processEvent(event: Event): Promise<void> {
   const payload = event.payload as ProofValidatedPayload;
   const retryCount = await getRetryCount(eventId);
 
-  logger.info('event_processing', 'rewards', `Processing event ${eventId}, proof_id: ${payload.proof_id}, status: ${payload.status}, retry: ${retryCount}`, payload.user_id);
+  logger.info({
+    event: 'event_processing',
+    context: 'rewards',
+    data: { event_id: eventId, event_type: EVENT_TYPE, proof_id: payload.proof_id, status: payload.status, retry_count: retryCount },
+    user_id: payload.user_id
+  });
 
   // Use retry logic - increments retry_count on each failure
   // After 3 retries → goes to DLQ
@@ -76,9 +93,19 @@ async function processEvent(event: Event): Promise<void> {
   );
 
   if (success) {
-    logger.info('event_processed', 'rewards', `Event processed successfully: ${eventId}, proof_id: ${payload.proof_id}`, payload.user_id);
+    logger.info({
+      event: 'event_processed',
+      context: 'rewards',
+      data: { event_id: eventId, proof_id: payload.proof_id, status: 'success' },
+      user_id: payload.user_id
+    });
   } else {
-    logger.info('event_dlq', 'rewards', `Event sent to DLQ: ${eventId}, proof_id: ${payload.proof_id}, retry: ${retryCount}`, payload.user_id);
+    logger.info({
+      event: 'event_dlq',
+      context: 'rewards',
+      data: { event_id: eventId, proof_id: payload.proof_id, status: 'dlq', retry_count: retryCount },
+      user_id: payload.user_id
+    });
   }
 }
 

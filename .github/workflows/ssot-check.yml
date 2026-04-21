@@ -1,0 +1,110 @@
+name: SSOT Enforcement
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/**
+
+jobs:
+  ssot-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan for forbidden providers (strict)
+        run: |
+          echo "🔍 Strict scan (excluding node_modules, build, docs)..."
+
+          # Get only relevant source files
+          TARGETS=$(git ls-files \
+            'apps/**/*.ts' \
+            'shared/**/*.ts' \
+            ':!*node_modules/**' \
+            ':!*dist/**' \
+            ':!*build/**' \
+            ':!*.md' \
+            ':!*package-lock.json' \
+            ':!*yarn.lock')
+
+          # Check for supabase in source code
+          if echo "$TARGETS" | xargs grep -il "supabase" 2>/dev/null | grep -v "index.ts" > /dev/null; then
+            echo "❌ Forbidden pattern detected in application code"
+            echo "$TARGETS" | xargs grep -il "supabase" 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Block forbidden env usage in code
+        run: |
+          echo "🔍 Checking for forbidden env variables in code..."
+
+          # Check for DATABASE_URL or SUPABASE usage in code (case insensitive)
+          if git ls-files \
+            | xargs grep -Ei "process\.env\.(DATABASE_URL|SUPABASE)" 2>/dev/null; then
+            echo "❌ Forbidden env usage detected in code"
+            exit 1
+          fi
+
+      - name: Validate DB host is Neon-only
+        run: |
+          echo "🔍 Checking connection strings..."
+
+          # Get source files only
+          TARGETS=$(git ls-files 'apps/**/*.ts' 'shared/**/*.ts' | grep -v node_modules)
+
+          FAIL=0
+
+          # Find all postgres connection strings
+          CONNS=$(git ls-files | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
+
+          for url in $CONNS; do
+            host=$(echo "$url" | sed -E 's|postgres(ql)?://([^/]+).*|\1|' | sed 's/:.*//')
+            # SSOT: ONLY neon.tech allowed - no exceptions
+            if [[ -n "$host" && "$host" != *"neon.tech"* ]]; then
+              echo "❌ Invalid DB host: $host (only Neon allowed)"
+              FAIL=1
+            fi
+          done
+
+          if [[ $FAIL -eq 1 ]]; then
+            exit 1
+          fi
+
+      - name: Pass
+        run: echo "✅ SSOT check passed - only Neon allowed"
+
+      - name: Warn on unexpected DB host patterns
+        run: |
+          echo "🔎 Scanning for suspicious DB hosts..."
+          
+          CONNS=$(git ls-files | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
+          
+          SUSPICIOUS=""
+          
+          for url in $CONNS; do
+            if echo "$url" | grep -v "neon.tech" | grep -q "postgres"; then
+              SUSPICIOUS="$SUSPICIOUS $url"
+            fi
+          done
+          
+          if [[ -n "$SUSPICIOUS" ]]; then
+            echo "::warning::Potential non-Neon DB host detected: $SUSPICIOUS"
+          fi
+          
+          echo "✅ DB host pattern scan complete"
+
+      - name: Enforce ALLOWED_NEON_HOSTS for production
+        if: github.base_ref == 'main'
+        run: |
+          echo "🔍 Checking production configuration..."
+          
+          # Check if ALLOWED_NEON_HOSTS is configured in production
+          if [[ -z "$ALLOWED_NEON_HOSTS" ]]; then
+            echo "❌ ALLOWED_NEON_HOSTS not set for production deployment"
+            echo "Set ALLOWED_NEON_HOSTS secret in repository settings"
+            exit 1
+          fi
+          
+          echo "✅ Production allowlist configured"

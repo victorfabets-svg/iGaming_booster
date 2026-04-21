@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { pool, queryOne, query } from 'shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 
 export interface ExperimentAssignment {
   id: string;
@@ -20,10 +20,7 @@ const EXPERIMENTS: Record<string, ExperimentConfig> = {
     name: 'reward_tickets',
     variants: ['control', 'treatment_a', 'treatment_b'],
   },
-  validation_threshold: {
-    name: 'validation_threshold',
-    variants: ['control', 'stricter', 'lenient'],
-  },
+  // NOTE: validation_threshold experiment removed - thresholds always from config
 };
 
 // Deterministic assignment based on user ID
@@ -67,12 +64,12 @@ class ExperimentService {
 
   async assignUserToExperiment(userId: string, experimentName: string): Promise<string> {
     // Check if user already assigned
-    const existing = await queryOne<ExperimentAssignment>(
+    const existing = await db.query<ExperimentAssignment>(
       `SELECT id, user_id, experiment_name, variant, assigned_at
        FROM rewards.experiment_assignments
        WHERE user_id = $1 AND experiment_name = $2`,
       [userId, experimentName]
-    );
+    ).then(rows => rows[0] || null);
 
     if (existing) {
       return existing.variant;
@@ -89,7 +86,7 @@ class ExperimentService {
     const variant = assignVariant(userId, config.variants, config.weights);
 
     // Store assignment
-    await pool.query(
+    await getDb().query(
       `INSERT INTO rewards.experiment_assignments (user_id, experiment_name, variant)
        VALUES ($1, $2, $3)
        ON CONFLICT (user_id, experiment_name) DO NOTHING`,
@@ -100,11 +97,11 @@ class ExperimentService {
   }
 
   async getUserVariant(userId: string, experimentName: string): Promise<string | null> {
-    const assignment = await queryOne<ExperimentAssignment>(
+    const assignment = await db.query<ExperimentAssignment>(
       `SELECT variant FROM rewards.experiment_assignments
        WHERE user_id = $1 AND experiment_name = $2`,
       [userId, experimentName]
-    );
+    ).then(rows => rows[0] || null);
     
     return assignment?.variant || null;
   }
@@ -119,7 +116,7 @@ class ExperimentService {
 
   // Get variant distribution stats
   async getExperimentStats(experimentName: string): Promise<Record<string, number>> {
-    const result = await query<{ variant: string; count: string }>(
+    const result = await db.query<{ variant: string; count: string }>(
       `SELECT variant, COUNT(*) as count
        FROM rewards.experiment_assignments
        WHERE experiment_name = $1
@@ -128,7 +125,7 @@ class ExperimentService {
     );
     
     const stats: Record<string, number> = {};
-    for (const row of result) {
+    for (const row of result.rows) {
       stats[row.variant] = parseInt(row.count, 10);
     }
     return stats;

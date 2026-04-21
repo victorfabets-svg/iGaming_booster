@@ -1,4 +1,4 @@
-import { pool, query, queryOne, execute } from 'shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
 
 export interface Proof {
@@ -16,7 +16,7 @@ export interface CreateProofInput {
 }
 
 export async function createProof(input: CreateProofInput): Promise<Proof> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO validation.proofs (user_id, file_url, hash)
      VALUES ($1, $2, $3)
      RETURNING id, user_id, file_url, hash, submitted_at`,
@@ -43,29 +43,30 @@ export async function createProofInTransaction(
 }
 
 export async function findProofByHash(hash: string): Promise<Proof | null> {
-  return await queryOne<Proof>(
+  return await db.query<Proof>(
     `SELECT id, user_id, file_url, hash, submitted_at 
      FROM validation.proofs 
      WHERE hash = $1`,
     [hash]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function findProofById(id: string): Promise<Proof | null> {
-  return await queryOne<Proof>(
+  return await db.query<Proof>(
     `SELECT id, user_id, file_url, hash, submitted_at 
      FROM validation.proofs 
      WHERE id = $1`,
     [id]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function findProofsByUserId(userId: string): Promise<Proof[]> {
-  return await query<Proof>(
+  const result = await db.query<Proof>(
     `SELECT id, user_id, file_url, hash, submitted_at 
      FROM validation.proofs 
      WHERE user_id = $1 
      ORDER BY submitted_at DESC`,
     [userId]
   );
+  return result.rows;
 }

@@ -1,8 +1,8 @@
 import * as crypto from 'crypto';
 import { createProofInTransaction, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
 import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
-import { rateLimitService } from '../../fraud/services/rate-limit.service';
-import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
+// EVENT-DRIVEN: rate limit and behavior check moved to fraud consumer
+// Removed: rateLimitService, behaviorAnalysisService
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordProofSubmission } from '../../../../../../shared/observability/metrics.service';
 
@@ -34,7 +34,7 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     recordProofSubmission('rate_limited');
     logger.warn('rate_limit_exceeded', 'validation', rateLimitCheck.reason || 'Rate limit exceeded', input.user_id);
     
-    // Emit rate_limit_exceeded domain event for observability
+    // Emit rate_limit_exceeded event (transactional)
     await withTransactionalOutbox(async (client) => {
       await insertEventInTransaction(
         client,

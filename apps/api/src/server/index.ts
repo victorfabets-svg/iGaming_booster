@@ -1,23 +1,47 @@
+// ============================================================
+// SECURITY HARDENING - Targeted Provider Blocklist
+// ============================================================
+
+// Block forbidden database providers (not a full wipe)
+const FORBIDDEN_PATTERNS = [
+  "supabase",
+  "SUPABASE",
+  "database_url",
+  "DATABASE_URL"
+];
+
+const removedKeys: string[] = [];
+for (const key of Object.keys(process.env)) {
+  if (FORBIDDEN_PATTERNS.some(p => key.toLowerCase().includes(p.toLowerCase()))) {
+    delete process.env[key];
+    removedKeys.push(key);
+  }
+}
+
+if (removedKeys.length > 0) {
+  console.log('🛡️ BLOCKED FORBIDDEN VARS:', removedKeys.join(', '));
+}
+
+// ============================================================
+
 import { buildApp } from './app';
-import { config } from '../../../../shared/config/env';
+import { config, NEON_DB_URL } from '../../../../shared/config/env';
 import { connectWithRetry, getDb } from '../../../../shared/database/connection';
 import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 
+// Structured DB audit log (sanitized - no credentials)
+const dbUrlParsed = new URL(NEON_DB_URL);
+console.log(JSON.stringify({
+  event: "db_connection_config",
+  host: dbUrlParsed.hostname,
+  port: dbUrlParsed.port || "5432",
+  ssl: dbUrlParsed.searchParams?.get("sslmode") ?? null,
+  env: process.env.NODE_ENV,
+  allowlist: process.env.ALLOWED_NEON_HOSTS ?? null,
+  timestamp: new Date().toISOString()
+}));
+
 async function start() {
-  // Validate environment variables
-  const mode = process.env.RUNTIME_ENV; // 'ci' | 'preaudit'
-
-  if (!process.env.NEON_DB_URL) {
-    throw new Error("NEON_DB_URL missing");
-  }
-
-  if (
-    mode === 'preaudit' &&
-    process.env.NEON_DB_URL.includes("localhost")
-  ) {
-    throw new Error("INVALID DB: localhost not allowed in preaudit");
-  }
-
   // Connect to database - MUST succeed or app fails
   try {
     console.log('[DB] Attempting to connect to database...');
@@ -34,18 +58,10 @@ async function start() {
   const app = buildApp();
 
   const port = config.apiPort;
-  const host = config.apiHost;
-
-  // FAIL FAST: Verify port is defined
-  if (!port) {
-    throw new Error("PORT not defined");
-  }
-
-  console.log(`Starting server on ${host}:${port}...`);
 
   try {
-    await app.listen({ port, host });
-    console.log(`Server running on ${host}:${port}`);
+    await app.listen({ port });
+    console.log(`Server running on port ${port}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

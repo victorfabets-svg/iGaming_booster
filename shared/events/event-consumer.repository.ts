@@ -1,4 +1,4 @@
-import { db, query } from '../database/connection';
+import { db } from '../database/connection';
 import { Event } from './types';
 export { Event };
 
@@ -14,7 +14,7 @@ export { Event };
  * If tables/columns are missing, this will fail fast - which is correct behavior.
  */
 export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
-  const result = await query<Event>(
+  const result = await db.query<Event>(
     `SELECT id, event_type, version, producer, correlation_id, payload, 
             retry_count, processed, timestamp, locked_at
      FROM events.events
@@ -26,7 +26,7 @@ export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
     [limit]
   );
 
-  return result;
+  return result.rows;
 }
 
 /**
@@ -47,7 +47,7 @@ export async function lockEvent(eventId: string): Promise<void> {
  * These events were likely abandoned by crashed consumers.
  */
 export async function recoverStuckEvents(): Promise<number> {
-  const result = await query<{ id: string }>(
+  const result = await db.query<{ id: string }>(
     `UPDATE events.events 
      SET locked_at = NULL
      WHERE locked_at IS NOT NULL 
@@ -55,7 +55,7 @@ export async function recoverStuckEvents(): Promise<number> {
      RETURNING id`
   );
   
-  const count = result.length;
+  const count = result.rows.length;
   if (count > 0) {
     console.log(`[RECOVERY] Released ${count} stuck events`);
   }
@@ -129,11 +129,11 @@ export async function incrementRetryCount(eventId: string): Promise<void> {
  * Get current retry count for an event.
  */
 export async function getRetryCount(eventId: string): Promise<number> {
-  const result = await query<{ retry_count: number }>(
+  const result = await db.query<{ retry_count: number }>(
     `SELECT retry_count FROM events.events WHERE id = $1`,
     [eventId]
   );
-  return result[0]?.retry_count ?? 0;
+  return result.rows[0]?.retry_count ?? 0;
 }
 
 // ============================================================================
@@ -166,7 +166,7 @@ export async function isInDlq(eventId: string): Promise<boolean> {
     `SELECT 1 FROM events.dlq_events WHERE event_id = $1`,
     [eventId]
   );
-  return result.length > 0;
+  return result.rows.length > 0;
 }
 
 /**
@@ -179,7 +179,7 @@ export async function getDlqEvents(limit: number = 100): Promise<any[]> {
      LIMIT $1`,
     [limit]
   );
-  return result;
+  return result.rows;
 }
 
 /**
@@ -264,11 +264,11 @@ export async function fetchUnprocessedEvents(limit: number = 100): Promise<Event
 
 export async function acquireEventLock(eventId: string): Promise<boolean> {
   // Row locking handles this - just check if already processed
-  const result = await query<{ id: string }>(
+  const result = await db.query<{ id: string }>(
     `SELECT id FROM events.events WHERE id = $1 AND processed = TRUE`,
     [eventId]
   );
-  return result.length === 0;
+  return result.rows.length === 0;
 }
 
 export async function ensureDlqTable(): Promise<void> {
@@ -298,19 +298,10 @@ export function getBackoffDelayLegacy(retryAttempt: number): number {
 /**
  * Check if event was already processed (idempotency check).
  * Returns true if event exists in processed_events table.
- * 
- * @param eventId - The event ID to check
- * @param consumerName - The consumer name for multi-consumer idempotency
- * @param client - Database client for transaction support. MUST be provided for transactional consistency.
  */
-export async function isEventProcessed(
-  eventId: string,
-  consumerName: string,
-  client: any
-): Promise<boolean> {
-  const result = await client.query(
-    `SELECT 1 FROM events.processed_events 
-     WHERE event_id = $1 AND consumer_name = $2`,
+export async function isEventProcessed(eventId: string, consumerName: string = 'default_consumer'): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 FROM events.processed_events WHERE event_id = $1 AND consumer_name = $2`,
     [eventId, consumerName]
   );
   return result.rows.length > 0;
@@ -319,19 +310,10 @@ export async function isEventProcessed(
 /**
  * Mark event as processed in the idempotency table.
  * Should be called AFTER successful processing within a transaction.
- * 
- * @param eventId - The event ID to mark as processed
- * @param consumerName - The consumer name for multi-consumer idempotency
- * @param client - Database client for transaction support. MUST be provided for transactional consistency.
  */
-export async function markEventAsProcessed(
-  eventId: string,
-  consumerName: string,
-  client: any
-): Promise<void> {
-  await client.query(
-    `INSERT INTO events.processed_events (event_id, consumer_name) 
-     VALUES ($1, $2)
+export async function markEventAsProcessed(eventId: string, consumerName: string = 'default_consumer'): Promise<void> {
+  await db.query(
+    `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)
      ON CONFLICT (event_id, consumer_name) DO NOTHING`,
     [eventId, consumerName]
   );
@@ -342,34 +324,29 @@ export async function markEventAsProcessed(
  * - Checks if already processed (skip if yes)
  * - Wraps processing + idempotency record in single transaction
  * 
- * @param eventId - The event ID to process
- * @param consumerName - The consumer name for multi-consumer idempotency
- * @param processFn - The processing function to execute
- * 
  * Returns: { success: boolean, skipped: boolean }
  */
 export async function processEventExactlyOnce(
   eventId: string,
-  consumerName: string,
-  processFn: () => Promise<void>
+  processFn: () => Promise<void>,
+  consumerName: string = 'default_consumer'
 ): Promise<{ success: boolean; skipped: boolean }> {
-  // Step 1: Connect and begin transaction for idempotency check
+  // Step 1: Check if already processed (skip duplicate)
+  const alreadyProcessed = await isEventProcessed(eventId, consumerName);
+  if (alreadyProcessed) {
+    console.log(`⏭️  Event ${eventId} already processed, skipping`);
+    return { success: true, skipped: true };
+  }
+
+  // Step 2: Process event within transaction with idempotency record
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-
-    // Step 2: Check if already processed (skip duplicate) - using client for transactional consistency
-    const alreadyProcessed = await isEventProcessed(eventId, consumerName, client);
-    if (alreadyProcessed) {
-      await client.query('ROLLBACK');
-      console.log(`⏭️  Event ${eventId} already processed, skipping`);
-      return { success: true, skipped: true };
-    }
     
-    // Step 3: Execute the business logic within same transaction
+    // Execute the business logic
     await processFn();
     
-    // Step 4: Record successful processing (idempotency key) - using same client
+    // Record successful processing (idempotency key)
     await client.query(
       `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)`,
       [eventId, consumerName]

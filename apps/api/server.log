@@ -1,0 +1,134 @@
+[DB] Attempting to connect to database...
+[DB] Failed to connect: error: password authentication failed for user "postgres"
+    at /workspace/project/iGaming_booster/apps/api/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDb (/workspace/project/iGaming_booster/shared/database/connection.ts:42:20)
+    at async connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:71:7)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5) {
+  length: 78,
+  severity: 'FATAL',
+  code: '28P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: undefined,
+  line: undefined,
+  routine: undefined
+}
+[DB] Attempt 1/5 failed: password authentication failed for user "postgres"
+[DB] Failed to connect: error: password authentication failed for user "postgres"
+    at /workspace/project/iGaming_booster/apps/api/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDb (/workspace/project/iGaming_booster/shared/database/connection.ts:42:20)
+    at async connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:71:7)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5) {
+  length: 78,
+  severity: 'FATAL',
+  code: '28P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: undefined,
+  line: undefined,
+  routine: undefined
+}
+[DB] Attempt 2/5 failed: password authentication failed for user "postgres"
+[DB] Failed to connect: error: password authentication failed for user "postgres"
+    at /workspace/project/iGaming_booster/apps/api/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDb (/workspace/project/iGaming_booster/shared/database/connection.ts:42:20)
+    at async connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:71:7)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5) {
+  length: 78,
+  severity: 'FATAL',
+  code: '28P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: undefined,
+  line: undefined,
+  routine: undefined
+}
+[DB] Attempt 3/5 failed: password authentication failed for user "postgres"
+[DB] Failed to connect: error: password authentication failed for user "postgres"
+    at /workspace/project/iGaming_booster/apps/api/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDb (/workspace/project/iGaming_booster/shared/database/connection.ts:42:20)
+    at async connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:71:7)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5) {
+  length: 78,
+  severity: 'FATAL',
+  code: '28P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: undefined,
+  line: undefined,
+  routine: undefined
+}
+[DB] Attempt 4/5 failed: password authentication failed for user "postgres"
+[DB] Failed to connect: error: password authentication failed for user "postgres"
+    at /workspace/project/iGaming_booster/apps/api/node_modules/pg-pool/index.js:45:11
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDb (/workspace/project/iGaming_booster/shared/database/connection.ts:42:20)
+    at async connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:71:7)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5) {
+  length: 78,
+  severity: 'FATAL',
+  code: '28P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: undefined,
+  line: undefined,
+  routine: undefined
+}
+[DB] Attempt 5/5 failed: password authentication failed for user "postgres"
+[DB] Warning: Database connection failed, continuing anyway: Error: [DB] Failed after 5 attempts: password authentication failed for user "postgres"
+    at connectWithRetry (/workspace/project/iGaming_booster/shared/database/connection.ts:84:9)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async start (/workspace/project/iGaming_booster/apps/api/src/server/index.ts:9:5)
+{"level":30,"time":1776095067716,"pid":1480,"hostname":"runtime-mxpulessqdjrgbvg-5f5f6b4797-mbgs6","msg":"Server listening at http://127.0.0.1:3000"}
+Server running on port 3000
+{"level":30,"time":1776095086830,"pid":1480,"hostname":"runtime-mxpulessqdjrgbvg-5f5f6b4797-mbgs6","reqId":"req-1","req":{"method":"GET","url":"/health","hostname":"127.0.0.1:3000","remoteAddress":"127.0.0.1","remotePort":59632},"msg":"incoming request"}
+{"level":30,"time":1776095087469,"pid":1480,"hostname":"runtime-mxpulessqdjrgbvg-5f5f6b4797-mbgs6","reqId":"req-1","res":{"statusCode":200},"responseTime":638.2235799999908,"msg":"request completed"}

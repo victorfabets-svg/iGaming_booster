@@ -1,5 +1,6 @@
 import { findProofById, findProofsByUserId } from '../../validation/repositories/proof.repository';
 import { findRiskSignalsByUserId, countRiskSignalsByUser, createRiskSignal } from '../repositories/risk-signal.repository';
+import { db } from '@shared/database/connection';
 
 export interface BehaviorAnalysisResult {
   is_suspicious: boolean;
@@ -111,9 +112,7 @@ export class BehaviorAnalysisService {
   }
 
   private async getUserRecentProofs(userId: string, since: Date): Promise<{ id: string; file_url: string; submitted_at: Date }[]> {
-    const { query } = await import('shared/database/connection');
-    
-    const result = await query<{ id: string; file_url: string; submitted_at: Date }>(
+    const result = await db.query<{ id: string; file_url: string; submitted_at: Date }>(
       `SELECT id, file_url, submitted_at 
        FROM validation.proofs 
        WHERE user_id = $1 AND submitted_at >= $2
@@ -121,7 +120,7 @@ export class BehaviorAnalysisService {
       [userId, since]
     );
     
-    return result;
+    return result.rows;
   }
 
   async flagFraudDetection(userId: string, proofId: string, reason: string): Promise<void> {

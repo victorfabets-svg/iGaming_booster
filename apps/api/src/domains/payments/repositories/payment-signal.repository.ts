@@ -1,4 +1,4 @@
-import { pool, query } from 'shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 
 export interface PaymentSignal {
   id: string;
@@ -19,7 +19,7 @@ export interface CreatePaymentSignalInput {
 }
 
 export async function createPaymentSignal(input: CreatePaymentSignalInput): Promise<PaymentSignal> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO payments.payment_signals (proof_id, type, value, confidence, metadata)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, proof_id, type, value, confidence, metadata, created_at`,
@@ -58,16 +58,17 @@ export async function createPaymentSignalWithClient(
 }
 
 export async function findPaymentSignalsByProofId(proofId: string): Promise<PaymentSignal[]> {
-  return await query<PaymentSignal>(
+  const result = await db.query<PaymentSignal>(
     `SELECT id, proof_id, type, value, confidence, metadata, created_at
      FROM payments.payment_signals
      WHERE proof_id = $1`,
     [proofId]
   );
+  return result.rows;
 }
 
 export async function findPaymentSignalByProofAndType(proofId: string, type: string): Promise<PaymentSignal | null> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT id, proof_id, type, value, confidence, metadata, created_at
      FROM payments.payment_signals
      WHERE proof_id = $1 AND type = $2`,
@@ -77,7 +78,7 @@ export async function findPaymentSignalByProofAndType(proofId: string, type: str
 }
 
 export async function countPaymentSignalsByProof(proofId: string): Promise<number> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT COUNT(*) as count FROM payments.payment_signals WHERE proof_id = $1`,
     [proofId]
   );

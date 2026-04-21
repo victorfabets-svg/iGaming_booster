@@ -1,9 +1,9 @@
-import { findProofById as findProofByIdInValidation } from '../../validation/repositories/proof.repository';
 import { findRewardByProofId, createRewardTx } from '../repositories/reward.repository';
 import { findBenefitRuleByAmount, findDynamicBenefitRule } from '../repositories/benefit-rule.repository';
-import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction, queueEventInTransaction } from '../../../../../../shared/events/transactional-outbox';
-import { rateLimitService } from '../../fraud/services/rate-limit.service';
-import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
+import { withTransactionalOutbox, insertAuditInTransaction, insertEventInTransaction } from '@shared/events/transactional-outbox';
+import { queueEventInTransaction } from '@shared/events';
+// EVENT-DRIVEN: rate limit and behavior check moved to fraud consumer
+// Removed: rateLimitService, behaviorAnalysisService
 import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
 import { recordReward } from '../../../../../../shared/observability/metrics.service';
 import { isRewardsEnabled } from '../../../../../../shared/config/feature-flags';
@@ -20,7 +20,11 @@ export interface ProofValidatedEventPayload {
 }
 
 export async function processReward(payload: ProofValidatedEventPayload): Promise<void> {
-  logger.info('reward_processing_start', 'rewards', `Processing reward for proof: ${payload.proof_id}, user: ${payload.user_id}, status: ${payload.status}, confidence: ${payload.confidence_score}`, payload.user_id);
+  logger.info({
+    event: 'reward_processing_start',
+    context: 'rewards',
+    data: { proof_id: payload.proof_id, user_id: payload.user_id, validation_status: payload.status, confidence_score: payload.confidence_score }
+  });
 
   // Check if rewards are enabled
   if (!isRewardsEnabled()) {
@@ -35,14 +39,22 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
 
   // Step 1: Check if validation is approved
   if (payload.status !== 'approved') {
-    logger.info('validation_not_approved', 'rewards', `Validation not approved for proof: ${payload.proof_id}, status: ${payload.status}`, payload.user_id);
+    logger.info({
+      event: 'validation_not_approved',
+      context: 'rewards',
+      data: { proof_id: payload.proof_id, status: payload.status }
+    });
     return;
   }
 
   // Step 2: Check if reward already exists (idempotency)
   const existingReward = await findRewardByProofId(payload.proof_id);
   if (existingReward) {
-    logger.info('reward_duplicate_detected', 'rewards', `Reward already exists for proof: ${payload.proof_id}, reward_id: ${existingReward.id}`, payload.user_id);
+    logger.info({
+      event: 'reward_duplicate_detected',
+      context: 'rewards',
+      data: { proof_id: payload.proof_id, reward_id: existingReward.id }
+    });
     return;
   }
 
@@ -50,7 +62,6 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const rewardLimitCheck = await rateLimitService.checkRewardLimit(payload.user_id);
   if (!rewardLimitCheck.allowed) {
     logger.warn('rate_limit_exceeded', 'rewards', 'Reward rate limit exceeded', payload.user_id, { proof_id: payload.proof_id });
-    // Emit fraud_flag_detected domain event for fraud detection
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
@@ -77,7 +88,6 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       risk_score_modifier: behaviorCheck.risk_score_modifier
     });
     
-    // Emit fraud_flag_detected domain event for fraud detection
     await withTransactionalOutbox(async (txnId) => {
       queueEventInTransaction(txnId, 'fraud_flag_detected', {
         user_id: payload.user_id,
@@ -89,11 +99,9 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     });
   }
 
-  // Step 5: Get proof details for amount
-  const proof = await findProofByIdInValidation(payload.proof_id);
-  if (!proof) {
-    throw new Error(`Proof not found: ${payload.proof_id}`);
-  }
+  // Step 5: Proof already validated and passed via event payload
+  // NO CROSS-DOMAIN CALLS - proof validated by validation domain before emitting event
+  // Event payload contains: proof_id, user_id, file_url, submitted_at, validation_id, status, confidence_score
 
   // Check risk first - if high risk, don't create reward
   if (!shouldGrantReward) {
@@ -154,6 +162,12 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   const REWARD_VALUE = 10;
   const REWARD_TYPE = 'approval';
 
+  // Step 7a: Get active raffle BEFORE transaction for ticket creation
+  // FIX: Include raffle_id in event - required for reward→ticket pipeline
+  const { getActiveRaffle } = await import('../../raffles/application/get-active-raffle');
+  const activeRaffle = await getActiveRaffle(new Date());
+  const raffleIdForTicket = activeRaffle?.id || null;
+
   // TRANSACTIONAL OUTBOX: reward + event in SAME transaction
   // This guarantees atomicity: if reward exists, event also exists
   const reward = await withTransactionalOutbox(async (client) => {
@@ -166,6 +180,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
     }, client);
 
     // Step 2: Insert event in outbox (same transaction - not published yet)
+    // FIX: Include raffle_id in event - required for ticket creation pipeline
     await insertEventInTransaction(
       client,
       'reward_granted',
@@ -175,6 +190,7 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
         user_id: payload.user_id,
         reward_type: createdReward.reward_type,
         value: createdReward.value,
+        raffle_id: raffleIdForTicket,
       },
       'rewards'
     );
@@ -194,7 +210,11 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
       }
     );
 
-    logger.info('reward_created', 'rewards', `Reward created: ${createdReward.id}, proof: ${payload.proof_id}, user: ${payload.user_id}, type: ${createdReward.reward_type}, value: ${createdReward.value}`, payload.user_id);
+    logger.info({
+      event: 'reward_created',
+      context: 'rewards',
+      data: { reward_id: createdReward.id, proof_id: payload.proof_id, user_id: payload.user_id, reward_type: createdReward.reward_type, value: createdReward.value }
+    });
     return createdReward;
   });
   // Note: Only reward_granted event - reward_created is NOT part of contract
@@ -212,5 +232,9 @@ export async function processReward(payload: ProofValidatedEventPayload): Promis
   // Record reward in rate limit (outside transaction)
   await rateLimitService.recordRewardGranted(payload.user_id);
 
-  logger.info('reward_processing_completed', 'rewards', `Reward processing completed for proof: ${payload.proof_id}, reward_id: ${reward.id}`, payload.user_id);
+  logger.info({
+    event: 'reward_processing_completed',
+    context: 'rewards',
+    data: { proof_id: payload.proof_id, reward_id: reward.id }
+  });
 }

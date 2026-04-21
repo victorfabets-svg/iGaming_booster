@@ -1,4 +1,4 @@
-import { pool, queryOne, query } from 'shared/database/connection';
+import { getDb, db } from '@shared/database/connection';
 
 export interface BenefitRule {
   id: string;
@@ -12,29 +12,29 @@ export interface BenefitRule {
 }
 
 export async function findBenefitRuleByAmount(amount: number): Promise<BenefitRule | null> {
-  return await queryOne<BenefitRule>(
+  return await db.query<BenefitRule>(
     `SELECT id, min_amount, numbers_generated, access_days, version, risk_multiplier, max_per_user, dynamic_flag
      FROM rewards.benefit_rules
      WHERE min_amount <= $1
      ORDER BY min_amount DESC
      LIMIT 1`,
     [amount]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function findDynamicBenefitRule(amount: number): Promise<BenefitRule | null> {
-  return await queryOne<BenefitRule>(
+  return await db.query<BenefitRule>(
     `SELECT id, min_amount, numbers_generated, access_days, version, risk_multiplier, max_per_user, dynamic_flag
      FROM rewards.benefit_rules
      WHERE dynamic_flag = TRUE AND min_amount <= $1
      ORDER BY min_amount DESC
      LIMIT 1`,
     [amount]
-  );
+  ).then(rows => rows[0] || null);
 }
 
 export async function getAllBenefitRules(): Promise<BenefitRule[]> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `SELECT id, min_amount, numbers_generated, access_days, version, risk_multiplier, max_per_user, dynamic_flag
      FROM rewards.benefit_rules
      ORDER BY min_amount ASC`
@@ -43,7 +43,7 @@ export async function getAllBenefitRules(): Promise<BenefitRule[]> {
 }
 
 export async function createBenefitRule(input: Omit<BenefitRule, 'id'>): Promise<BenefitRule> {
-  const result = await pool.query(
+  const result = await getDb().query(
     `INSERT INTO rewards.benefit_rules (min_amount, numbers_generated, access_days, version, risk_multiplier, max_per_user, dynamic_flag)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, min_amount, numbers_generated, access_days, version, risk_multiplier, max_per_user, dynamic_flag`,

@@ -1,0 +1,178 @@
+name: Deploy Guard — DB Host Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  canary-db-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure jq installed
+        run: |
+          if ! command -v jq &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Hit canary health endpoint (with retries)
+        run: |
+          set -e
+
+          URL="${{ secrets.CANARY_URL }}/health/db"
+          HEADER="x-internal-check: true"
+          AUTH="x-canary-token: ${{ secrets.CANARY_TOKEN }}"
+
+          # Fetch response
+          RESPONSE=""
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            RESPONSE=$(curl -s -m 5 -H "$HEADER" -H "$AUTH" -D - "$URL" || true)
+
+            if [[ -n "$RESPONSE" && "$RESPONSE" != *"Connection refused"* ]]; then
+              echo "Got response"
+              break
+            fi
+
+            echo "Retry $i failed, waiting..."
+            sleep $((i * 2))
+          done
+
+          # Save raw response to file for subsequent steps
+          echo "$RESPONSE" > canary_response.txt
+
+          if [[ -z "$RESPONSE" ]]; then
+            echo "❌ Canary endpoint unreachable after 3 attempts"
+            exit 1
+          fi
+
+      - name: Validate health status
+        run: |
+          RESPONSE=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
+          
+          STATUS=$(echo "$RESPONSE" | jq -r '.status')
+          echo "Status: $STATUS"
+
+          if [[ -z "$STATUS" || "$STATUS" == "null" ]]; then
+            echo "❌ No status returned"
+            exit 1
+          fi
+
+          if [[ "$STATUS" != "ok" ]]; then
+            echo "❌ Canary not healthy: $STATUS"
+            exit 1
+          fi
+
+          echo "✅ Health status: $STATUS"
+
+      - name: Validate DB host against allowlist
+        run: |
+          BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
+          
+          HOST=$(echo "$BODY" | jq -r '.dbHost')
+          echo "Host: $HOST"
+
+          if [[ -z "$HOST" || "$HOST" == "null" ]]; then
+            echo "❌ No dbHost returned from canary"
+            exit 1
+          fi
+
+          ALLOWED="${{ secrets.ALLOWED_NEON_HOSTS }}"
+          echo "Allowlist: $ALLOWED"
+
+          if [[ -z "$ALLOWED" ]]; then
+            echo "❌ ALLOWED_NEON_HOSTS secret not set"
+            exit 1
+          fi
+
+          MATCH=0
+          IFS=',' read -ra LIST <<< "$ALLOWED"
+          for h in "${LIST[@]}"; do
+            h=$(echo "$h" | xargs)
+            if [[ "$HOST" == "$h" ]]; then
+              MATCH=1
+              break
+            fi
+          done
+
+          if [[ $MATCH -ne 1 ]]; then
+            echo "❌ Host '$HOST' not in allowlist"
+            exit 1
+          fi
+
+          echo "✅ Canary DB host validated: $HOST"
+
+      - name: Verify signed response (anti-replay + integrity)
+        if: secrets.CANARY_TOKEN != ''
+        run: |
+          # Extract body and headers
+          BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
+          HEADERS=$(cat canary_response.txt | sed -n '1,/^\r*$/p')
+          
+          SIG=$(echo "$HEADERS" | grep -i "x-canary-signature" | cut -d: -f2 | tr -d ' \r')
+          NONCE=$(echo "$HEADERS" | grep -i "x-canary-nonce" | cut -d: -f2 | tr -d ' \r')
+          
+          if [[ -z "$SIG" || -z "$NONCE" ]]; then
+            echo "❌ Missing signature or nonce"
+            exit 1
+          fi
+          
+          # Compute expected signature with canonical JSON + nonce
+          EXPECTED=$(node -e "
+            const crypto = require('crypto');
+            
+            const canonical = (obj) => {
+              const keys = Object.keys(obj).sort();
+              const o = keys.reduce((a,k) => { a[k] = obj[k]; return a; }, {});
+              return JSON.stringify(o);
+            };
+            
+            const payload = JSON.parse('$BODY');
+            const nonce = '$NONCE';
+            
+            const body = canonical(payload) + nonce;
+            const sig = crypto.createHmac('sha256', process.env.CANARY_TOKEN)
+              .update(body)
+              .digest('hex');
+            
+            console.log(sig);
+          ")
+          
+          echo "Expected: $EXPECTED"
+          echo "Actual: $SIG"
+          
+          if [[ "$SIG" != "$EXPECTED" ]]; then
+            echo "❌ Signature mismatch"
+            exit 1
+          fi
+          
+          # Verify timestamp is fresh (anti-replay)
+          TS=$(echo "$BODY" | jq -r '.ts')
+          NOW=$(date +%s%3N)
+          DIFF=$((NOW - TS))
+          
+          echo "Timestamp: $TS, Now: $NOW, Diff: $DIFF ms (max: 10000 ms)"
+          
+          if (( DIFF > 10000 )); then
+            echo "❌ Stale response (possible replay)"
+            exit 1
+          fi
+          
+          echo "✅ Signature and timestamp verified"
+
+          # Verify request context (bind to specific endpoint)
+          METHOD=$(echo "$BODY" | jq -r '.method')
+          PATH=$(echo "$BODY" | jq -r '.path')
+
+          echo "Request context: $METHOD $PATH"
+
+          if [[ "$METHOD" != "GET" || "$PATH" != "/health/db" ]]; then
+            echo "❌ Invalid request context"
+            exit 1
+          fi
+
+          echo "✅ Request context verified"

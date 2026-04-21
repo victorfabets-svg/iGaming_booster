@@ -3,29 +3,43 @@
  * Starts all event consumers for the iGaming Booster pipeline
  */
 
+// ============================================================
+// SECURITY HARDENING - Targeted Provider Blocklist
+// ============================================================
+
+// Block forbidden database providers (not a full wipe)
+const FORBIDDEN_PATTERNS = [
+  "supabase",
+  "SUPABASE",
+  "database_url",
+  "DATABASE_URL"
+];
+
+const removedKeys: string[] = [];
+for (const key of Object.keys(process.env)) {
+  if (FORBIDDEN_PATTERNS.some(p => key.toLowerCase().includes(p.toLowerCase()))) {
+    delete process.env[key];
+    removedKeys.push(key);
+  }
+}
+
+if (removedKeys.length > 0) {
+  console.log('🛡️ BLOCKED FORBIDDEN VARS:', removedKeys.join(', '));
+}
+
+// ============================================================
+
 import { connectWithRetry } from '../../../shared/database/connection';
 
 // Import all consumers
-import { startRewardGrantedConsumer } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
-import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consumers/proof-validated.consumer';
 import { startProofSubmittedConsumer } from '../../api/src/domains/validation/consumers/proof-submitted.consumer';
-import { startRaffleDrawExecutedConsumer } from '../../api/src/domains/raffles/consumers/raffle-draw-executed.consumer';
+import { startValidationAggregatorConsumer } from '../../api/src/domains/validation/consumers/validation-aggregator.consumer';
+import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consumers/proof-validated.consumer';
+import { startRewardGrantedConsumer, CONSUMER_NAME as REWARD_GRANTED_CONSUMER_NAME } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
+import { startFraudCheckRequestedConsumer } from '../../api/src/domains/fraud/consumers/fraud-check-requested.consumer';
+import { startPaymentIdentifierRequestedConsumer } from '../../api/src/domains/payments/consumers/payment-identifier-requested.consumer';
 
 async function start() {
-  // Validate environment variables
-  const mode = process.env.RUNTIME_ENV; // 'ci' | 'preaudit'
-
-  if (!process.env.NEON_DB_URL) {
-    throw new Error("NEON_DB_URL missing");
-  }
-
-  if (
-    mode === 'preaudit' &&
-    process.env.NEON_DB_URL.includes("localhost")
-  ) {
-    throw new Error("INVALID DB: localhost not allowed in preaudit");
-  }
-
   console.log('🔧 Connecting to database...');
   
   // Ensure database is ready before starting consumers
@@ -36,17 +50,29 @@ async function start() {
   // Start all consumers - they run continuously via setInterval
   console.log('📡 Starting consumers...');
   
-  startProofSubmittedConsumer();
+  // Validation domain
+  await startProofSubmittedConsumer();
   console.log('  ✓ proof_submitted consumer started');
   
-  startProofValidatedConsumer();
+  await startValidationAggregatorConsumer();
+  console.log('  ✓ validation_aggregator consumer started');
+  
+  // Fraud domain
+  await startFraudCheckRequestedConsumer();
+  console.log('  ✓ fraud_check_requested consumer started');
+  
+  // Payments domain
+  await startPaymentIdentifierRequestedConsumer();
+  console.log('  ✓ payment_identifier_requested consumer started');
+  
+  // Rewards domain
+  await startProofValidatedConsumer();
   console.log('  ✓ proof_validated consumer started');
   
-  startRewardGrantedConsumer();
+  // Raffles domain
+  await startRewardGrantedConsumer();
   console.log('  ✓ reward_granted consumer started');
-  
-  startRaffleDrawExecutedConsumer();
-  console.log('  ✓ raffle_draw_executed consumer started');
+  console.log('    consumer_name:', REWARD_GRANTED_CONSUMER_NAME);
   
   console.log('\n🚀 Worker started - all consumers polling for events\n');
   
