@@ -71,16 +71,6 @@ export async function runCommandTransaction<T>(
   return runInTransaction(callback);
 }
 
-/**
- * @deprecated Use runCommandTransaction instead.
- * Kept for backward compatibility.
- */
-export async function withTransactionalOutbox<T>(
-  callback: (client: any) => Promise<T>
-): Promise<T> {
-  return runCommandTransaction(callback);
-}
-
 // ============================================================================
 // HELPERS: Insert event/audit in same transaction
 // ============================================================================

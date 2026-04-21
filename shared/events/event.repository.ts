@@ -1,7 +1,7 @@
 // =================================================================
 // Legacy event repository - for backward compatibility
 // All new event creation should go through transactional outbox
-// Use: import { withTransactionalOutbox, insertEventInTransaction } from './transactional-outbox'
+// Use: insertEventInTransaction from './transactional-outbox'
 // =================================================================
 
 import { Event, EventType } from './types';
