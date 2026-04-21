@@ -23,13 +23,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check merge conflicts
-        run: |
-          echo "Checking for merge conflict markers..."
-          if grep -rn "<<<<<<< HEAD" . --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules"; then
-            echo "❌ Merge conflict markers found"
-            exit 1
-          fi
-          echo "✅ No merge conflict markers found"
+        run: grep -rn "<<<<<<< HEAD" . --include="*.ts" --include="*.js" --include="*.json" 2>/dev/null | grep -v "node_modules" && echo "Conflict found" && exit 1 || echo "OK"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -41,9 +35,7 @@ jobs:
         run: npm ci
 
       - name: Validate ENV
-        run: |
-          echo "Validating NEON_DB_URL..."
-          test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
+        run: test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
 
       - name: Build API
         run: |
