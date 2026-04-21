@@ -76,17 +76,23 @@ export function startStuckEventRecovery(): void {
 
   console.log('[RECOVERY] Starting stuck event recovery background job');
   
-  // Run immediately on startup
-  recoverStuckEvents().catch(err => {
-    console.error('[RECOVERY] Initial run failed:', err.message);
-    process.exit(1);
-  });
+  // Run immediately on startup - gracefully handle DB unavailability
+  recoverStuckEvents()
+    .then(count => {
+      if (count > 0) {
+        console.log(`[RECOVERY] Initial run: released ${count} stuck events`);
+      }
+    })
+    .catch(err => {
+      console.error('[RECOVERY] Initial run failed:', err.message);
+      // Don't exit - continue in degraded mode
+    });
 
-  // Then run every 60 seconds
+  // Then run every 60 seconds - gracefully handle DB unavailability
   recoveryInterval = setInterval(() => {
     recoverStuckEvents().catch(err => {
       console.error('[RECOVERY] Periodic run failed:', err.message);
-      process.exit(1);
+      // Don't exit - continue in degraded mode
     });
   }, 60000);
 }
