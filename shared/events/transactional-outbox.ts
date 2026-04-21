@@ -1,16 +1,14 @@
 import { randomUUID } from 'crypto';
-import { db, getDb } from '../database/connection';
 
 /**
- * REAL transactional outbox using single DB client.
- * All domain writes, events, and audit logs are committed in a single DB transaction.
+ * Transactional outbox utilities.
+ * Only insertEventInTransaction and insertAuditInTransaction should be used directly in consumers.
+ * Transaction management is handled by the caller (e.g., processEventExactlyOnce).
+ * 
+ * For consumers: use processEventExactlyOnce as the only transaction boundary.
+ * For non-consumer code paths (API routes): withTransactionalOutbox is still available.
  */
-
-// ============================================================================
-// TASK 1: REAL TRANSACTION with single client
-// ============================================================================
-
-interface QueuedEvent {
+export interface QueuedEvent {
   event_id: string;
   event_type: string;
   version: string;
@@ -19,7 +17,7 @@ interface QueuedEvent {
   correlation_id: string;
 }
 
-interface QueuedAudit {
+export interface QueuedAudit {
   action: string;
   entity_type: string;
   entity_id: string;
@@ -28,16 +26,28 @@ interface QueuedAudit {
 }
 
 /**
- * Execute callback with a database client.
- * Transaction management is handled by the caller (e.g., processEventExactlyOnce).
- * This wrapper does NOT open a new transaction - it reuses the caller's transaction.
+ * Execute callback within a database transaction.
+ * Uses single DB client - all writes are atomic.
+ * NOTE: For consumer code paths, prefer processEventExactlyOnce instead.
  */
 export async function withTransactionalOutbox<T>(
-  client: any,
   callback: (client: any) => Promise<T>
 ): Promise<T> {
-  // No new transaction - just execute with the provided client
-  return callback(client);
+  const { db } = await import('../database/connection');
+  const pool = db;
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -78,13 +88,8 @@ export async function insertAuditInTransaction(
   );
 }
 
-// ============================================================================
-// BACKWARD COMPATIBILITY - wrap old API
-// ============================================================================
-
 /**
  * Legacy queue function - now inserts immediately in transaction.
- * Kept for backward compatibility.
  */
 export async function queueEventInTransaction(
   txnId: any,
@@ -94,7 +99,6 @@ export async function queueEventInTransaction(
   version = 'v1'
 ): Promise<void> {
   if (typeof txnId?.query === 'function') {
-    // It's a client - insert directly
     await insertEventInTransaction(txnId, event_type, payload, producer, version);
   }
 }
@@ -111,7 +115,6 @@ export async function queueAuditInTransaction(
   metadata: Record<string, any>
 ): Promise<void> {
   if (typeof txnId?.query === 'function') {
-    // It's a client - insert directly
     await insertAuditInTransaction(txnId, action, entity_type, entity_id, user_id, metadata);
   }
 }

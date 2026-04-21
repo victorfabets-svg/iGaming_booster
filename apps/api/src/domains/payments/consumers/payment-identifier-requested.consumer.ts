@@ -11,7 +11,7 @@ import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/even
 import { createPaymentSignalWithClient } from '../repositories/payment-signal.repository';
 import { extractIdentifiers } from '../services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../services/identifier-validation.service';
-import { withTransactionalOutbox, insertEventInTransaction } from '@shared/events/transactional-outbox';
+import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'payment_identifier_requested';
@@ -111,37 +111,34 @@ async function handlePaymentIdentifierRequested(payload: PaymentIdentifierReques
     }
   });
 
-  // Use transactional outbox wrapper with the client from processEventExactlyOnce
-  await withTransactionalOutbox(client, async (txClient) => {
-    // Persist payment signals
-    for (const identifier of extractedIdentifiers) {
-      const identValidation = validateIdentifier(identifier.type, identifier.value);
-      await createPaymentSignalWithClient(txClient, {
-        proof_id,
-        type: identifier.type,
-        value: identifier.value,
-        confidence: identValidation.confidence,
-        metadata: {
-          source: identifier.source,
-          is_valid: identValidation.is_valid,
-          issues: identValidation.issues,
-        },
-      });
-    }
-
-    // Emit payment_identifier_extracted event
-    await insertEventInTransaction(
-      txClient,
-      'payment_identifier_extracted',
-      {
-        proof_id,
-        user_id: payload.user_id,
-        identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
-        validation: identifierValidationResult,
+  // Persist payment signals
+  for (const identifier of extractedIdentifiers) {
+    const identValidation = validateIdentifier(identifier.type, identifier.value);
+    await createPaymentSignalWithClient(client, {
+      proof_id,
+      type: identifier.type,
+      value: identifier.value,
+      confidence: identValidation.confidence,
+      metadata: {
+        source: identifier.source,
+        is_valid: identValidation.is_valid,
+        issues: identValidation.issues,
       },
-      'payments'
-    );
-  });
+    });
+  }
+
+  // Emit payment_identifier_extracted event
+  await insertEventInTransaction(
+    client,
+    'payment_identifier_extracted',
+    {
+      proof_id,
+      user_id: payload.user_id,
+      identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
+      validation: identifierValidationResult,
+    },
+    'payments'
+  );
 
   logger.info({ 
     event: 'payment_identifier_extracted_emitted', 

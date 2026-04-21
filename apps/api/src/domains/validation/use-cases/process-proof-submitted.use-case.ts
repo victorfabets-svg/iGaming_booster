@@ -1,5 +1,4 @@
 import { createProofValidationWithClient, findValidationByProofId, updateValidationStatusWithClient, CreateProofValidationInput } from '../repositories/proof-validation.repository';
-import { processValidation } from './process-validation.use-case';
 import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';

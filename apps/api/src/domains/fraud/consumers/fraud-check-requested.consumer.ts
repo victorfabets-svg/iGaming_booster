@@ -10,7 +10,7 @@
 import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { createFraudScoreWithClient } from '../repositories/fraud-score.repository';
 import { calculateFraudScore } from '../services/fraud-score.service';
-import { withTransactionalOutbox, insertEventInTransaction } from '@shared/events/transactional-outbox';
+import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'fraud_check_requested';
@@ -111,30 +111,27 @@ async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload, cl
     data: { proof_id, score: fraudScoreResult.score, signals: fraudScoreResult.signals }
   });
 
-  // Use transactional outbox wrapper with the client from processEventExactlyOnce
-  await withTransactionalOutbox(client, async (txClient) => {
-    // Persist fraud score
-    await createFraudScoreWithClient(txClient, {
+  // Persist fraud score
+  await createFraudScoreWithClient(client, {
+    proof_id,
+    score: fraudScoreResult.score,
+    signals: fraudScoreResult.signals,
+  });
+
+  // Emit fraud_scored event
+  await insertEventInTransaction(
+    client,
+    'fraud_scored',
+    {
       proof_id,
+      user_id: payload.user_id,
       score: fraudScoreResult.score,
       signals: fraudScoreResult.signals,
-    });
-
-    // Emit fraud_scored event
-    await insertEventInTransaction(
-      txClient,
-      'fraud_scored',
-      {
-        proof_id,
-        user_id: payload.user_id,
-        score: fraudScoreResult.score,
-        signals: fraudScoreResult.signals,
-        risk_modifier: risk_score_modifier,
-        payment_modifier,
-      },
-      'fraud'
-    );
-  });
+      risk_modifier: risk_score_modifier,
+      payment_modifier,
+    },
+    'fraud'
+  );
 
   logger.info({ event: 'fraud_scored_emitted', context: 'fraud', data: { proof_id, score: fraudScoreResult.score } });
 }

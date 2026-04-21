@@ -3,7 +3,7 @@ import { Proof, ProofInput, ProofResult } from '../domain/proof';
 
 /**
  * Create proof within a transaction - uses provided client for atomicity.
- * This is the ONLY proof creation method - must be called within withTransactionalOutbox.
+ * This is the ONLY proof creation method - must be called with a valid DB client.
  */
 export async function createProofInTransaction(
   client: any,

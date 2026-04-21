@@ -351,7 +351,7 @@ export async function processEventExactlyOnce(
   try {
     await client.query('BEGIN');
     
-    // Execute the business logic (pass client for withTransactionalOutbox)
+    // Execute the business logic with client
     await processFn(client);
     
     // Record successful processing (idempotency key)
