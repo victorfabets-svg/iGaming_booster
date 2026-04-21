@@ -2,7 +2,7 @@ import { createProofInTransaction } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
 import { generateSHA256 } from '../../../../../../shared/utils/hash';
 import { getStorageService } from '../../../infrastructure/storage';
-import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 
 /**
  * Determine content type from file extension
@@ -51,7 +51,7 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
   console.log('[PROOF] Storage key:', key);
 
   // Use transactional outbox to ensure atomicity: proof + event + audit in same tx
-  const result = await withTransactionalOutbox(async (client) => {
+  const result = await runCommandTransaction(async (client) => {
     // Insert proof within transaction
     const proofResult = await createProofInTransaction(client, input, key, hash);
     console.log('[PROOF] Created proof:', proofResult.proof.id);

@@ -2,12 +2,14 @@ import { randomUUID } from 'crypto';
 
 /**
  * Transactional outbox utilities.
- * Only insertEventInTransaction and insertAuditInTransaction should be used directly in consumers.
- * Transaction management is handled by the caller (e.g., processEventExactlyOnce).
  * 
- * For consumers: use processEventExactlyOnce as the only transaction boundary.
- * For non-consumer code paths (API routes): withTransactionalOutbox is still available.
+ * Architecture:
+ * - runInTransaction: Core transaction lifecycle (BEGIN/COMMIT/ROLLBACK)
+ * - runCommandTransaction: Wrapper for API/use-cases (no idempotency)
+ * - processEventExactlyOnce: Wrapper for consumers (with idempotency) - in event-consumer.repository.ts
+ * - insertEventInTransaction/insertAuditInTransaction: Helpers for inserting in same transaction
  */
+
 export interface QueuedEvent {
   event_id: string;
   event_type: string;
@@ -25,12 +27,15 @@ export interface QueuedAudit {
   metadata: Record<string, any>;
 }
 
+// ============================================================================
+// CORE: Transaction lifecycle (single source of truth)
+// ============================================================================
+
 /**
- * Execute callback within a database transaction.
- * Uses single DB client - all writes are atomic.
- * NOTE: For consumer code paths, prefer processEventExactlyOnce instead.
+ * Core transaction lifecycle - manages BEGIN/COMMIT/ROLLBACK.
+ * This is the ONLY place where transaction lifecycle is defined.
  */
-export async function withTransactionalOutbox<T>(
+async function runInTransaction<T>(
   callback: (client: any) => Promise<T>
 ): Promise<T> {
   const { db } = await import('../database/connection');
@@ -49,6 +54,36 @@ export async function withTransactionalOutbox<T>(
     client.release();
   }
 }
+
+// ============================================================================
+// COMMAND WRAPPER: For API/use-cases (no idempotency)
+// ============================================================================
+
+/**
+ * Wrapper for synchronous command/API operations.
+ * Does NOT use processed_events table - user can retry on failure.
+ * 
+ * Use when: user sends request → server processes → response
+ */
+export async function runCommandTransaction<T>(
+  callback: (client: any) => Promise<T>
+): Promise<T> {
+  return runInTransaction(callback);
+}
+
+/**
+ * @deprecated Use runCommandTransaction instead.
+ * Kept for backward compatibility.
+ */
+export async function withTransactionalOutbox<T>(
+  callback: (client: any) => Promise<T>
+): Promise<T> {
+  return runCommandTransaction(callback);
+}
+
+// ============================================================================
+// HELPERS: Insert event/audit in same transaction
+// ============================================================================
 
 /**
  * Insert event within transaction.

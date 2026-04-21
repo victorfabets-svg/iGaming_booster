@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { createProofInTransaction, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
-import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 // Import rate limit and behavior services
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
@@ -36,7 +36,7 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
     logger.warn('rate_limit_exceeded', 'validation', rateLimitCheck.reason || 'Rate limit exceeded', input.user_id);
     
     // Emit rate_limit_exceeded event (transactional)
-    await withTransactionalOutbox(async (client) => {
+    await runCommandTransaction(async (client) => {
       await insertEventInTransaction(
         client,
         'rate_limit_exceeded',
@@ -78,7 +78,7 @@ export async function submitProof(input: SubmitProofInput): Promise<SubmitProofR
 
   // Use transactional outbox - ALL domain writes inside single transaction
   let proofId: string;
-  await withTransactionalOutbox(async (client) => {
+  await runCommandTransaction(async (client) => {
     // Domain write: Create proof
     const proof = await createProofInTransaction(client, proofInput);
     proofId = proof.id;
