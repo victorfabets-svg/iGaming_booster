@@ -35,21 +35,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
-
-      - name: Cache TypeScript build
-        uses: actions/cache@v4
-        with:
-          path: |
-            apps/api/dist/.tsbuildinfo
-            apps/worker/dist/.tsbuildinfo
-          key: ts-build-${{ hashFiles('**/*.ts', '**/*.tsx') }}-${{ hashFiles('**/tsconfig*.json') }}
-          restore-keys: |
-            ts-build-
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Validate ENV
         run: |
