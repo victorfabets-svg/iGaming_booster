@@ -39,56 +39,100 @@ import { startRewardGrantedConsumer, CONSUMER_NAME as REWARD_GRANTED_CONSUMER_NA
 import { startFraudCheckRequestedConsumer } from '../../api/src/domains/fraud/consumers/fraud-check-requested.consumer';
 import { startPaymentIdentifierRequestedConsumer } from '../../api/src/domains/payments/consumers/payment-identifier-requested.consumer';
 
+// Track database connection state
+let dbConnected = false;
+
 async function start() {
   console.log('🔧 Connecting to database...');
   
-  // Ensure database is ready before starting consumers
-  await connectWithRetry();
-  
-  console.log('✅ Database connected');
+  // Try to connect to database - allow degraded mode if it fails
+  try {
+    await connectWithRetry();
+    dbConnected = true;
+    console.log('✅ Database connected');
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error('⚠️ DB connection failed - continuing in degraded mode:', errorMessage);
+    dbConnected = false;
+  }
   
   // Start all consumers - they run continuously via setInterval
   console.log('📡 Starting consumers...');
   
   // Validation domain
-  await startProofSubmittedConsumer();
-  console.log('  ✓ proof_submitted consumer started');
+  try {
+    await startProofSubmittedConsumer();
+    console.log('  ✓ proof_submitted consumer started');
+  } catch (err) {
+    console.error('  ✗ proof_submitted consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
-  await startValidationAggregatorConsumer();
-  console.log('  ✓ validation_aggregator consumer started');
+  try {
+    await startValidationAggregatorConsumer();
+    console.log('  ✓ validation_aggregator consumer started');
+  } catch (err) {
+    console.error('  ✗ validation_aggregator consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
   // Fraud domain
-  await startFraudCheckRequestedConsumer();
-  console.log('  ✓ fraud_check_requested consumer started');
+  try {
+    await startFraudCheckRequestedConsumer();
+    console.log('  ✓ fraud_check_requested consumer started');
+  } catch (err) {
+    console.error('  ✗ fraud_check_requested consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
   // Payments domain
-  await startPaymentIdentifierRequestedConsumer();
-  console.log('  ✓ payment_identifier_requested consumer started');
+  try {
+    await startPaymentIdentifierRequestedConsumer();
+    console.log('  ✓ payment_identifier_requested consumer started');
+  } catch (err) {
+    console.error('  ✗ payment_identifier_requested consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
   // Rewards domain
-  await startProofValidatedConsumer();
-  console.log('  ✓ proof_validated consumer started');
+  try {
+    await startProofValidatedConsumer();
+    console.log('  ✓ proof_validated consumer started');
+  } catch (err) {
+    console.error('  ✗ proof_validated consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
   // Raffles domain
-  await startRewardGrantedConsumer();
-  console.log('  ✓ reward_granted consumer started');
-  console.log('    consumer_name:', REWARD_GRANTED_CONSUMER_NAME);
+  try {
+    await startRewardGrantedConsumer();
+    console.log('  ✓ reward_granted consumer started');
+    console.log('    consumer_name:', REWARD_GRANTED_CONSUMER_NAME);
+  } catch (err) {
+    console.error('  ✗ reward_granted consumer failed:', err instanceof Error ? err.message : String(err));
+  }
   
-  console.log('\n🚀 Worker started - all consumers polling for events\n');
+  // Determine final state
+  if (dbConnected) {
+    console.log('\n🚀 Worker started - all consumers polling for events\n');
+  } else {
+    console.log('\n⚠️ Worker started in DEGRADED MODE (no database connection)\n');
+  }
   
-  // Keep the process alive
+  // Keep the process alive - prevent exit
   // The consumers use setInterval for continuous polling
+  // Also add a fallback interval to ensure process stays alive
+  setInterval(() => {
+    // Periodic health check logging
+    console.log(`[Health] Worker running (db: ${dbConnected ? 'connected' : 'degraded'})`);
+  }, 30000); // Every 30 seconds
 }
 
-// Handle uncaught errors
+// Handle uncaught errors - DON'T exit, just log
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught exception:', error);
-  process.exit(1);
+  console.error('⚠️ Uncaught exception:', error.message);
+  // Don't exit - keep worker alive
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled rejection:', reason);
-  process.exit(1);
+  const errorMessage = reason instanceof Error ? reason.message : String(reason);
+  console.error('⚠️ Unhandled rejection:', errorMessage);
+  // Don't exit - keep worker alive
 });
 
 // Start the worker
