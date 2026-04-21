@@ -7,18 +7,17 @@
  * validation → emits fraud_check_requested → [this consumer] → emits fraud_scored
  */
 
-import { fetchAndLockEvents, getRetryCount, isEventProcessed, markEventAsProcessed, processEventExactlyOnce } from '@shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { createFraudScoreWithClient } from '../repositories/fraud-score.repository';
 import { calculateFraudScore } from '../services/fraud-score.service';
 import { withTransactionalOutbox, insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'fraud_check_requested';
-const EVENT_VERSION = 'v1';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
-export const CONSUMER_NAME = "fraud_check_requested_consumer";
+export const CONSUMER_NAME = 'fraud_check_requested_consumer';
 
 interface FraudCheckRequestedPayload {
   proof_id: string;
@@ -77,35 +76,30 @@ async function pollEvents(): Promise<void> {
   }
 }
 
-async function processEvent(event: { event_id?: string; id?: string; payload: unknown }): Promise<void> {
+async function processEvent(event: Event): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as FraudCheckRequestedPayload;
-  
-  const retryCount = await getRetryCount(eventId);
-  
+
   logger.info({
     event: 'event_processing',
     context: 'fraud',
-    data: { event_id: eventId, proof_id: payload.proof_id, retry_count: retryCount }
+    data: { event_id: eventId, proof_id: payload.proof_id }
   });
 
-  const result = await processEventExactlyOnce(eventId, async () => {
-    await handleFraudCheckRequested(payload);
-  });
+  const result = await processEventExactlyOnce(eventId, async (client) => {
+    await handleFraudCheckRequested(payload, client);
+  }, CONSUMER_NAME);
 
   if (result.skipped) {
-    logger.info({ event: 'event_skipped', context: 'fraud', data: { event_id: eventId, status: 'already_processed' } });
-  } else if (result.success) {
-    logger.info({ event: 'event_processed', context: 'fraud', data: { event_id: eventId, status: 'success' } });
+    logger.info({ event: 'event_skipped', context: 'fraud', data: { event_id: eventId } });
   } else {
-    logger.info({ event: 'event_failed', context: 'fraud', data: { event_id: eventId, status: 'failed' } });
+    logger.info({ event: 'event_processed', context: 'fraud', data: { event_id: eventId } });
   }
 }
 
-async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload): Promise<void> {
+async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload, client: any): Promise<void> {
   const { proof_id, ocr_result, heuristic_result, risk_score_modifier = 0, payment_modifier = 0 } = payload;
 
-  // Calculate fraud score using fraud domain services
   const ocrData = ocr_result || { amount: 0, date: '', institution: '' };
   const heuristicData = heuristic_result || { is_valid: true, issues: [] };
   
@@ -117,10 +111,10 @@ async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload): P
     data: { proof_id, score: fraudScoreResult.score, signals: fraudScoreResult.signals }
   });
 
-  // Use transactional outbox to persist score and emit event
-  await withTransactionalOutbox(async (client) => {
+  // Use transactional outbox wrapper with the client from processEventExactlyOnce
+  await withTransactionalOutbox(client, async (txClient) => {
     // Persist fraud score
-    await createFraudScoreWithClient(client, {
+    await createFraudScoreWithClient(txClient, {
       proof_id,
       score: fraudScoreResult.score,
       signals: fraudScoreResult.signals,
@@ -128,7 +122,7 @@ async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload): P
 
     // Emit fraud_scored event
     await insertEventInTransaction(
-      client,
+      txClient,
       'fraud_scored',
       {
         proof_id,

@@ -28,31 +28,16 @@ interface QueuedAudit {
 }
 
 /**
- * Execute callback within a REAL database transaction.
- * Uses single DB client - all writes are atomic.
+ * Execute callback with a database client.
+ * Transaction management is handled by the caller (e.g., processEventExactlyOnce).
+ * This wrapper does NOT open a new transaction - it reuses the caller's transaction.
  */
 export async function withTransactionalOutbox<T>(
+  client: any,
   callback: (client: any) => Promise<T>
 ): Promise<T> {
-  const pool = getDb();
-  const client = await pool.connect();
-  
-  try {
-    // TASK 2: ENFORCE TIMEOUT - Set statement timeout before BEGIN
-    await client.query('SET statement_timeout = 5000');
-    await client.query('BEGIN');
-    
-    // Execute callback with the client (for domain writes + event/audit in same tx)
-    const result = await callback(client);
-    
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  // No new transaction - just execute with the provided client
+  return callback(client);
 }
 
 /**

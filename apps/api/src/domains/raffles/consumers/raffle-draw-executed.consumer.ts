@@ -1,18 +1,34 @@
-import { fetchAndLockEvents, getRetryCount, processWithRetry, isEventProcessed, markEventAsProcessed, processEventExactlyOnce, validateEvent } from '@shared/events/event-consumer.repository';
+/**
+ * Raffle Draw Executed Consumer
+ * Listens for raffle_draw_executed events
+ * Triggers the actual draw execution
+ * 
+ * EVENT FLOW:
+ * raffle_draw_executed → [this consumer] → executes draw → emits winner_notified
+ */
+
+import { fetchAndLockEvents, processEventExactlyOnce, validateEvent, Event } from '@shared/events/event-consumer.repository';
 import { getRaffleById } from '../application/get-active-raffle';
 import { executeRaffleDraw } from '../use-cases/execute-raffle-draw.use-case';
+import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'raffle_draw_executed';
 const EVENT_VERSION = 'v1';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
+export const CONSUMER_NAME = 'raffle_draw_executed_consumer';
+
 interface RaffleDrawExecutedPayload {
   raffle_id: string;
 }
 
 export async function startRaffleDrawExecutedConsumer(): Promise<void> {
-  console.log('🎰 Starting raffle_draw_executed consumer for draw execution...');
+  logger.info({
+    event: 'consumer_starting',
+    context: 'raffles',
+    data: { event_type: EVENT_TYPE, poll_interval_ms: POLL_INTERVAL_MS }
+  });
 
   await pollEvents();
 
@@ -30,74 +46,58 @@ async function pollEvents(): Promise<void> {
       return;
     }
 
-    console.log(`📬 Found ${events.length} ${EVENT_TYPE} events`);
+    logger.info({
+      event: 'events_found',
+      context: 'raffles',
+      data: { event_type: EVENT_TYPE, count: events.length }
+    });
 
     for (const event of events) {
       await processEvent(event);
     }
   } catch (error) {
-    console.error(`❌ Error polling ${EVENT_TYPE} events:`, error);
+    logger.error('poll_events_error', 'raffles', `Error polling ${EVENT_TYPE} events: ${error}`);
   }
 }
 
-async function processEvent(event: { event_id?: string; id?: string; event_type?: string; event_version?: string; version?: string; payload: unknown }): Promise<void> {
+async function processEvent(event: Event): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as RaffleDrawExecutedPayload;
-  
-  // STEP 1: Validate event type, version, and payload BEFORE processing
-  const validationError = validateEvent(
-    event as any,
-    EVENT_TYPE,
-    EVENT_VERSION,
-    ['raffle_id']
-  );
-  
+
+  // Validate event type, version, and payload
+  const validationError = validateEvent(event, EVENT_TYPE, EVENT_VERSION, ['raffle_id']);
+
   if (validationError) {
-    console.log(`🚫 Invalid event ${eventId}: ${validationError.code} - ${validationError.message}`);
-    // Invalid events are skipped (not retried) to prevent poison messages
+    logger.info({
+      event: 'event_invalid',
+      context: 'raffles',
+      data: { event_id: eventId, code: validationError.code, message: validationError.message }
+    });
     return;
   }
 
-  // STEP 2: EXACTLY-ONCE: Check if already processed before attempting
-  const alreadyProcessed = await isEventProcessed(eventId);
-  if (alreadyProcessed) {
-    console.log(`⏭️  Event ${eventId} already processed, skipping (exactly-once)`);
-    return;
-  }
-
-  const retryCount = await getRetryCount(eventId);
-
-  console.log(`🎰 Processing ${EVENT_TYPE} event: ${eventId} (retry: ${retryCount})`);
-  console.log(`   Raffle: ${payload.raffle_id}`);
-
-  // STEP 3: Wrap in transaction with idempotency record
-  const result = await processEventExactlyOnce(eventId, async () => {
-    await handleRaffleDrawExecuted(payload);
+  logger.info({
+    event: 'event_processing',
+    context: 'raffles',
+    data: { event_id: eventId, raffle_id: payload.raffle_id }
   });
 
+  const result = await processEventExactlyOnce(eventId, async (client) => {
+    await handleRaffleDrawExecuted(payload, client);
+  }, CONSUMER_NAME);
+
   if (result.skipped) {
-    console.log(`⏭️  Event ${eventId} skipped - already processed`);
-  } else if (result.success) {
-    console.log(`✅ Event ${eventId} processed exactly-once`);
+    logger.info({ event: 'event_skipped', context: 'raffles', data: { event_id: eventId } });
   } else {
-    console.log(`📬 Event ${eventId} failed after retries`);
+    logger.info({ event: 'event_processed', context: 'raffles', data: { event_id: eventId } });
   }
 }
 
-/**
- * Handle raffle_draw_executed event - TRIGGER ONLY.
- * 
- * Idempotency and validation is handled by executeRaffleDraw.
- * This consumer is a thin trigger layer only.
- */
-async function handleRaffleDrawExecuted(payload: RaffleDrawExecutedPayload): Promise<void> {
+async function handleRaffleDrawExecuted(payload: RaffleDrawExecutedPayload, client: any): Promise<void> {
   const { raffle_id } = payload;
 
-  // Thin trigger: only verify raffle is in closed state
-  // All business logic (idempotency, draw execution) handled by draw engine
   const raffle = await getRaffleById(raffle_id);
-  
-  // FIX: Fail-fast instead of silent return - raffle must exist and be closed
+
   if (!raffle) {
     throw new Error(`Raffle not found: ${raffle_id}. Cannot execute draw.`);
   }
@@ -105,17 +105,24 @@ async function handleRaffleDrawExecuted(payload: RaffleDrawExecutedPayload): Pro
     throw new Error(`Raffle ${raffle_id} must be closed to execute draw, found status: ${raffle.status}`);
   }
 
-  // Trigger draw - draw engine handles all business logic
-  console.log(`🎲 Triggering draw for raffle: ${raffle_id}`);
-  
+  logger.info({
+    event: 'draw_triggered',
+    context: 'raffles',
+    data: { raffle_id }
+  });
+
   const result = await executeRaffleDraw({ raffle_id });
-  
-  console.log(`🏆 Draw result: ${raffle_id}, winner: ${result.winning_ticket_id ?? 'none'}`);
+
+  logger.info({
+    event: 'draw_executed',
+    context: 'raffles',
+    data: { raffle_id, winner: result.winning_ticket_id ?? 'none' }
+  });
 }
 
 if (require.main === module) {
   startRaffleDrawExecutedConsumer().catch((error) => {
-    console.error('Fatal error:', error);
+    logger.error('fatal_error', 'raffles', `Fatal error: ${error}`);
     process.exit(1);
   });
 }
