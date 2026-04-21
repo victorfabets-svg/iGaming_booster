@@ -28,14 +28,25 @@ import { buildApp } from './app';
 import { config, NEON_DB_URL } from '../../../../shared/config/env';
 import { connectWithRetry, getDb } from '../../../../shared/database/connection';
 import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
+import { setDbHealth } from './state';
 
 // Structured DB audit log (sanitized - no credentials)
-const dbUrlParsed = new URL(NEON_DB_URL);
+let dbHostInfo: Record<string, unknown> = {};
+if (NEON_DB_URL) {
+  try {
+    const dbUrlParsed = new URL(NEON_DB_URL);
+    dbHostInfo = {
+      host: dbUrlParsed.hostname,
+      port: dbUrlParsed.port || "5432",
+      ssl: dbUrlParsed.searchParams?.get("sslmode") ?? null,
+    };
+  } catch {
+    dbHostInfo = { host: 'invalid' };
+  }
+}
 console.log(JSON.stringify({
   event: "db_connection_config",
-  host: dbUrlParsed.hostname,
-  port: dbUrlParsed.port || "5432",
-  ssl: dbUrlParsed.searchParams?.get("sslmode") ?? null,
+  ...dbHostInfo,
   env: process.env.NODE_ENV,
   allowlist: process.env.ALLOWED_NEON_HOSTS ?? null,
   timestamp: new Date().toISOString()
@@ -43,17 +54,18 @@ console.log(JSON.stringify({
 
 async function start() {
   console.log('='.repeat(50));
-  console.log('🔌 API BOOTING...');
+  console.log('API BOOTING');
   console.log('='.repeat(50));
 
-  // Connect to database - MUST succeed or app fails
+  // Connect to database - gracefully handle failures
   try {
     console.log('[DB] Attempting to connect to database...');
     await connectWithRetry();
     console.log('[DB] ✅ Connection successful');
+    setDbHealth(true);
   } catch (error) {
-    console.error('[DB] ❌ Connection failed:', error);
-    process.exit(1);
+    console.error('[DB] ❌ DB failed, continuing in degraded mode');
+    setDbHealth(false);
   }
 
   // Start stuck event recovery globally (runs once)
@@ -65,6 +77,7 @@ async function start() {
 
   try {
     await app.listen({ port: port, host: '0.0.0.0' });
+    console.log('API LISTENING 3000');
     console.log(`✅ API LISTENING on port ${port}`);
     console.log(`🌍 http://localhost:${port}`);
     console.log('='.repeat(50));

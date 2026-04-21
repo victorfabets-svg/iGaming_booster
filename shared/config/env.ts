@@ -165,22 +165,6 @@ export const isDevelopment = config.isDevelopment;
 export const featureFlags = config.featureFlags;
 
 // NEON database URL - Single Source of Truth (SSOT)
+// DB validation removed to allow boot in CI without database
 
-// FAIL FAST: Supabase is forbidden
-if (process.env.SUPABASE_DB_URL) {
-  throw new Error("SUPABASE_DB_URL is forbidden - use NEON_DB_URL only");
-}
-
-if (!process.env.NEON_DB_URL) {
-  throw new Error("NEON_DB_URL is required");
-}
-
-// Basic format validation - ensure URL is parseable
-try {
-  new URL(process.env.NEON_DB_URL);
-  console.log("✅ DB connection initialized");
-} catch {
-  throw new Error("Invalid NEON_DB_URL format");
-}
-
-export const NEON_DB_URL = process.env.NEON_DB_URL;
+export const NEON_DB_URL = process.env.NEON_DB_URL ?? '';

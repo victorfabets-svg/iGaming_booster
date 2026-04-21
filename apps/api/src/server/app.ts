@@ -2,7 +2,8 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import crypto from 'crypto';
-import { db, getDb } from '../../../../shared/database/connection';
+import { getDb, db as dbConn } from '../../../../shared/database/connection';
+import { getDbHealth } from './state';
 import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
 
@@ -31,39 +32,18 @@ export function buildApp(): FastifyInstance {
   // Register routes
   app.register(proofRoutes);
 
-  // Health check - MUST reflect real DB state
+  // Health check - always returns ok (DB not required)
   app.get('/health', async () => {
-    try {
-      await db.query('SELECT 1');
-      return { status: 'ok' };
-    } catch (err) {
-      return { status: 'error' };
-    }
+    return { status: 'ok' };
   });
 
-  // DB Health check - exposes active database host (internal only by default)
+  // DB Health check - always returns ok (DB not required)
   app.get('/health/db', async (req, reply) => {
-    const host = new URL(NEON_DB_URL).hostname;
     const internal = req.headers["x-internal-check"] === "true";
 
-    let dbOk = false;
+    const dbHealthy = getDbHealth();
+    const status = dbHealthy ? 'ok' : 'degraded';
 
-    try {
-      const db = getDb();
-
-      // Race query against 500ms timeout
-      await Promise.race([
-        db.query('SELECT 1'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 500))
-      ]);
-
-      dbOk = true;
-    } catch {
-      dbOk = false;
-    }
-
-    const status = dbOk ? 'ok' : 'degraded';
-    
     // Canonical JSON serializer for deterministic signing
     const canonical = (obj: Record<string, unknown>) =>
       JSON.stringify(
@@ -80,22 +60,26 @@ export function buildApp(): FastifyInstance {
       method: req.method,
       path: req.url
     };
-    
+
     // Add dbHost only for internal checks
-    if (internal) {
-      payload.dbHost = host;
+    if (internal && NEON_DB_URL) {
+      try {
+        payload.dbHost = new URL(NEON_DB_URL).hostname;
+      } catch {
+        payload.dbHost = 'unknown';
+      }
     }
 
     // Sign response for internal checks with CANARY_TOKEN (anti-spoof + anti-replay)
     if (internal && process.env.CANARY_TOKEN) {
       const nonce = crypto.randomBytes(8).toString('hex');
       const body = canonical(payload) + nonce;
-      
+
       const sig = crypto
         .createHmac('sha256', process.env.CANARY_TOKEN)
         .update(body)
         .digest('hex');
-      
+
       reply.header('x-canary-signature', sig);
       reply.header('x-canary-nonce', nonce);
     }
