@@ -50,6 +50,7 @@ jobs:
       - name: Build API
         run: |
           cd apps/api
+          ls node_modules/.bin/tsc 2>/dev/null && node_modules/.bin/tsc --version || echo "tsc not in node_modules"
           npm run build
 
       - name: Build Worker
