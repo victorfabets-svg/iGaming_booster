@@ -35,13 +35,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            apps/api/package-lock.json
+            apps/worker/package-lock.json
 
       - name: Clean install dependencies
         run: |
           echo "Cleaning any corrupted node_modules..."
-          rm -rf node_modules package-lock.json
-          rm -rf apps/api/node_modules apps/api/package-lock.json
-          rm -rf apps/worker/node_modules apps/worker/package-lock.json
+          rm -rf node_modules
+          rm -rf apps/api/node_modules
+          rm -rf apps/worker/node_modules
           npm install
 
       - name: Install API dependencies
