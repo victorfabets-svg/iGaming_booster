@@ -245,7 +245,7 @@ jobs:
           cd apps/api
           
           # Start API in background with log capture
-          node dist/server.js > $PWD/api.log 2>&1 &
+          npm run start > $PWD/api.log 2>&1 &
           API_PID=$!
           echo "API_PID=$API_PID" >> $GITHUB_ENV
           echo "Started API with PID $API_PID (logs: $PWD/api.log)"
