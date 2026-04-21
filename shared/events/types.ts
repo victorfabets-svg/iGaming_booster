@@ -1,9 +1,21 @@
 /**
  * Event type lock - allowed event types in the system
- * Split into pipeline events (user-facing) and domain events (internal)
+ * EVENT CHAIN (in causal order):
+ * 1. proof_submitted → starts validation
+ * 2. fraud_check_requested → triggers fraud scoring
+ * 3. fraud_scored → fraud analysis complete
+ * 4. payment_identifier_requested → triggers payment extraction
+ * 5. payment_identifier_extracted → extraction complete
+ * 6. proof_validated → validation approved
+ * 7. reward_granted → reward created
+ * 8. ticket_created → numbers generated
  */
 export const PIPELINE_EVENTS = [
   'proof_submitted',
+  'fraud_check_requested',
+  'fraud_scored',
+  'payment_identifier_requested',
+  'payment_identifier_extracted',
   'proof_validated',
   'reward_granted',
   'ticket_created',
@@ -13,7 +25,6 @@ export const DOMAIN_EVENTS = [
   'fraud_flag_detected',
   'proof_rejected',
   'rate_limit_exceeded',
-  'payment_identifier_extracted',
   'payment_signal_detected',
 ] as const;
 

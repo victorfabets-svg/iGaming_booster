@@ -86,7 +86,7 @@ async function processEvent(event: Event): Promise<void> {
   // This ensures the ticket is created exactly once even on retries
   const { success, skipped } = await processEventExactlyOnce(
     eventId,
-    async () => {
+    async (client) => {
       // Get reward with proof_id - required for ticket creation
       const rewardResult = await db.query<{ id: string; status: string; user_id: string; proof_id: string }>(
         `SELECT id, status, user_id, proof_id
@@ -126,6 +126,22 @@ async function processEvent(event: Event): Promise<void> {
         ticket = await createTicket(ticketInput);
 
         if (ticket) {
+          // Emit ticket_created event via transactional outbox (same transaction)
+          const { insertEventInTransaction } = await import('@shared/events/transactional-outbox');
+          await insertEventInTransaction(
+            client,
+            'ticket_created',
+            {
+              ticket_id: ticket.id,
+              number: ticket.number,
+              reward_id: payload.reward_id,
+              raffle_id: payload.raffle_id,
+              proof_id: reward.proof_id,
+              user_id: payload.user_id,
+            },
+            'raffles'
+          );
+          
           logger.info({
             event: 'ticket_created',
             context: 'raffles',
@@ -170,7 +186,7 @@ async function processEvent(event: Event): Promise<void> {
 
 async function processEventExactlyOnce(
   eventId: string,
-  processFn: () => Promise<void>
+  processFn: (client: any) => Promise<void>
 ): Promise<{ success: boolean; skipped: boolean }> {
   // Use the shared event consumer repository's exactly-once function
   const { isEventProcessed, markEventAsProcessed } = await import('@shared/events/event-consumer.repository');
@@ -186,13 +202,21 @@ async function processEventExactlyOnce(
   try {
     await client.query('BEGIN');
     
-    // Execute the business logic
-    await processFn();
+    // Execute the business logic (pass client for transactional outbox)
+    await processFn(client);
     
     // Record successful processing (idempotency key) - use consumer-specific key
     await markEventAsProcessed(eventId, CONSUMER_NAME);
     
     await client.query('COMMIT');
+    
+    logger.info({ 
+      event: 'ticket_created', 
+      context: 'raffles', 
+      data: { event_id: eventId, status: 'success' },
+      user_id: 'N/A'
+    });
+    
     return { success: true, skipped: false };
   } catch (error) {
     await client.query('ROLLBACK');
