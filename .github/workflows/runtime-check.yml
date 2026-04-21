@@ -41,6 +41,16 @@ jobs:
             apps/api/package-lock.json
             apps/worker/package-lock.json
 
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/api/dist/.tsbuildinfo
+            apps/worker/dist/.tsbuildinfo
+          key: ts-build-${{ hashFiles('**/*.ts', '**/*.tsx') }}-${{ hashFiles('**/tsconfig*.json') }}
+          restore-keys: |
+            ts-build-
+
       - name: Install dependencies
         run: npm ci
 

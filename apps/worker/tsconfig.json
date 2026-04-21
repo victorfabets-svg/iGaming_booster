@@ -5,7 +5,9 @@
     "rootDir": "../../",
     "skipLibCheck": true,
     "strict": false,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "incremental": true
   },
   "include": [
     "src/**/*",
