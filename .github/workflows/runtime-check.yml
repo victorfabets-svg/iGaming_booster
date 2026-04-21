@@ -38,10 +38,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          npm cache clean --force
-          rm -rf node_modules
-          npm install
+        run: npm install
 
       - name: Validate ENV
         run: |
