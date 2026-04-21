@@ -336,7 +336,7 @@ export async function markEventAsProcessed(eventId: string, consumerName: string
  */
 export async function processEventExactlyOnce(
   eventId: string,
-  processFn: () => Promise<void>,
+  processFn: (client: any) => Promise<void>,
   consumerName: string = 'default_consumer'
 ): Promise<{ success: boolean; skipped: boolean }> {
   // Step 1: Check if already processed (skip duplicate)
@@ -351,8 +351,8 @@ export async function processEventExactlyOnce(
   try {
     await client.query('BEGIN');
     
-    // Execute the business logic
-    await processFn();
+    // Execute the business logic with client
+    await processFn(client);
     
     // Record successful processing (idempotency key)
     await client.query(

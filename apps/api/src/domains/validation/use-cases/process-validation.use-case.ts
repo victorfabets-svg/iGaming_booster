@@ -10,7 +10,7 @@ import { logger, alertMonitor } from '../../../../../../shared/observability/log
 import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
 import { isValidationEnabled } from '../../../../../../shared/config/feature-flags';
 import { config } from '../../../../../../shared/config/env';
-import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
 
 export interface ProcessValidationInput {
   proof_id: string;
@@ -62,7 +62,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     const validation = await findValidationByProofId(proof_id);
     
     // Use transactional outbox - ALL domain writes inside transaction
-    await withTransactionalOutbox(async (client) => {
+    await runCommandTransaction(async (client) => {
       if (validation) {
         await updateValidationStatusWithClient(client, validation.id, 'rejected', 0.0);
       }
@@ -127,7 +127,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     }
 
     // Use transactional outbox - emit events to trigger async processing
-    await withTransactionalOutbox(async (client) => {
+    await runCommandTransaction(async (client) => {
       // Domain write: Update validation status to processing
       await updateValidationStatusWithClient(client, validation.id, 'processing', 0);
       
@@ -206,7 +206,7 @@ export async function processValidation(input: ProcessValidationInput): Promise<
     const validation = await findValidationByProofId(proof_id);
     
     // Use transactional outbox - emit error event
-    await withTransactionalOutbox(async (client) => {
+    await runCommandTransaction(async (client) => {
       if (validation) {
         await updateValidationStatusWithClient(client, validation.id, 'manual_review');
       }

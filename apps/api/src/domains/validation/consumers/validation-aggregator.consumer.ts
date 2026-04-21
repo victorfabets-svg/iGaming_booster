@@ -1,7 +1,7 @@
 /**
  * Validation Aggregator Consumer
  * Listens for fraud_scored + payment_identifier_extracted events
- * Correlates by proof_id
+ * Correlates by proof_id using processed_events table
  * Makes validation decision and emits proof_validated or proof_rejected
  * 
  * EVENT FLOW:
@@ -11,18 +11,22 @@
  * [this consumer] → correlation + decision → proof_validated / proof_rejected
  */
 
-import { fetchAndLockEvents, getRetryCount, processEventExactlyOnce } from '@shared/events/event-consumer.repository';
+import { fetchAndLockEvents, isEventProcessed, markEventAsProcessed } from '@shared/events/event-consumer.repository';
 import { findValidationByProofId, updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
 import { findProofById } from '../repositories/proof.repository';
-import { withTransactionalOutbox, insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
+import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger, alertMonitor } from '@shared/observability/logger';
 import { recordValidationResult } from '@shared/observability/metrics.service';
 import { config } from '@shared/config/env';
+import { db } from '@shared/database/connection';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
-const POLL_INTERVAL_MS = 2000; // Faster polling for aggregation
+const POLL_INTERVAL_MS = 2000;
 const BATCH_SIZE = 20;
+
+const FRAUD_SCORED_CONSUMER = 'validation_fraud_scored_consumer';
+const PAYMENT_EXTRACTED_CONSUMER = 'validation_payment_extracted_consumer';
 
 interface FraudScoredPayload {
   proof_id: string;
@@ -44,11 +48,6 @@ interface PaymentExtractedPayload {
     total_confidence: number;
   };
 }
-
-// In-memory correlation store (in production, use Redis or DB)
-const pendingCorrelations = new Map<string, { fraud?: FraudScoredPayload; payment?: PaymentExtractedPayload }>();
-
-export const CONSUMER_NAME = "validation_aggregator_consumer";
 
 export async function startValidationAggregatorConsumer(): Promise<void> {
   logger.info({
@@ -100,13 +99,32 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
     data: { event_id: eventId, proof_id: proofId, score: payload.score }
   });
 
-  // Get or create correlation entry
-  let correlation = pendingCorrelations.get(proofId) || { fraud: undefined, payment: undefined };
-  correlation.fraud = payload;
-  pendingCorrelations.set(proofId, correlation);
+  // Check if already processed
+  const alreadyProcessed = await isEventProcessed(eventId, FRAUD_SCORED_CONSUMER);
+  if (alreadyProcessed) {
+    logger.info({ event: 'event_skipped', context: 'validation', data: { event_id: eventId } });
+    return;
+  }
 
-  // Try to make decision if both events received
-  await tryMakeDecision(proofId, eventId);
+  // Process within transaction with idempotency record
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Record this event as processed
+    await markEventAsProcessed(eventId, FRAUD_SCORED_CONSUMER);
+    
+    // Try to make decision if both events received
+    await tryMakeDecision(proofId, client, payload);
+    
+    await client.query('COMMIT');
+    logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function processPaymentExtracted(event: { event_id?: string; id?: string; payload: unknown }): Promise<void> {
@@ -120,51 +138,95 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
     data: { event_id: eventId, proof_id: proofId, identifiers: payload.identifiers.length }
   });
 
-  // Get or create correlation entry
-  let correlation = pendingCorrelations.get(proofId) || { fraud: undefined, payment: undefined };
-  correlation.payment = payload;
-  pendingCorrelations.set(proofId, correlation);
+  // Check if already processed
+  const alreadyProcessed = await isEventProcessed(eventId, PAYMENT_EXTRACTED_CONSUMER);
+  if (alreadyProcessed) {
+    logger.info({ event: 'event_skipped', context: 'validation', data: { event_id: eventId } });
+    return;
+  }
 
-  // Try to make decision if both events received
-  await tryMakeDecision(proofId, eventId);
+  // Process within transaction with idempotency record
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Record this event as processed
+    await markEventAsProcessed(eventId, PAYMENT_EXTRACTED_CONSUMER);
+    
+    // Try to make decision if both events received
+    await tryMakeDecision(proofId, client, undefined, payload);
+    
+    await client.query('COMMIT');
+    logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-async function tryMakeDecision(proofId: string, triggeringEventId: string): Promise<void> {
-  const correlation = pendingCorrelations.get(proofId);
-  
+async function tryMakeDecision(
+  proofId: string, 
+  client: any, 
+  fraudPayload?: FraudScoredPayload, 
+  paymentPayload?: PaymentExtractedPayload
+): Promise<void> {
+  // Get fraud data if not provided (check processed_events for fraud_scored)
+  let fraud = fraudPayload;
+  if (!fraud) {
+    const fraudResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+      `SELECT e.payload FROM events.events e
+       JOIN events.processed_events pe ON e.id = pe.event_id
+       WHERE pe.consumer_name = $1
+       AND e.payload->>'proof_id' = $2`,
+      [FRAUD_SCORED_CONSUMER, proofId]
+    );
+    if (fraudResult.rows.length > 0) {
+      fraud = fraudResult.rows[0].payload as FraudScoredPayload;
+    }
+  }
+
+  // Get payment data if not provided (check processed_events for payment_extracted)
+  let payment = paymentPayload;
+  if (!payment) {
+    const paymentResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+      `SELECT e.payload FROM events.events e
+       JOIN events.processed_events pe ON e.id = pe.event_id
+       WHERE pe.consumer_name = $1
+       AND e.payload->>'proof_id' = $2`,
+      [PAYMENT_EXTRACTED_CONSUMER, proofId]
+    );
+    if (paymentResult.rows.length > 0) {
+      payment = paymentResult.rows[0].payload as PaymentExtractedPayload;
+    }
+  }
+
   // Need both events to make decision
-  if (!correlation?.fraud || !correlation?.payment) {
+  if (!fraud || !payment) {
     logger.info({
       event: 'waiting_for_correlation',
       context: 'validation',
-      data: { 
-        proof_id: proofId, 
-        has_fraud: !!correlation?.fraud, 
-        has_payment: !!correlation?.payment 
-      }
+      data: { proof_id: proofId, has_fraud: !!fraud, has_payment: !!payment }
     });
     return;
   }
 
-  const fraudPayload = correlation.fraud;
-  const paymentPayload = correlation.payment;
-
   logger.info({
     event: 'both_events_received',
     context: 'validation',
-    data: { proof_id: proofId, fraud_score: fraudPayload.score }
+    data: { proof_id: proofId, fraud_score: fraud.score }
   });
 
   // Make validation decision
   const approvalThreshold = config.validation.approvalThreshold;
   const manualReviewThreshold = config.validation.manualReviewThreshold;
 
-  // Calculate score with payment modifier
-  const paymentModifier = paymentPayload.validation.has_valid_identifiers
-    ? paymentPayload.validation.total_confidence * 0.15
+  const paymentModifier = payment.validation.has_valid_identifiers
+    ? payment.validation.total_confidence * 0.15
     : -0.1;
   
-  const finalScore = fraudPayload.score + paymentModifier;
+  const finalScore = fraud.score + paymentModifier;
 
   let decision: 'approved' | 'rejected' | 'manual_review';
   
@@ -194,66 +256,60 @@ async function tryMakeDecision(proofId: string, triggeringEventId: string): Prom
 
   const proof = await findProofById(proofId);
   
-  // Use transactional outbox - update validation + emit final event
-  await withTransactionalOutbox(async (client) => {
-    // Domain write: Update validation status
-    await updateValidationStatusWithClient(client, validation.id, decision, finalScore);
+  // Domain write: Update validation status
+  await updateValidationStatusWithClient(client, validation.id, decision, finalScore);
 
-    // Event: Emit final decision
-    if (decision === 'approved') {
-      await insertEventInTransaction(
-        client,
-        'proof_validated',
-        {
-          proof_id: proofId,
-          user_id: proof?.user_id || fraudPayload.user_id,
-          file_url: proof?.file_url || '',
-          submitted_at: proof?.submitted_at || '',
-          validation_id: validation.id,
-          status: decision,
-          confidence_score: finalScore,
-          fraud_score: fraudPayload.score,
-          payment_modifier: paymentModifier,
-        },
-        'validation'
-      );
-    } else {
-      await insertEventInTransaction(
-        client,
-        'proof_rejected',
-        {
-          proof_id: proofId,
-          user_id: proof?.user_id || fraudPayload.user_id,
-          file_url: proof?.file_url || '',
-          submitted_at: proof?.submitted_at || '',
-          validation_id: validation.id,
-          status: decision,
-          confidence_score: finalScore,
-          reason: decision === 'rejected' ? 'low_confidence' : 'manual_review_required',
-        },
-        'validation'
-      );
-    }
-
-    // Audit: Insert audit log
-    await insertAuditInTransaction(
+  // Event: Emit final decision
+  if (decision === 'approved') {
+    await insertEventInTransaction(
       client,
-      'validation_completed',
-      'validation',
-      validation.id,
-      proof?.user_id || fraudPayload.user_id,
-      { decision, confidence_score: finalScore, proof_id: proofId }
+      'proof_validated',
+      {
+        proof_id: proofId,
+        user_id: proof?.user_id || fraud.user_id,
+        file_url: proof?.file_url || '',
+        submitted_at: proof?.submitted_at || '',
+        validation_id: validation.id,
+        status: decision,
+        confidence_score: finalScore,
+        fraud_score: fraud.score,
+        payment_modifier: paymentModifier,
+      },
+      'validation'
     );
-  });
+  } else {
+    await insertEventInTransaction(
+      client,
+      'proof_rejected',
+      {
+        proof_id: proofId,
+        user_id: proof?.user_id || fraud.user_id,
+        file_url: proof?.file_url || '',
+        submitted_at: proof?.submitted_at || '',
+        validation_id: validation.id,
+        status: decision,
+        confidence_score: finalScore,
+        reason: decision === 'rejected' ? 'low_confidence' : 'manual_review_required',
+      },
+      'validation'
+    );
+  }
+
+  // Audit: Insert audit log
+  await insertAuditInTransaction(
+    client,
+    'validation_completed',
+    'validation',
+    validation.id,
+    proof?.user_id || fraud.user_id,
+    { decision, confidence_score: finalScore, proof_id: proofId }
+  );
 
   logger.info({
     event: 'final_decision_emitted',
     context: 'validation',
     data: { proof_id: proofId, decision }
   });
-
-  // Clean up correlation
-  pendingCorrelations.delete(proofId);
 }
 
 // Standalone run

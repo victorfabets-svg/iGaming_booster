@@ -7,19 +7,18 @@
  * validation → emits payment_identifier_requested → [this consumer] → emits payment_identifier_extracted
  */
 
-import { fetchAndLockEvents, getRetryCount, isEventProcessed, markEventAsProcessed, processEventExactlyOnce } from '@shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { createPaymentSignalWithClient } from '../repositories/payment-signal.repository';
 import { extractIdentifiers } from '../services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../services/identifier-validation.service';
-import { withTransactionalOutbox, insertEventInTransaction } from '@shared/events/transactional-outbox';
+import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'payment_identifier_requested';
-const EVENT_VERSION = 'v1';
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 10;
 
-export const CONSUMER_NAME = "payment_identifier_requested_consumer";
+export const CONSUMER_NAME = 'payment_identifier_requested_consumer';
 
 interface PaymentIdentifierRequestedPayload {
   proof_id: string;
@@ -72,39 +71,33 @@ async function pollEvents(): Promise<void> {
   }
 }
 
-async function processEvent(event: { event_id?: string; id?: string; payload: unknown }): Promise<void> {
+async function processEvent(event: Event): Promise<void> {
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as PaymentIdentifierRequestedPayload;
-  
-  const retryCount = await getRetryCount(eventId);
-  
+
   logger.info({
     event: 'event_processing',
     context: 'payments',
-    data: { event_id: eventId, proof_id: payload.proof_id, retry_count: retryCount }
+    data: { event_id: eventId, proof_id: payload.proof_id }
   });
 
-  const result = await processEventExactlyOnce(eventId, async () => {
-    await handlePaymentIdentifierRequested(payload);
-  });
+  const result = await processEventExactlyOnce(eventId, async (client) => {
+    await handlePaymentIdentifierRequested(payload, client);
+  }, CONSUMER_NAME);
 
   if (result.skipped) {
-    logger.info({ event: 'event_skipped', context: 'payments', data: { event_id: eventId, status: 'already_processed' } });
-  } else if (result.success) {
-    logger.info({ event: 'event_processed', context: 'payments', data: { event_id: eventId, status: 'success' } });
+    logger.info({ event: 'event_skipped', context: 'payments', data: { event_id: eventId } });
   } else {
-    logger.info({ event: 'event_failed', context: 'payments', data: { event_id: eventId, status: 'failed' } });
+    logger.info({ event: 'event_processed', context: 'payments', data: { event_id: eventId } });
   }
 }
 
-async function handlePaymentIdentifierRequested(payload: PaymentIdentifierRequestedPayload): Promise<void> {
+async function handlePaymentIdentifierRequested(payload: PaymentIdentifierRequestedPayload, client: any): Promise<void> {
   const { proof_id, ocr_result } = payload;
 
-  // Extract payment identifiers using payments domain services
   const ocrData = ocr_result || { amount: 0, date: '', institution: '', identifier: null };
   const extractedIdentifiers = extractIdentifiers(ocrData);
   
-  // Validate identifiers
   const identifierValidationResult = validateIdentifiers(extractedIdentifiers);
   
   logger.info({
@@ -118,37 +111,34 @@ async function handlePaymentIdentifierRequested(payload: PaymentIdentifierReques
     }
   });
 
-  // Use transactional outbox to persist signals and emit event
-  await withTransactionalOutbox(async (client) => {
-    // Persist payment signals
-    for (const identifier of extractedIdentifiers) {
-      const identValidation = validateIdentifier(identifier.type, identifier.value);
-      await createPaymentSignalWithClient(client, {
-        proof_id,
-        type: identifier.type,
-        value: identifier.value,
-        confidence: identValidation.confidence,
-        metadata: {
-          source: identifier.source,
-          is_valid: identValidation.is_valid,
-          issues: identValidation.issues,
-        },
-      });
-    }
-
-    // Emit payment_identifier_extracted event
-    await insertEventInTransaction(
-      client,
-      'payment_identifier_extracted',
-      {
-        proof_id,
-        user_id: payload.user_id,
-        identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
-        validation: identifierValidationResult,
+  // Persist payment signals
+  for (const identifier of extractedIdentifiers) {
+    const identValidation = validateIdentifier(identifier.type, identifier.value);
+    await createPaymentSignalWithClient(client, {
+      proof_id,
+      type: identifier.type,
+      value: identifier.value,
+      confidence: identValidation.confidence,
+      metadata: {
+        source: identifier.source,
+        is_valid: identValidation.is_valid,
+        issues: identValidation.issues,
       },
-      'payments'
-    );
-  });
+    });
+  }
+
+  // Emit payment_identifier_extracted event
+  await insertEventInTransaction(
+    client,
+    'payment_identifier_extracted',
+    {
+      proof_id,
+      user_id: payload.user_id,
+      identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
+      validation: identifierValidationResult,
+    },
+    'payments'
+  );
 
   logger.info({ 
     event: 'payment_identifier_extracted_emitted', 
