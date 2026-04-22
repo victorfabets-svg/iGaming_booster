@@ -3,6 +3,7 @@ import { db } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
+import { rateLimitDb } from '../utils/rate-limit-db';
 
 interface RegisterBody {
   email: string;
@@ -24,6 +25,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: RegisterBody }>(
     '/register',
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
+      // Rate limiting - 5 requests per minute per IP (stored in DB for persistence)
+      const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
+      const allowed = await rateLimitDb(clientIp, 5, 60000);
+
+      if (!allowed) {
+        return fail(reply, 'Too many requests', 'RATE_LIMIT');
+      }
+
       // Validate required fields
       const fieldsError = requireFields(request.body, ['email', 'password']);
       if (fieldsError) {
