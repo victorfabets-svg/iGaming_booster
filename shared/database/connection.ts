@@ -73,9 +73,9 @@ export async function getClient(): Promise<pg.PoolClient> {
   logger.error({
     event: 'unsafe_db_usage_detected',
     context: 'database',
-    data: 'getClient() called - use runWithClient() or withTransaction() instead',
+    message: 'getClient() called - use runWithClient() or withTransaction() instead',
     strict_mode: STRICT_DB,
-    stack: STRICT_DB === 'warn' ? new Error().stack : undefined
+    ...(STRICT_DB === 'warn' && { stack: new Error().stack })
   });
 
   // Block if STRICT_DB=true
