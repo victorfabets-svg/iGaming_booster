@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
+import { ok, fail } from '../utils/response';
 
 interface RegisterBody {
   email: string;
@@ -24,7 +25,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       const { email } = request.body;
 
       if (!isValidEmail(email)) {
-        return reply.status(400).send({ error: 'Valid email required' });
+        return fail(reply, 'Valid email required', 'VALIDATION_ERROR');
       }
 
       const userId = randomUUID();
@@ -35,13 +36,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           [userId, email]
         );
 
-        return reply.status(201).send({ user_id: userId, email });
+        return ok(reply, { user_id: userId, email });
       } catch (err: any) {
         if (err.code === '23505') {
-          return reply.status(409).send({ error: 'Email already registered' });
+          return fail(reply, 'Email already registered', 'DUPLICATE_EMAIL');
         }
         console.error(err);
-        return reply.status(500).send({ error: 'Internal server error' });
+        return fail(reply, err.message);
       }
     }
   );
