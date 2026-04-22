@@ -11,7 +11,7 @@ import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/even
 import { findTicketByRewardId, createTicket, CreateTicketInput } from '../../rewards/repositories/ticket.repository';
 import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
-import { db } from '@shared/database/connection';
+import { db, type PoolClient } from '@shared/database/connection';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = 5000;
@@ -103,7 +103,7 @@ async function processEvent(event: Event): Promise<void> {
   });
 }
 
-async function handleEvent(payload: RewardGrantedPayload, client: any): Promise<void> {
+async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): Promise<void> {
   const { user_id, reward_id, raffle_id, proof_id } = payload;
 
   // Get reward with proof_id - required for ticket creation

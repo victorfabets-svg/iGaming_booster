@@ -18,7 +18,7 @@ import { insertEventInTransaction, insertAuditInTransaction } from '@shared/even
 import { logger, alertMonitor } from '@shared/observability/logger';
 import { recordValidationResult } from '@shared/observability/metrics.service';
 import { config } from '@shared/config/env';
-import { db } from '@shared/database/connection';
+import { db, type PoolClient } from '@shared/database/connection';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
@@ -168,7 +168,7 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
 
 async function tryMakeDecision(
   proofId: string, 
-  client: any, 
+  client: PoolClient, 
   fraudPayload?: FraudScoredPayload, 
   paymentPayload?: PaymentExtractedPayload
 ): Promise<void> {
