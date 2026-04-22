@@ -179,6 +179,27 @@ jobs:
               | grep -q '"Name": "ci-test"' \
               || { echo "FAIL: ci-test bucket not found after create"; exit 1; }
 
+      - name: Seed test user
+        run: |
+          set -euo pipefail
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              await c.query(\`
+                INSERT INTO identity.users (id, email, phone, status)
+                VALUES ('00000000-0000-4000-8000-000000000001',
+                        'ci-e2e@example.com', NULL, 'active')
+                ON CONFLICT (id) DO NOTHING
+              \`);
+              const r = await c.query(\"SELECT id FROM identity.users WHERE id='00000000-0000-4000-8000-000000000001'\");
+              if (r.rows.length !== 1) { console.error('FAIL: seed user not present after insert'); process.exit(1); }
+              await c.end();
+              console.log('seed user OK: 00000000-0000-4000-8000-000000000001');
+            })().catch(e => { console.error('seed error:', e.message); process.exit(1); });
+          "
+
       - name: Start services
         run: |
           node $API_ENTRY > api.log 2>&1 &
@@ -215,7 +236,7 @@ jobs:
             const crypto = require('crypto');
             const b64 = s => Buffer.from(s).toString('base64url');
             const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
-            const payload = b64(JSON.stringify({user_id:'ci-e2e-user', iat: Math.floor(Date.now()/1000)}));
+            const payload = b64(JSON.stringify({user_id:'00000000-0000-4000-8000-000000000001', iat: Math.floor(Date.now()/1000)}));
             const sig = crypto.createHmac('sha256', process.env.JWT_SECRET).update(header + '.' + payload).digest('base64url');
             console.log(header + '.' + payload + '.' + sig);
           ")
