@@ -3,7 +3,7 @@ import { createProofUseCase } from '../../domains/validation/application/createP
 import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 import { rateLimitDb } from '../utils/rate-limit-db';
-import { checkIdempotency, saveIdempotency, getIdempotencyKey } from '../utils/idempotency';
+import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency } from '../utils/idempotency';
 import { auditLog } from '../../../shared/events/audit-log';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
@@ -13,12 +13,22 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
     '/proofs',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      // Idempotency check - return cached response if key reused
+      // Idempotency - reserve key atomically to prevent race conditions
       const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
       if (idemKey) {
-        const cached = await checkIdempotency(idemKey);
-        if (cached) {
-          return ok(reply, cached);
+        const reserve = await reserveIdempotency(idemKey);
+        
+        if (!reserve.acquired) {
+          // Another request got the key - check its status
+          const existing = await getIdempotency(idemKey);
+          
+          if (existing?.status === 'done') {
+            // Completed - return cached response
+            return ok(reply, existing.response);
+          }
+          
+          // Still in progress - tell client to retry
+          return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
         }
       }
 
@@ -87,7 +97,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Save idempotency key with response (only on success)
         if (idemKey) {
-          await saveIdempotency(idemKey, response);
+          await completeIdempotency(idemKey, response);
         }
 
         return ok(reply, response);
