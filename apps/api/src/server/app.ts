@@ -30,7 +30,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('onRequest', async (request, reply) => {
     // Concurrency check - reject if overloaded
     if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
-      request.logger.error({
+      request.log.error({
         event: 'server_overloaded',
         active_requests: activeRequests,
         request_id: request.id
@@ -51,7 +51,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     // Request timeout timer
     const timer = setTimeout(() => {
-      request.logger.error({
+      request.log.error({
         event: 'request_timeout',
         request_id: request.id,
         path: request.url,
@@ -107,7 +107,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setErrorHandler((err, request, reply) => {
     // Fast fail for circuit open
     if (err instanceof CircuitOpenError) {
-      request.logger.error({
+      request.log.error({
         event: 'circuit_open',
         request_id: request.id
       });
@@ -124,7 +124,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     // Fast fail for DB pool exhaustion
     if (err instanceof DbPoolExhaustedError) {
-      request.logger.error({
+      request.log.error({
         event: 'db_pool_exhausted',
         request_id: request.id
       });
@@ -141,7 +141,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     const mapped = mapError(err);
 
-    request.logger.error({
+    request.log.error({
       event: 'unhandled_error',
       error_type: mapped.type,
       error_code: mapped.code,
