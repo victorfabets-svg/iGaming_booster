@@ -1,4 +1,8 @@
 import { db } from 'shared/database/connection';
+import { createLogger } from './logger';
+
+// Module-level logger with static context
+const logger = createLogger({ module: 'idempotency' });
 
 // Timeout in milliseconds before allowing retry (30 seconds)
 const IDEMPOTENCY_TIMEOUT_MS = 30000;
@@ -80,11 +84,11 @@ export async function cleanupIdempotency(olderThanMs: number = 24 * 60 * 60 * 10
   
   const deleted = result.rowCount ?? 0;
   if (deleted > 0) {
-    console.log(JSON.stringify({
+    logger.info({
       event: 'idempotency_cleanup_executed',
       deleted_count: deleted,
       cutoff: cutoff.toISOString()
-    }));
+    });
   }
   
   return deleted;
@@ -105,7 +109,7 @@ export async function completeIdempotency(
       [key, JSON.stringify(response)]
     );
   } catch (err) {
-    console.error('[IDEMPOTENCY] Failed to complete:', err);
+    logger.error({ event: 'idempotency_complete_failed', error: String(err) });
   }
 }
 

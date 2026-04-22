@@ -83,7 +83,13 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         return fail(reply, 'Missing required file upload or file is empty', 'VALIDATION_ERROR');
       }
 
-      console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
+      // Use context-aware logger (automatically includes request_id)
+      request.logger.info({
+        event: 'proof_received',
+        filename,
+        size: fileBuffer.length,
+        user_id
+      });
 
       // Get request ID for tracing
       const requestId = (request as any).requestId;

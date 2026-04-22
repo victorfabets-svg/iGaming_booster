@@ -1,266 +1,265 @@
 # 1. OBJECTIVE
 
-Add request tracing (correlation ID) across API, events, and worker for end-to-end debugging. This enables correlating logs from a single user request across the entire system.
+Expose correlation ID in ALL logs automatically (no manual injection) using a centralized logger wrapper. Every log entry should automatically include `request_id` (for API requests) or `correlation_id` (for background processing) without developers needing to manually add it.
 
 ---
 
 # 2. CONTEXT SUMMARY
 
 **Current state:**
-- Observability logs exist ✅ (via Fastify's `logger: true`)
-- Audit logs exist ✅ (`shared/events/audit-log.ts`)
-- Transactional outbox exists ✅ (`shared/events/transactional-outbox.ts`) with `correlation_id` field
+- Request ID middleware exists (`apps/api/src/server/middleware/request-id.ts`) ✅
+- `request.requestId` is attached to requests ✅
+- Some logs manually include `request_id` ⚠️
+- Many `console.log` calls exist without tracing context ❌
 
 **Problem:**
-- No `x-request-id` header propagated from API requests
-- Events get new random `correlation_id` instead of inheriting from request
-- Cannot trace a single user flow from API → events → worker
+- Inconsistent logging - some have request_id, most don't
+- Developers must remember to manually inject request_id
+- Hard to trace issues in production
 
-**Key files:**
-- `apps/api/src/server/app.ts` - Fastify app setup (needs middleware registration)
-- `shared/events/transactional-outbox.ts` - Event creation (generates new correlation_id)
-- `shared/events/audit-log.ts` - Audit logging (no correlation_id)
-- `apps/api/src/server/routes/*.ts` - Route handlers (need to pass requestId)
+**Files with console.log (need migration):**
+- `apps/api/src/server/routes/proofs.ts`
+- `apps/api/src/server/utils/idempotency.ts`
+- `apps/api/src/server/index.ts`
+- `apps/api/src/domains/validation/application/createProofUseCase.ts`
+- Plus other domain files
 
 ---
 
 # 3. APPROACH OVERVIEW
 
-1. **Create request ID middleware** - Extract incoming `x-request-id` or generate new UUID
-2. **Register in Fastify app** - Apply middleware to all requests
-3. **Propagate to event creation** - Pass request ID to `insertEventInTransaction`
-4. **Include in audit logs** - Add correlation_id to audit log metadata
-5. **Update worker logs** - Use event's correlation_id in processing logs
+1. **Create logger wrapper** - Simple logger that auto-injects context
+2. **Bind logger to request** - Attach context-aware logger to request in middleware
+3. **Replace console.log** - Migrate all raw console.log to use the centralized logger
+4. **Worker context** - Create logger with correlation_id for background processing
 
-The approach uses the existing `correlation_id` field in the events table and extends it to be tied to the original HTTP request.
+The key insight: instead of passing request_id to every log call, bind it once to the logger instance.
 
 ---
 
 # 4. IMPLEMENTATION STEPS
 
-## Step 1 — Create Request ID Middleware
+## Step 1 — Create Logger Wrapper
 
-**Goal:** Create Fastify plugin to extract/generate request ID and attach to request
+**Goal:** Create centralized logger that auto-injects context
 
-**Method:** Create new file `apps/api/src/server/middleware/request-id.ts`:
-- Check for incoming `x-request-id` header
-- Generate UUID if not present
-- Attach to `request.requestId`
-- Set response header
+**Method:** Create new file `apps/api/src/server/utils/logger.ts`:
+- Accept static context (e.g., request_id, correlation_id)
+- Provide info/error/warn methods
+- Always output JSON with timestamp
 
-**Reference:** `apps/api/src/server/middleware/request-id.ts` (new file)
+**Reference:** `apps/api/src/server/utils/logger.ts` (new file)
 
 ```typescript
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { randomUUID } from 'crypto';
+/**
+ * Centralized logger with automatic context injection.
+ * All logs automatically include bound context (request_id, correlation_id, etc.)
+ */
+export interface Logger {
+  info(data: Record<string, unknown>): void;
+  error(data: Record<string, unknown>): void;
+  warn(data: Record<string, unknown>): void;
+  debug(data: Record<string, unknown>): void;
+}
 
 /**
- * Request ID middleware - generates or extracts x-request-id for tracing
+ * Create a logger with bound context.
+ * Context is automatically included in every log entry.
+ * 
+ * NOTE: timestamp is generated per-log, not per-logger (fixes timestamp drift)
  */
-export async function requestIdMiddleware(
-  fastify: FastifyInstance
-): Promise<void> {
-  fastify.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    const incoming = request.headers['x-request-id'] as string | undefined;
-    const requestId = incoming || randomUUID();
+export function createLogger(context: Record<string, unknown> = {}): Logger {
+  const boundContext = { ...context };
 
-    // Attach to request for use in handlers
-    (request as any).requestId = requestId;
+  const log = (level: string, data: Record<string, unknown>) => {
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(), // Generate fresh timestamp per log
+      level,
+      ...boundContext,
+      ...data
+    }));
+  };
 
-    // Set response header
-    reply.header('x-request-id', requestId);
+  return {
+    info: (data) => log('info', data),
+    error: (data) => log('error', data),
+    warn: (data) => log('warn', data),
+    debug: (data) => log('debug', data),
+  };
+}
+
+/**
+ * Fastify request extension with logger
+ */
+export interface RequestWithLogger {
+  logger: Logger;
+  requestId?: string;
+  ip?: string;
+}
+
+/**
+ * Create logger from request - extracts requestId automatically
+ */
+export function createRequestLogger(request: RequestWithLogger): Logger {
+  const requestId = request?.requestId || (request?.headers as any)?.['x-request-id'];
+  return createLogger({ 
+    request_id: requestId,
+    ip: request?.ip || (request?.headers as any)?.['x-forwarded-for']
   });
 }
 ```
 
 ---
 
-## Step 2 — Register Middleware in App
+## Step 2 — Bind Logger to Request in Middleware
 
-**Goal:** Apply request ID middleware to all routes
+**Goal:** Attach context-aware logger to every request automatically
 
-**Method:** Update `apps/api/src/server/app.ts`:
-- Import `requestIdMiddleware`
-- Register it BEFORE routes
+**Method:** Update `apps/api/src/server/middleware/request-id.ts`:
+- Import `createLogger`
+- Create logger with request_id bound
+- Attach to request object
 
-**Reference:** `apps/api/src/server/app.ts`
+**Reference:** `apps/api/src/server/middleware/request-id.ts`
 
 **Code changes:**
 ```typescript
-import { requestIdMiddleware } from './middleware/request-id';
+import { createLogger } from '../utils/logger';
 
-// Register request ID middleware (before routes)
-await app.register(requestIdMiddleware);
-
-// ... existing route registrations
+// In preHandler hook, after setting requestId:
+(request as any).logger = createLogger({
+  request_id: requestId
+});
 ```
 
 ---
 
-## Step 3 — Update Event Creation to Accept Correlation ID
+## Step 3 — Replace console.log in Routes
 
-**Goal:** Allow passing request ID to event creation instead of generating random one
-
-**Method:** Update `shared/events/transactional-outbox.ts`:
-- Modify `insertEventInTransaction` to accept optional `correlationId` parameter
-- Use provided correlation_id if given, otherwise generate new UUID
-
-**Reference:** `shared/events/transactional-outbox.ts`
-
-**Code changes:**
-```typescript
-export async function insertEventInTransaction(
-  client: any,
-  event_type: string,
-  payload: Record<string, any>,
-  producer: string,
-  version = 'v1',
-  correlationId?: string // Add optional parameter
-): Promise<void> {
-  const event_id = randomUUID();
-  const correlation_id = correlationId || randomUUID(); // Use provided or generate
-  
-  await client.query(
-    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-    [event_id, event_type, version, producer, correlation_id, JSON.stringify(payload)]
-  );
-}
-```
-
----
-
-## Step 4 — Update Audit Log to Include Correlation ID
-
-**Goal:** Include request ID in audit log metadata
-
-**Method:** Update `shared/events/audit-log.ts`:
-- Add optional `correlationId` parameter to `auditLog`
-- Include in metadata
-
-**Reference:** `shared/events/audit-log.ts`
-
-**Code changes:**
-```typescript
-export async function auditLog(
-  userId: string | null,
-  action: string,
-  metadata: Record<string, unknown> = {},
-  correlationId?: string
-): Promise<void> {
-  // Include correlation_id in metadata for traceability
-  const fullMetadata = {
-    ...metadata,
-    ...(correlationId && { correlation_id: correlationId })
-  };
-  
-  await db.query(
-    `INSERT INTO audit.logs (user_id, action, metadata)
-     VALUES ($1, $2, $3)`,
-    [userId, action, JSON.stringify(fullMetadata)]
-  );
-}
-
-// Update systemAuditLog similarly
-export async function systemAuditLog(
-  action: string,
-  metadata: Record<string, unknown> = {},
-  correlationId?: string
-): Promise<void> {
-  return auditLog(null, action, metadata, correlationId);
-}
-```
-
----
-
-## Step 5 — Update /register Route to Pass Request ID
-
-**Goal:** Pass request ID to event creation and audit logging
-
-**Method:** Update `apps/api/src/server/routes/auth.ts`:
-- Extract `requestId` from request
-- Pass to auditLog calls
-
-**Reference:** `apps/api/src/server/routes/auth.ts`
-
-**Code changes:**
-```typescript
-// In route handler, get requestId
-const requestId = (request as any).requestId;
-
-// Pass to auditLog
-await auditLog(userId, 'user_registered', { email }, requestId);
-```
-
----
-
-## Step 6 — Update /proofs Route to Pass Request ID
-
-**Goal:** Pass request ID to event creation and audit logging
+**Goal:** Use logger with automatic context in route handlers
 
 **Method:** Update `apps/api/src/server/routes/proofs.ts`:
-- Extract `requestId` from request
-- Pass to auditLog calls
+- Import `createRequestLogger` or use `request.logger`
+- Replace `console.log` with `request.logger.info()`
 
 **Reference:** `apps/api/src/server/routes/proofs.ts`
 
 **Code changes:**
 ```typescript
-// In route handler, get requestId
-const requestId = (request as any).requestId;
+// Replace:
+console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
 
-// Pass to auditLog
-await auditLog(user_id, 'proof_submitted', { 
-  proof_id: result.proof_id,
+// With:
+request.logger.info({
+  event: 'proof_received',
   filename,
-  size: fileBuffer.length 
-}, requestId);
+  size: fileBuffer.length,
+  user_id
+});
 ```
 
 ---
 
-## Step 7 — Update Worker Logs to Include Correlation ID
+## Step 4 — Replace console.log in Idempotency Utils
 
-**Goal:** Log correlation ID when processing events for end-to-end tracing
+**Goal:** Use logger in idempotency utility functions
 
-**Method:** Update relevant consumer files to log with correlation_id:
-- `apps/api/src/domains/validation/consumers/validation-aggregator.consumer.ts`
-- Any other event consumers
+**Method:** Update `apps/api/src/server/utils/idempotency.ts`:
+- Import `createLogger` with static context
+- Replace console.error with logger.error
 
-**Reference:** Event consumer files
+**Reference:** `apps/api/src/server/utils/idempotency.ts`
 
 **Code changes:**
 ```typescript
-// When processing event, include correlation_id in logs
-console.log(JSON.stringify({
-  event: 'validation_aggregated',
-  correlation_id: event.correlation_id, // From the event itself
-  proof_id: payload.proof_id,
-  user_id: payload.user_id
-}));
+// At top of file, create module logger
+const logger = createLogger({ module: 'idempotency' });
+
+// Replace console.error with:
+logger.error({ event: 'idempotency_cleanup_executed', deleted_count: deleted, cutoff: cutoff.toISOString() });
 ```
+
+---
+
+## Step 5 — Replace console.log in API Entry Point
+
+**Goal:** Use logger in server startup
+
+**Method:** Update `apps/api/src/server/index.ts`:
+- Replace console.log with logger
+
+**Reference:** `apps/api/src/server/index.ts`
+
+---
+
+## Step 6 — Replace console.log in Domain Use Cases
+
+**Goal:** Use logger in business logic with correlation context
+
+**Method:** Update key domain files:
+- `apps/api/src/domains/validation/application/createProofUseCase.ts`
+- Other files that log during request processing
+
+For use cases called from routes, they receive request context. For background processing, create logger with correlation_id.
+
+**Reference:** Domain use case files
+
+---
+
+## Step 7 — Create Worker/Consumer Logger
+
+**Goal:** Logger for background processing with correlation_id
+
+**Method:** Create helper or update consumer files:
+- Accept correlation_id from event
+- Create logger with correlation_id bound
+
+**Reference:** `shared/events/event-consumer.repository.ts`
+
+**Code changes:**
+```typescript
+// In consumer processing:
+const logger = createLogger({ correlation_id: event.correlation_id });
+logger.info({ event: 'event_processed', event_type: event.event_type });
+```
+
+---
+
+## Step 8 — Audit Log Integration
+
+**Goal:** Audit logs also use centralized logger
+
+**Method:** Update `shared/events/audit-log.ts`:
+- Use createLogger with module context
+- Include correlation_id when provided
+
+**Reference:** `shared/events/audit-log.ts`
 
 ---
 
 # 5. TESTING AND VALIDATION
 
 **Manual test approach:**
-1. Start API server and worker
-2. Send request to `/register` without `x-request-id` → response contains new UUID in `x-request-id` header
-3. Send request with custom `x-request-id: my-test-id` → same ID returned in response
-4. Check database events table → `correlation_id` matches the request ID
-5. Check audit logs → `correlation_id` in metadata matches
-6. Check worker logs → contains same correlation_id
+1. Send API request to `/proofs`
+2. Check server logs - should contain `request_id` automatically
+3. Verify format is valid JSON with all fields
+4. For background events - check worker logs contain `correlation_id`
 
-**Expected behavior:**
-- Response always includes `x-request-id` header
-- If client sends `x-request-id`, it's preserved (not regenerated)
-- Events and audit logs contain same correlation_id
-- Full trace from API → event → worker logs
+**Expected log format:**
+```json
+{
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "level": "info",
+  "request_id": "abc-123",
+  "event": "proof_received",
+  "filename": "document.pdf",
+  "size": 1024
+}
+```
 
 **Success criteria:**
-- [ ] All API responses include `x-request-id` header
-- [ ] Events table stores correlation_id matching original request
-- [ ] Audit logs include correlation_id in metadata
-- [ ] Worker logs include correlation_id from events
-- [ ] End-to-end trace is possible with single ID
+- [ ] All API route logs include request_id automatically
+- [ ] All worker/consumer logs include correlation_id
+- [ ] No raw console.log in application code (only node_modules)
+- [ ] All logs are valid JSON
+- [ ] Consistent log format across all modules

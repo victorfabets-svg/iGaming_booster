@@ -1,4 +1,8 @@
 import { db } from 'shared/database/connection';
+import { createLogger } from '../../apps/api/src/server/utils/logger';
+
+// Module-level logger with static context
+const logger = createLogger({ module: 'audit' });
 
 /**
  * Audit logger - records critical actions for traceability
@@ -27,7 +31,7 @@ export async function auditLog(
     );
   } catch (err) {
     // Log error but don't fail the main flow
-    console.error('[AUDIT] Failed to write audit log:', err);
+    logger.error({ event: 'audit_write_failed', error: String(err) });
   }
 }
 

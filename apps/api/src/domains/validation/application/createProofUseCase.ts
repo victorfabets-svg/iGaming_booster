@@ -3,6 +3,10 @@ import { ProofInput } from '../domain/proof';
 import { generateSHA256 } from '../../../../../../shared/utils/hash';
 import { getStorageService } from '../../../infrastructure/storage';
 import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { createLogger } from '../../../../../server/utils/logger';
+
+// Module-level logger with static context
+const logger = createLogger({ module: 'createProof' });
 
 /**
  * Determine content type from file extension
@@ -27,7 +31,7 @@ export interface CreateProofResult {
 }
 
 export async function createProofUseCase(input: ProofInput): Promise<CreateProofResult> {
-  console.log('[PROOF] Request received for user_id:', input.user_id);
+  logger.info({ event: 'proof_request_received', user_id: input.user_id });
 
   // Validate buffer is not empty
   if (!input.file_buffer || input.file_buffer.length === 0) {
@@ -48,13 +52,13 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
 
   // Upload file to storage and get storage key (outside transaction - not a DB op)
   const { key } = await storageService.upload(input.file_buffer, path, contentType);
-  console.log('[PROOF] Storage key:', key);
+  logger.info({ event: 'proof_file_uploaded', storage_key: key });
 
   // Use transactional outbox to ensure atomicity: proof + event + audit in same tx
   const result = await runCommandTransaction(async (client) => {
     // Insert proof within transaction
     const proofResult = await createProofInTransaction(client, input, key, hash);
-    console.log('[PROOF] Created proof:', proofResult.proof.id);
+    logger.info({ event: 'proof_created', proof_id: proofResult.proof.id, is_new: proofResult.isNew });
 
     // Only insert event and audit for new proofs (not duplicates)
     if (proofResult.isNew) {
@@ -69,7 +73,7 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
         },
         'validation'
       );
-      console.log('[PROOF] Event proof_submitted inserted in transaction for:', proofResult.proof.id);
+      logger.info({ event: 'proof_event_inserted', proof_id: proofResult.proof.id });
 
       // Insert audit log in same transaction
       await insertAuditInTransaction(
@@ -85,7 +89,7 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
         }
       );
     } else {
-      console.log('[PROOF] Duplicate proof - skipping event insert');
+      logger.info({ event: 'proof_duplicate_skipped', user_id: input.user_id, hash });
     }
 
     return proofResult;
@@ -101,11 +105,11 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
       // getStorageService returns R2StorageAdapter which has getSignedUrl
       signedUrl = await (storageService as any).getSignedUrl(path, 300); // 5 minutes
       expiresIn = 300;
-      console.log('[PROOF] Generated signed URL, expires in:', expiresIn, 'seconds');
+      logger.info({ event: 'proof_signed_url_generated', expires_in: expiresIn });
     }
   } catch (error) {
     // Signed URL is optional - log but don't fail
-    console.error('[PROOF] Signed URL generation failed:', (error as Error).message);
+    logger.warn({ event: 'proof_signed_url_failed', error: String(error) });
   }
 
   return { 
