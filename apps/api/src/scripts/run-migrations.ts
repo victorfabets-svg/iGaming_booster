@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { db, connectWithRetry } from '../../../../shared/database/connection';
+import { db, connectWithRetry } from '@shared/database/connection';
 
 const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
 

@@ -4,7 +4,7 @@ import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 import { rateLimitDb } from '../utils/rate-limit-db';
 import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
-import { auditLog } from '../../../shared/events/audit-log';
+import { auditLog } from '@shared/events/audit-log';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin

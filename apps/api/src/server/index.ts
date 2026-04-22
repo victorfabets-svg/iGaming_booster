@@ -25,9 +25,9 @@ if (removedKeys.length > 0) {
 // ============================================================
 
 import { buildApp } from './app';
-import { config, NEON_DB_URL } from '../../../../shared/config/env';
-import { connectWithRetry, getDb, closePool } from '../../../../shared/database/connection';
-import { startStuckEventRecovery, stopStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
+import { config, NEON_DB_URL } from '@shared/config/env';
+import { connectWithRetry, getDb, closePool } from '@shared/database/connection';
+import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 import { setDbHealth } from './state';
 
 // Global app reference for graceful shutdown

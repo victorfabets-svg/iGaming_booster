@@ -1,4 +1,4 @@
-import { db } from 'shared/database/connection';
+import { db } from '@shared/database/connection';
 import { createLogger } from './logger';
 
 // Module-level logger with static context

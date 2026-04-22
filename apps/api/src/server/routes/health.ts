@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { db } from 'shared/database/connection';
+import { db } from '@shared/database/connection';
 
 /**
  * Health check routes - no auth required

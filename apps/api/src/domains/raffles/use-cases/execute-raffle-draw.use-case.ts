@@ -1,9 +1,9 @@
 import { getSeedForDraw, fetchTicketsForDraw, selectWinner } from '../application/draw-engine';
 import { getRaffleById } from '../application/get-active-raffle';
-import { db } from '../../../../../../shared/database/connection';
+import { db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
-import { logger } from '../../../../../../shared/observability/logger';
-import { recordRaffleExecution } from '../../../../../../shared/observability/metrics.service';
+import { logger } from '@shared/observability/logger';
+import { recordRaffleExecution } from '@shared/observability/metrics.service';
 
 export interface ExecuteRaffleDrawInput {
   raffle_id: string;

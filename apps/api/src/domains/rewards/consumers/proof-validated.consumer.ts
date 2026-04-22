@@ -7,7 +7,7 @@
  * proof_validated → [this consumer] → emits reward_granted
  */
 
-import { fetchAndLockEvents, processEventExactlyOnce, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { processReward, ProofValidatedPayload } from '../../rewards/use-cases/process-reward.use-case';
 import { logger } from '@shared/observability/logger';
 

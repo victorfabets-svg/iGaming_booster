@@ -6,11 +6,11 @@ import { validateWithHeuristics, HeuristicResult } from '../services/heuristic.s
 // EVENT-DRIVEN: fraud and payments are decoupled - no direct imports
 // fraud_check_requested → fraud consumer → fraud_scored
 // payment_identifier_requested → payments consumer → payment_identifier_extracted
-import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
-import { recordValidationResult } from '../../../../../../shared/observability/metrics.service';
-import { isValidationEnabled } from '../../../../../../shared/config/feature-flags';
-import { config } from '../../../../../../shared/config/env';
-import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { logger, alertMonitor } from '@shared/observability/logger';
+import { recordValidationResult } from '@shared/observability/metrics.service';
+import { isValidationEnabled } from '@shared/config/feature-flags';
+import { config } from '@shared/config/env';
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 
 export interface ProcessValidationInput {
   proof_id: string;

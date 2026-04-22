@@ -1,4 +1,4 @@
-import { db } from 'shared/database/connection';
+import { db } from '@shared/database/connection';
 
 /**
  * Database-backed rate limiting function

@@ -2,17 +2,17 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import crypto from 'crypto';
-import { getDb, db as dbConn } from '../../../../shared/database/connection';
+import { getDb, db as dbConn } from '@shared/database/connection';
 import { getDbHealth } from './state';
-import { NEON_DB_URL } from '../../../../shared/config/env';
+import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import healthRoutes from './routes/health';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
-import { CircuitOpenError, DbPoolExhaustedError } from '../../../shared/database/db-circuit';
-import { isCircuitOpen } from '../../../shared/database/db-circuit';
+import { CircuitOpenError, DbPoolExhaustedError } from '@shared/database/db-circuit';
+import { isCircuitOpen } from '@shared/database/db-circuit';
 
 // Request timeout - prevents hanging requests (10s)
 const REQUEST_TIMEOUT_MS = 10000;
