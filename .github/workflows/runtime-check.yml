@@ -184,13 +184,22 @@ jobs:
 
 
           echo "--- Step 3: first POST /proofs ---"
-          RESP1=$(curl -sSf --max-time 15 -X POST http://localhost:$PORT/proofs \
+          HTTP1=$(curl -sS -o /tmp/resp1.json -w "%{http_code}" --max-time 15 -X POST http://localhost:$PORT/proofs \
             -H "Authorization: Bearer $TOKEN" \
             -H "Idempotency-Key: e2e-key-001" \
-            -F "file=@/tmp/proof.png")
-          echo "resp1: $RESP1"
-          PROOF_ID=$(echo "$RESP1" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '')")
-          [ -n "$PROOF_ID" ] || { echo "FAIL: no proof_id in first response"; exit 1; }
+            -F "file=@/tmp/proof.png" || true)
+          RESP1=$(cat /tmp/resp1.json 2>/dev/null || echo "")
+          echo "resp1 (HTTP $HTTP1): $RESP1"
+          if [ "$HTTP1" != "200" ] && [ "$HTTP1" != "201" ]; then
+            echo "FAIL: POST /proofs returned HTTP $HTTP1"
+            echo "=== api.log tail (last 200) ==="
+            tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
+            echo "=== worker.log tail (last 200) ==="
+            tail -n 200 worker.log 2>/dev/null || echo "(no worker.log)"
+            exit 1
+          fi
+          PROOF_ID=$(echo "$RESP1" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '') } catch(e) { console.log('') }")
+          [ -n "$PROOF_ID" ] || { echo "FAIL: no proof_id in first response body"; exit 1; }
           echo "proof_id=$PROOF_ID"
 
 
@@ -258,12 +267,17 @@ jobs:
 
 
           echo "--- Step 6: idempotency test ---"
-          RESP2=$(curl -sSf --max-time 15 -X POST http://localhost:$PORT/proofs \
+          HTTP2=$(curl -sS -o /tmp/resp2.json -w "%{http_code}" --max-time 15 -X POST http://localhost:$PORT/proofs \
             -H "Authorization: Bearer $TOKEN" \
             -H "Idempotency-Key: e2e-key-001" \
-            -F "file=@/tmp/proof.png")
-          echo "resp2: $RESP2"
-          PROOF_ID2=$(echo "$RESP2" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '')")
+            -F "file=@/tmp/proof.png" || true)
+          RESP2=$(cat /tmp/resp2.json 2>/dev/null || echo "")
+          echo "resp2 (HTTP $HTTP2): $RESP2"
+          if [ "$HTTP2" != "200" ] && [ "$HTTP2" != "201" ]; then
+            echo "FAIL: idempotency POST returned HTTP $HTTP2"
+            exit 1
+          fi
+          PROOF_ID2=$(echo "$RESP2" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '') } catch(e) { console.log('') }")
           if [ "$PROOF_ID" != "$PROOF_ID2" ]; then
             echo "FAIL: idempotency broken. First=$PROOF_ID Second=$PROOF_ID2"
             exit 1
@@ -276,5 +290,9 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
+          echo "=== api.log tail (last 200 lines) ==="
+          tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
+          echo "=== worker.log tail (last 200 lines) ==="
+          tail -n 200 worker.log 2>/dev/null || echo "(no worker.log)"
           kill $(cat api.pid) 2>/dev/null || true
           kill $(cat worker.pid) 2>/dev/null || true
