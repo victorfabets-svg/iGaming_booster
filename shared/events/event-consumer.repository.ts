@@ -206,6 +206,30 @@ export async function reprocessDlqEvent(eventId: string): Promise<void> {
 }
 
 // ============================================================================
+// TASK 7: OBSERVABILITY - Queue and DLQ metrics
+// ============================================================================
+
+/**
+ * Get current queue size (unprocessed events).
+ */
+export async function getQueueSize(): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM events.events WHERE processed = FALSE`
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+/**
+ * Get current DLQ size.
+ */
+export async function getDlqSize(): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM events.dlq_events`
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+// ============================================================================
 // TASK 3: RETRY LOGIC - Proper retry with backoff
 // ============================================================================
 
