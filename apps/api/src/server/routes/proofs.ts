@@ -33,7 +33,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         // NOTE: user_id no longer accepted from body - extracted from token only
       }
 
-      // Validate file
+      // Validate file: File must be present and non-empty (multipart form data)
       if (!fileBuffer || fileBuffer.length === 0) {
         return fail(reply, 'Missing required file upload or file is empty', 'VALIDATION_ERROR');
       }

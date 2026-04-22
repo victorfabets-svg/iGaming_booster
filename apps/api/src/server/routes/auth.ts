@@ -2,9 +2,11 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
+import { requireFields } from '../utils/validation';
 
 interface RegisterBody {
   email: string;
+  password: string;
 }
 
 // Simple email validation regex
@@ -22,10 +24,22 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: RegisterBody }>(
     '/register',
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
-      const { email } = request.body;
+      // Validate required fields
+      const fieldsError = requireFields(request.body, ['email', 'password']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
 
+      const { email, password } = request.body;
+
+      // Validate email format
       if (!isValidEmail(email)) {
         return fail(reply, 'Valid email required', 'VALIDATION_ERROR');
+      }
+
+      // Validate password strength
+      if (password.length < 8) {
+        return fail(reply, 'Password must be at least 8 characters', 'VALIDATION_ERROR');
       }
 
       const userId = randomUUID();
