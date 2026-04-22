@@ -31,7 +31,7 @@ import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/
 import { setDbHealth } from './state';
 
 // Global app reference for graceful shutdown
-let app: ReturnType<typeof buildApp> | null = null;
+let app: Awaited<ReturnType<typeof buildApp>> | null = null;
 
 // Force exit timeout - prevents hanging on failed shutdown
 const FORCE_EXIT_TIMEOUT_MS = 10000;
