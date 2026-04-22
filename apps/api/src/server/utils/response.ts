@@ -7,7 +7,7 @@
  * Send successful response with data.
  */
 export function ok(res: any, data: any): any {
-  return res.json({
+  return res.send({
     success: true,
     data,
     error: null
@@ -22,7 +22,7 @@ export function fail(
   message: string,
   code: string = 'INTERNAL_ERROR'
 ): any {
-  return res.status(500).json({
+  return res.status(500).send({
     success: false,
     data: null,
     error: {
