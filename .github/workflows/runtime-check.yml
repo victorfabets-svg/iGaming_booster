@@ -172,7 +172,7 @@ jobs:
             const crypto = require('crypto');
             const b64 = s => Buffer.from(s).toString('base64url');
             const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
-            const payload = b64(JSON.stringify({userId:'ci-e2e-user', iat: Math.floor(Date.now()/1000)}));
+            const payload = b64(JSON.stringify({user_id:'ci-e2e-user', iat: Math.floor(Date.now()/1000)}));
             const sig = crypto.createHmac('sha256', process.env.JWT_SECRET).update(header + '.' + payload).digest('base64url');
             console.log(header + '.' + payload + '.' + sig);
           ")
