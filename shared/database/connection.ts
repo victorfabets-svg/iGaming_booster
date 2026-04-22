@@ -72,9 +72,9 @@ export async function getClient(): Promise<pg.PoolClient> {
   // Log every usage for auditing (timestamp auto-injected by logger)
   logger.error({
     event: 'unsafe_db_usage_detected',
-    context: 'database',
-    data: 'getClient() called - use runWithClient() or withTransaction() instead',
-    user_id: STRICT_DB,
+    module: 'database',
+    message: 'getClient() called - use runWithClient() or withTransaction() instead',
+    strict_mode: STRICT_DB,
     ...(STRICT_DB === 'warn' && { stack: new Error().stack })
   });
 
@@ -244,9 +244,9 @@ async function acquireClient(): Promise<pg.PoolClient> {
   if (!incrementDbClients()) {
     logger.error({
       event: 'db_pool_exhausted',
-      context: 'database',
-      data: 'Database pool exhausted - too many concurrent connections',
-      user_id: { active_clients: getActiveDbClients() }
+      module: 'database',
+      message: 'Database pool exhausted - too many concurrent connections',
+      active_clients: getActiveDbClients()
     });
     throw new DbPoolExhaustedError();
   }
