@@ -31,9 +31,30 @@ export function pool(): pg.Pool {
 /**
  * Get a client from the pool for transactional operations.
  * Caller MUST release the client (even on error).
+ * @deprecated Use runWithClient() or withTransaction() instead to prevent client leaks.
  */
 export async function getClient(): Promise<pg.PoolClient> {
   return acquireClient();
+}
+
+/**
+ * Execute a function with a database client.
+ * Automatically acquires a client from the pool and releases it when done.
+ * This eliminates the risk of client leaks from manual release() calls.
+ * 
+ * @param fn - Function that receives the client and returns a promise
+ * @returns The result of the function
+ */
+export async function runWithClient<T>(
+  fn: (client: pg.PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await acquireClient();
+
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -43,21 +64,18 @@ export async function getClient(): Promise<pg.PoolClient> {
 export async function withTransaction<T>(
   callback: (client: pg.PoolClient) => Promise<T>
 ): Promise<T> {
-  const client = await getClient();
-  
-  try {
-    // TASK 2: ENFORCE TIMEOUT - Set statement timeout before BEGIN
-    await client.query('SET statement_timeout = 5000');
-    await client.query('BEGIN');
-    const result = await callback(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  return runWithClient(async (client) => {
+    try {
+      await client.query('SET statement_timeout = 5000');
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
 }
 
 /**
