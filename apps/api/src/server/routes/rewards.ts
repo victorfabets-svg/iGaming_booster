@@ -1,8 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { findAllRewards, findRewardById } from '../../domains/rewards/repositories/reward.repository';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 
 export async function rewardRoutes(fastify: FastifyInstance): Promise<void> {
+  // Require authentication for all reward endpoints
+  fastify.addHook('preHandler', authMiddleware);
   // Get all rewards
   fastify.get('/rewards', async (request, reply) => {
     const rewards = await findAllRewards();

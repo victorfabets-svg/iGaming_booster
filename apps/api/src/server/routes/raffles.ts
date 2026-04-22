@@ -1,9 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { findRaffleById, findAllRaffles, findActiveRaffle } from '../../domains/rewards/repositories/raffle.repository';
 import { findRaffleDrawByRaffleId } from '../../domains/raffles/repositories/raffle-draw.repository';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 
 export async function raffleRoutes(fastify: FastifyInstance): Promise<void> {
+  // Require authentication for all raffle endpoints
+  fastify.addHook('preHandler', authMiddleware);
   // Get all raffles
   fastify.get('/raffles', async (request, reply) => {
     const raffles = await findAllRaffles();
