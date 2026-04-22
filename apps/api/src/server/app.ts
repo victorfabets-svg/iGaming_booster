@@ -15,13 +15,39 @@ import { mapError } from './utils/error-mapper';
 // Request timeout - prevents hanging requests (10s)
 const REQUEST_TIMEOUT_MS = 10000;
 
+// Concurrency control - max in-flight requests
+const MAX_CONCURRENT_REQUESTS = 100;
+let activeRequests = 0;
+
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     logger: true,
   });
 
-  // Global request timeout - enforce per-request deadline
+  // Global request timeout + concurrency control
   app.addHook('onRequest', async (request, reply) => {
+    // Concurrency check - reject if overloaded
+    if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+      request.logger.error({
+        event: 'server_overloaded',
+        active_requests: activeRequests,
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Server overloaded',
+          code: 'OVERLOADED'
+        }
+      });
+    }
+
+    // Increment active count
+    activeRequests++;
+
+    // Request timeout timer
     const timer = setTimeout(() => {
       request.logger.error({
         event: 'request_timeout',
@@ -43,8 +69,11 @@ export function buildApp(): FastifyInstance {
       }
     }, REQUEST_TIMEOUT_MS);
 
-    // Clear timer when response finishes
-    reply.raw.on('finish', () => clearTimeout(timer));
+    // Clear timer and decrement on response finish
+    reply.raw.on('finish', () => {
+      clearTimeout(timer);
+      activeRequests = Math.max(0, activeRequests - 1);
+    });
   });
 
   // Register JWT plugin for authentication
