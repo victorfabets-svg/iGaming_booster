@@ -66,6 +66,31 @@ export function isIdempotencyStale(record: IdempotencyRecord | null): boolean {
 }
 
 /**
+ * Cleanup old idempotency keys to prevent unbounded growth
+ * @param olderThanMs - Delete keys older than this many milliseconds (default 24h)
+ */
+export async function cleanupIdempotency(olderThanMs: number = 24 * 60 * 60 * 1000): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs);
+  
+  const result = await db.query(
+    `DELETE FROM infra.idempotency_keys
+     WHERE created_at < $1`,
+    [cutoff]
+  );
+  
+  const deleted = result.rowCount ?? 0;
+  if (deleted > 0) {
+    console.log(JSON.stringify({
+      event: 'idempotency_cleanup_executed',
+      deleted_count: deleted,
+      cutoff: cutoff.toISOString()
+    }));
+  }
+  
+  return deleted;
+}
+
+/**
  * Complete idempotency by saving the final response
  */
 export async function completeIdempotency(

@@ -7,6 +7,7 @@ import { getDbHealth } from './state';
 import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
+import { cleanupIdempotency } from './utils/idempotency';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -33,6 +34,9 @@ export function buildApp(): FastifyInstance {
   // Register routes
   app.register(proofRoutes);
   app.register(metricsRoutes);
+
+  // Cleanup old idempotency keys on startup (24h retention)
+  cleanupIdempotency(24 * 60 * 60 * 1000).catch(() => {});
 
   // Health check - always returns ok (DB not required)
   app.get('/health', async () => {
