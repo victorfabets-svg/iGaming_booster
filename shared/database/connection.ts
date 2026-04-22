@@ -3,6 +3,7 @@ import {
   isCircuitOpen, recordFailure, recordSuccess, CircuitOpenError, DbPoolExhaustedError,
   incrementDbClients, decrementDbClients, getActiveDbClients 
 } from './db-circuit';
+import { logger } from '../observability/logger';
 
 // Re-export types
 export type { Pool, PoolClient } from 'pg';
@@ -68,19 +69,25 @@ export function pool(): pg.Pool {
  * @deprecated This function will be removed in a future version.
  */
 export async function getClient(): Promise<pg.PoolClient> {
-  // Log every usage for auditing
-  const logEntry = {
-    event: 'unsafe_db_usage_detected',
-    function: 'getClient',
-    timestamp: new Date().toISOString(),
-    strict_mode: STRICT_DB || 'undefined'
-  };
-  
+  // Log every usage for auditing (timestamp auto-injected by logger)
+  logger.error(
+    'unsafe_db_usage_detected',
+    'database',
+    'getClient() called - use runWithClient() or withTransaction() instead',
+    undefined,
+    { strict_mode: STRICT_DB }
+  );
+
+  // Add stack trace in warn mode for debugging
   if (STRICT_DB === 'warn') {
-    logEntry.stack = new Error().stack;
+    logger.error(
+      'unsafe_db_usage_stack',
+      'database',
+      'Stack trace for getClient() call',
+      undefined,
+      { stack: new Error().stack }
+    );
   }
-  
-  console.error(JSON.stringify(logEntry));
 
   // Block if STRICT_DB=true
   if (STRICT_DB === 'true') {
