@@ -12,9 +12,39 @@ import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
 
+// Request timeout - prevents hanging requests (10s)
+const REQUEST_TIMEOUT_MS = 10000;
+
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     logger: true,
+  });
+
+  // Global request timeout - enforce per-request deadline
+  app.addHook('onRequest', async (request, reply) => {
+    const timer = setTimeout(() => {
+      request.logger.error({
+        event: 'request_timeout',
+        request_id: request.id,
+        path: request.url,
+        method: request.method
+      });
+
+      // Only send if response not already sent
+      if (!reply.sent) {
+        reply.status(408).send({
+          success: false,
+          data: null,
+          error: {
+            message: 'Request timeout',
+            code: 'TIMEOUT'
+          }
+        });
+      }
+    }, REQUEST_TIMEOUT_MS);
+
+    // Clear timer when response finishes
+    reply.raw.on('finish', () => clearTimeout(timer));
   });
 
   // Register JWT plugin for authentication
