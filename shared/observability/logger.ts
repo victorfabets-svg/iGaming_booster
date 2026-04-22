@@ -91,11 +91,14 @@ class Logger {
   }
 
   info(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
-    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
-    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
-    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
-    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
-    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    const eventObj = event as Record<string, unknown>;
+    const eventStr = typeof event === 'object' ? String(eventObj.event || '') : (event as string);
+    // Support both 'module' and 'context' for domain
+    const domainStr = typeof event === 'object' ? String(eventObj.module || eventObj.context || '') : (domain || 'app');
+    // Support both 'message' and 'data' for message
+    const msgStr = typeof event === 'object' ? String(eventObj.message || eventObj.data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? eventObj.user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? eventObj.metadata as LogMetadata | undefined : metadata;
     
     if (this.shouldLog(LogLevel.INFO)) {
       const log = this.formatLog(LogLevel.INFO, eventStr || 'unknown', domainStr, msgStr, uid, meta);
@@ -104,11 +107,14 @@ class Logger {
   }
 
   warn(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
-    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
-    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
-    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
-    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
-    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    const eventObj = event as Record<string, unknown>;
+    const eventStr = typeof event === 'object' ? String(eventObj.event || '') : (event as string);
+    // Support both 'module' and 'context' for domain
+    const domainStr = typeof event === 'object' ? String(eventObj.module || eventObj.context || '') : (domain || 'app');
+    // Support both 'message' and 'data' for message
+    const msgStr = typeof event === 'object' ? String(eventObj.message || eventObj.data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? eventObj.user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? eventObj.metadata as LogMetadata | undefined : metadata;
     
     if (this.shouldLog(LogLevel.WARN)) {
       const log = this.formatLog(LogLevel.WARN, eventStr || 'unknown', domainStr, msgStr, uid, meta);
@@ -117,11 +123,14 @@ class Logger {
   }
 
   error(event: string | Record<string, unknown>, domain?: string, message?: string, userId?: string, metadata?: LogMetadata): void {
-    const eventStr = typeof event === 'object' ? String((event as Record<string, unknown>).event || '') : (event as string);
-    const domainStr = typeof event === 'object' ? String((event as Record<string, unknown>).context || '') : (domain || 'app');
-    const msgStr = typeof event === 'object' ? String((event as Record<string, unknown>).data || '') : (message || eventStr || '');
-    const uid = typeof event === 'object' ? (event as Record<string, unknown>).user_id as string | undefined : userId;
-    const meta = typeof event === 'object' ? (event as Record<string, unknown>).data as LogMetadata | undefined : metadata;
+    const eventObj = event as Record<string, unknown>;
+    const eventStr = typeof event === 'object' ? String(eventObj.event || '') : (event as string);
+    // Support both 'module' and 'context' for domain
+    const domainStr = typeof event === 'object' ? String(eventObj.module || eventObj.context || '') : (domain || 'app');
+    // Support both 'message' and 'data' for message
+    const msgStr = typeof event === 'object' ? String(eventObj.message || eventObj.data || '') : (message || eventStr || '');
+    const uid = typeof event === 'object' ? eventObj.user_id as string | undefined : userId;
+    const meta = typeof event === 'object' ? eventObj.metadata as LogMetadata | undefined : metadata;
     
     if (this.shouldLog(LogLevel.ERROR)) {
       const log = this.formatLog(LogLevel.ERROR, eventStr || 'unknown', domainStr, msgStr, uid, meta);

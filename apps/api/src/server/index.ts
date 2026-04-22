@@ -26,9 +26,66 @@ if (removedKeys.length > 0) {
 
 import { buildApp } from './app';
 import { config, NEON_DB_URL } from '../../../../shared/config/env';
-import { connectWithRetry, getDb } from '../../../../shared/database/connection';
-import { startStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
+import { connectWithRetry, getDb, closePool } from '../../../../shared/database/connection';
+import { startStuckEventRecovery, stopStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
 import { setDbHealth } from './state';
+
+// Global app reference for graceful shutdown
+let app: ReturnType<typeof buildApp> | null = null;
+
+// Force exit timeout - prevents hanging on failed shutdown
+const FORCE_EXIT_TIMEOUT_MS = 10000;
+
+// Graceful shutdown handler
+async function shutdown(signal: string): Promise<void> {
+  console.log(JSON.stringify({
+    event: 'shutdown_started',
+    signal
+  }));
+
+  // Set force exit timeout
+  const forceExitTimer = setTimeout(() => {
+    console.log(JSON.stringify({
+      event: 'shutdown_timeout',
+      message: 'Force exiting after timeout'
+    }));
+    process.exit(1);
+  }, FORCE_EXIT_TIMEOUT_MS);
+
+  try {
+    // Stop stuck event recovery interval
+    stopStuckEventRecovery();
+
+    // Stop accepting new connections and close gracefully
+    if (app) {
+      await app.close();
+      console.log(JSON.stringify({ event: 'server_closed' }));
+    }
+
+    // Close database pool
+    await closePool();
+    console.log(JSON.stringify({ event: 'db_pool_closed' }));
+
+    clearTimeout(forceExitTimer);
+
+    console.log(JSON.stringify({
+      event: 'shutdown_completed'
+    }));
+
+    process.exit(0);
+  } catch (err) {
+    clearTimeout(forceExitTimer);
+    console.log(JSON.stringify({
+      event: 'shutdown_error',
+      error: err instanceof Error ? err.message : String(err)
+    }));
+    process.exit(1);
+  }
+}
+
+// Register signal handlers
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // Structured DB audit log (sanitized - no credentials)
 let dbHostInfo: Record<string, unknown> = {};
@@ -71,7 +128,7 @@ async function start() {
   // Start stuck event recovery globally (runs once)
   startStuckEventRecovery();
 
-  const app = buildApp();
+  app = buildApp();
 
   const port = config.apiPort;
 

@@ -7,13 +7,75 @@ import { getDbHealth } from './state';
 import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
+import healthRoutes from './routes/health';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
+import { CircuitOpenError, DbPoolExhaustedError } from '../../../shared/database/db-circuit';
+import { isCircuitOpen } from '../../../shared/database/db-circuit';
+
+// Request timeout - prevents hanging requests (10s)
+const REQUEST_TIMEOUT_MS = 10000;
+
+// Concurrency control - max in-flight requests
+const MAX_CONCURRENT_REQUESTS = 100;
+let activeRequests = 0;
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     logger: true,
+  });
+
+  // Global request timeout + concurrency control
+  app.addHook('onRequest', async (request, reply) => {
+    // Concurrency check - reject if overloaded
+    if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+      request.logger.error({
+        event: 'server_overloaded',
+        active_requests: activeRequests,
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Server overloaded',
+          code: 'OVERLOADED'
+        }
+      });
+    }
+
+    // Increment active count
+    activeRequests++;
+
+    // Request timeout timer
+    const timer = setTimeout(() => {
+      request.logger.error({
+        event: 'request_timeout',
+        request_id: request.id,
+        path: request.url,
+        method: request.method
+      });
+
+      // Only send if response not already sent
+      if (!reply.sent) {
+        reply.status(408).send({
+          success: false,
+          data: null,
+          error: {
+            message: 'Request timeout',
+            code: 'TIMEOUT'
+          }
+        });
+      }
+    }, REQUEST_TIMEOUT_MS);
+
+    // Clear timer and decrement on response finish
+    reply.raw.on('finish', () => {
+      clearTimeout(timer);
+      activeRequests = Math.max(0, activeRequests - 1);
+    });
   });
 
   // Register JWT plugin for authentication
@@ -39,9 +101,44 @@ export function buildApp(): FastifyInstance {
   // Register routes
   app.register(proofRoutes);
   app.register(metricsRoutes);
+  app.register(healthRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
+    // Fast fail for circuit open
+    if (err instanceof CircuitOpenError) {
+      request.logger.error({
+        event: 'circuit_open',
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Service unavailable',
+          code: 'CIRCUIT_OPEN'
+        }
+      });
+    }
+
+    // Fast fail for DB pool exhaustion
+    if (err instanceof DbPoolExhaustedError) {
+      request.logger.error({
+        event: 'db_pool_exhausted',
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Database overloaded',
+          code: 'DB_POOL_EXHAUSTED'
+        }
+      });
+    }
+
     const mapped = mapError(err);
 
     request.logger.error({
@@ -66,12 +163,7 @@ export function buildApp(): FastifyInstance {
   // Cleanup old idempotency keys on startup (24h retention)
   cleanupIdempotency(24 * 60 * 60 * 1000).catch(() => {});
 
-  // Health check - always returns ok (DB not required)
-  app.get('/health', async () => {
-    return { status: 'ok' };
-  });
-
-  // DB Health check - always returns ok (DB not required)
+  // DB Health check - for internal monitoring (DB not required)
   app.get('/health/db', async (req, reply) => {
     const internal = req.headers["x-internal-check"] === "true";
 
@@ -92,7 +184,8 @@ export function buildApp(): FastifyInstance {
       status,
       ts: Date.now(),
       method: req.method,
-      path: req.url
+      path: req.url,
+      circuitOpen: isCircuitOpen()
     };
 
     // Add dbHost only for internal checks

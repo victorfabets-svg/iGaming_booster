@@ -1,265 +1,176 @@
 # 1. OBJECTIVE
-
-Expose correlation ID in ALL logs automatically (no manual injection) using a centralized logger wrapper. Every log entry should automatically include `request_id` (for API requests) or `correlation_id` (for background processing) without developers needing to manually add it.
+Fix final logging schema mismatch (`context` → `module`) to fully comply with global observability contract.
 
 ---
 
 # 2. CONTEXT SUMMARY
 
-**Current state:**
-- Request ID middleware exists (`apps/api/src/server/middleware/request-id.ts`) ✅
-- `request.requestId` is attached to requests ✅
-- Some logs manually include `request_id` ⚠️
-- Many `console.log` calls exist without tracing context ❌
+**Current issue:**
+- ❌ Log field `context` is being used in some places
+- ✅ Global standard requires `module` field
 
-**Problem:**
-- Inconsistent logging - some have request_id, most don't
-- Developers must remember to manually inject request_id
-- Hard to trace issues in production
+**Impact:**
+- Breaks schema consistency
+- Affects log parsing and dashboards
+- Inconsistent observability data
 
-**Files with console.log (need migration):**
-- `apps/api/src/server/routes/proofs.ts`
-- `apps/api/src/server/utils/idempotency.ts`
-- `apps/api/src/server/index.ts`
-- `apps/api/src/domains/validation/application/createProofUseCase.ts`
-- Plus other domain files
+**Architecture Rule:**
+- `shared/` MUST use consistent logging schema
 
 ---
 
 # 3. APPROACH OVERVIEW
 
-1. **Create logger wrapper** - Simple logger that auto-injects context
-2. **Bind logger to request** - Attach context-aware logger to request in middleware
-3. **Replace console.log** - Migrate all raw console.log to use the centralized logger
-4. **Worker context** - Create logger with correlation_id for background processing
-
-The key insight: instead of passing request_id to every log call, bind it once to the logger instance.
+1. **Replace incorrect field** - Change `context` to `module` in database layer
+2. **Apply correct schema** - Ensure full compliance with global log format
+3. **Scan for residuals** - Check for any remaining `context:` usage in DB layer
 
 ---
 
 # 4. IMPLEMENTATION STEPS
 
-## Step 1 — Create Logger Wrapper
+## Step 1 — Replace Incorrect Field in getClient()
 
-**Goal:** Create centralized logger that auto-injects context
+**Goal:** Fix logging schema in database connection
 
-**Method:** Create new file `apps/api/src/server/utils/logger.ts`:
-- Accept static context (e.g., request_id, correlation_id)
-- Provide info/error/warn methods
-- Always output JSON with timestamp
+**Method:** Update `getClient()` in `shared/database/connection.ts`:
 
-**Reference:** `apps/api/src/server/utils/logger.ts` (new file)
-
+Replace:
 ```typescript
-/**
- * Centralized logger with automatic context injection.
- * All logs automatically include bound context (request_id, correlation_id, etc.)
- */
-export interface Logger {
-  info(data: Record<string, unknown>): void;
-  error(data: Record<string, unknown>): void;
-  warn(data: Record<string, unknown>): void;
-  debug(data: Record<string, unknown>): void;
-}
+const logger = createLogger({ module: 'db-connection' });
 
-/**
- * Create a logger with bound context.
- * Context is automatically included in every log entry.
- * 
- * NOTE: timestamp is generated per-log, not per-logger (fixes timestamp drift)
- */
-export function createLogger(context: Record<string, unknown> = {}): Logger {
-  const boundContext = { ...context };
-
-  const log = (level: string, data: Record<string, unknown>) => {
-    console.log(JSON.stringify({
-      timestamp: new Date().toISOString(), // Generate fresh timestamp per log
-      level,
-      ...boundContext,
-      ...data
-    }));
-  };
-
-  return {
-    info: (data) => log('info', data),
-    error: (data) => log('error', data),
-    warn: (data) => log('warn', data),
-    debug: (data) => log('debug', data),
-  };
-}
-
-/**
- * Fastify request extension with logger
- */
-export interface RequestWithLogger {
-  logger: Logger;
-  requestId?: string;
-  ip?: string;
-}
-
-/**
- * Create logger from request - extracts requestId automatically
- */
-export function createRequestLogger(request: RequestWithLogger): Logger {
-  const requestId = request?.requestId || (request?.headers as any)?.['x-request-id'];
-  return createLogger({ 
-    request_id: requestId,
-    ip: request?.ip || (request?.headers as any)?.['x-forwarded-for']
-  });
-}
-```
-
----
-
-## Step 2 — Bind Logger to Request in Middleware
-
-**Goal:** Attach context-aware logger to every request automatically
-
-**Method:** Update `apps/api/src/server/middleware/request-id.ts`:
-- Import `createLogger`
-- Create logger with request_id bound
-- Attach to request object
-
-**Reference:** `apps/api/src/server/middleware/request-id.ts`
-
-**Code changes:**
-```typescript
-import { createLogger } from '../utils/logger';
-
-// In preHandler hook, after setting requestId:
-(request as any).logger = createLogger({
-  request_id: requestId
+// ... later in the function:
+logger.error({
+  event: 'unsafe_db_usage_detected',
+  function: 'getClient',
+  stack: new Error().stack,
+  timestamp: new Date().toISOString()
 });
 ```
 
----
-
-## Step 3 — Replace console.log in Routes
-
-**Goal:** Use logger with automatic context in route handlers
-
-**Method:** Update `apps/api/src/server/routes/proofs.ts`:
-- Import `createRequestLogger` or use `request.logger`
-- Replace `console.log` with `request.logger.info()`
-
-**Reference:** `apps/api/src/server/routes/proofs.ts`
-
-**Code changes:**
+With:
 ```typescript
-// Replace:
-console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
+const logger = createLogger({ module: 'database' });
 
-// With:
-request.logger.info({
-  event: 'proof_received',
-  filename,
-  size: fileBuffer.length,
-  user_id
+// ... later in the function:
+logger.error({
+  event: 'unsafe_db_usage_detected',
+  module: 'database',
+  function: 'getClient',
+  message: 'getClient() called - use runWithClient() or withTransaction() instead',
+  strict_mode: process.env.STRICT_DB,
+  ...(process.env.STRICT_DB === 'warn' && {
+    stack: new Error().stack
+  })
 });
 ```
 
+**Reference:** `shared/database/connection.ts`
+
 ---
 
-## Step 4 — Replace console.log in Idempotency Utils
+## Step 2 — Replace Incorrect Field in acquireClient()
 
-**Goal:** Use logger in idempotency utility functions
+**Goal:** Ensure pool exhaustion logs also use correct schema
 
-**Method:** Update `apps/api/src/server/utils/idempotency.ts`:
-- Import `createLogger` with static context
-- Replace console.error with logger.error
+**Method:** Update logging in `acquireClient()` function:
 
-**Reference:** `apps/api/src/server/utils/idempotency.ts`
-
-**Code changes:**
+Replace:
 ```typescript
-// At top of file, create module logger
-const logger = createLogger({ module: 'idempotency' });
-
-// Replace console.error with:
-logger.error({ event: 'idempotency_cleanup_executed', deleted_count: deleted, cutoff: cutoff.toISOString() });
+console.log(JSON.stringify({
+  event: 'db_pool_exhausted',
+  active_clients: activeDbClients,
+  max_clients: MAX_DB_CLIENTS
+}));
 ```
 
----
-
-## Step 5 — Replace console.log in API Entry Point
-
-**Goal:** Use logger in server startup
-
-**Method:** Update `apps/api/src/server/index.ts`:
-- Replace console.log with logger
-
-**Reference:** `apps/api/src/server/index.ts`
-
----
-
-## Step 6 — Replace console.log in Domain Use Cases
-
-**Goal:** Use logger in business logic with correlation context
-
-**Method:** Update key domain files:
-- `apps/api/src/domains/validation/application/createProofUseCase.ts`
-- Other files that log during request processing
-
-For use cases called from routes, they receive request context. For background processing, create logger with correlation_id.
-
-**Reference:** Domain use case files
-
----
-
-## Step 7 — Create Worker/Consumer Logger
-
-**Goal:** Logger for background processing with correlation_id
-
-**Method:** Create helper or update consumer files:
-- Accept correlation_id from event
-- Create logger with correlation_id bound
-
-**Reference:** `shared/events/event-consumer.repository.ts`
-
-**Code changes:**
+With:
 ```typescript
-// In consumer processing:
-const logger = createLogger({ correlation_id: event.correlation_id });
-logger.info({ event: 'event_processed', event_type: event.event_type });
+const logger = createLogger({ module: 'database' });
+
+logger.error({
+  event: 'db_pool_exhausted',
+  module: 'database',
+  message: 'Database pool exhausted - too many concurrent connections',
+  active_clients: activeDbClients,
+  max_clients: MAX_DB_CLIENTS
+});
 ```
 
+**Reference:** `shared/database/connection.ts`
+
 ---
 
-## Step 8 — Audit Log Integration
+## Step 3 — Ensure Full Schema Compliance
 
-**Goal:** Audit logs also use centralized logger
+**Goal:** Verify all DB layer logs follow global observability contract
 
-**Method:** Update `shared/events/audit-log.ts`:
-- Use createLogger with module context
-- Include correlation_id when provided
+**Method:** Ensure all log calls use this structure:
 
-**Reference:** `shared/events/audit-log.ts`
+```typescript
+logger.error({
+  event: '<event-name>',
+  module: 'database',
+  message: '<human-readable-message>',
+  // ... additional context fields
+});
+```
+
+**Key points:**
+- Always use `module: 'database'` (not `context`)
+- Always include `message` for human readability
+- Include relevant context (function name, parameters, etc.)
+- Conditionally include `stack` only in warn/strict modes
+
+---
+
+## Step 4 — Scan for Residual Issues
+
+**Goal:** Ensure no remaining misuse of `context` field in DB layer
+
+**Method:** Search for any remaining occurrences:
+
+```bash
+# Check for context: usage in database layer
+grep -r "context:" --include="*.ts" shared/database/
+
+# Also check apps that might import from shared
+grep -r "context:" --include="*.ts" apps/api/src/server/utils/ | grep -i db
+```
+
+If any results found, update them to use `module` instead.
 
 ---
 
 # 5. TESTING AND VALIDATION
 
-**Manual test approach:**
-1. Send API request to `/proofs`
-2. Check server logs - should contain `request_id` automatically
-3. Verify format is valid JSON with all fields
-4. For background events - check worker logs contain `correlation_id`
+**Manual test scenarios:**
 
-**Expected log format:**
-```json
-{
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "level": "info",
-  "request_id": "abc-123",
-  "event": "proof_received",
-  "filename": "document.pdf",
-  "size": 1024
-}
-```
+1. **Trigger getClient() usage:**
+   - Call any function that uses getClient()
+   - Check log output
 
-**Success criteria:**
-- [ ] All API route logs include request_id automatically
-- [ ] All worker/consumer logs include correlation_id
-- [ ] No raw console.log in application code (only node_modules)
-- [ ] All logs are valid JSON
-- [ ] Consistent log format across all modules
+2. **Verify log fields:**
+   - [ ] `event` field present
+   - [ ] `module` field present (NOT `context`)
+   - [ ] `message` field present
+   - [ ] `stack` present only in STRICT_DB=warn mode
+
+3. **Check pool exhaustion:**
+   - Simulate max concurrent connections
+   - Verify log uses correct schema
+
+**Validation criteria:**
+- ✅ Zero usage of `context` field in DB layer
+- ✅ Full compliance with global log schema
+- ✅ Observability pipeline consistent
+- ✅ All tests pass
+
+---
+
+# 6. SUCCESS CRITERIA
+
+- ✅ Zero usage of `context` field in database layer logs
+- ✅ All logs use `module: 'database'` format
+- ✅ Full compliance with global observability contract
+- ✅ Consistent log parsing and dashboard behavior

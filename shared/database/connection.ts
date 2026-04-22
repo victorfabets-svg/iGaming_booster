@@ -1,7 +1,43 @@
 import pg from 'pg';
+import { 
+  isCircuitOpen, recordFailure, recordSuccess, CircuitOpenError, DbPoolExhaustedError,
+  incrementDbClients, decrementDbClients, getActiveDbClients 
+} from './db-circuit';
+import { logger } from '../observability/logger';
 
 // Re-export types
 export type { Pool, PoolClient } from 'pg';
+
+/**
+ * ============================================================================
+ * ⚠️ DATABASE CONNECTION - SAFE USAGE PATTERNS
+ * ============================================================================
+ * 
+ * Use ONLY these patterns for database access:
+ * 
+ * 1. runWithClient(fn)     - For single queries with auto-release
+ * 2. withTransaction(fn)  - For transactional operations
+ * 3. db.query()           - For simple queries (uses internal pool)
+ * 
+ * DO NOT use:
+ * - getClient()           - Deprecated, will be removed
+ * - client.query() directly outside wrappers
+ * 
+ * Example - CORRECT:
+ *   const result = await runWithClient(async (client) => {
+ *     return await client.query('SELECT * FROM users WHERE id = $1', [id]);
+ *   });
+ * 
+ * Example - INCORRECT (causes leaks):
+ *   const client = await getClient();
+ *   try { await client.query('...'); } 
+ *   finally { client.release(); }
+ * 
+ * ============================================================================
+ */
+
+// Safe usage mode - 'true' blocks getClient(), 'warn' logs extra context
+const STRICT_DB = process.env.STRICT_DB;
 
 // Use the Pool from the imported module
 const Pool = pg.Pool;
@@ -25,14 +61,53 @@ export function pool(): pg.Pool {
 }
 
 /**
+ * ⚠️ DEPRECATED - Use runWithClient() or withTransaction() instead.
+ * 
  * Get a client from the pool for transactional operations.
  * Caller MUST release the client (even on error).
+ * 
+ * @deprecated This function will be removed in a future version.
  */
 export async function getClient(): Promise<pg.PoolClient> {
+  // Log every usage for auditing (timestamp auto-injected by logger)
+  logger.error({
+    event: 'unsafe_db_usage_detected',
+    module: 'database',
+    message: 'getClient() called - use runWithClient() or withTransaction() instead',
+    strict_mode: STRICT_DB,
+    ...(STRICT_DB === 'warn' && { stack: new Error().stack })
+  });
+
+  // Block if STRICT_DB=true
+  if (STRICT_DB === 'true') {
+    throw new Error('getClient() is disabled. Use runWithClient() or withTransaction() instead.');
+  }
+
   if (!_db) {
     throw new Error('Database not initialized. Call initDb() first.');
   }
-  return _db.connect();
+
+  return acquireClient();
+}
+
+/**
+ * Execute a function with a database client.
+ * Automatically acquires a client from the pool and releases it when done.
+ * This eliminates the risk of client leaks from manual release() calls.
+ * 
+ * @param fn - Function that receives the client and returns a promise
+ * @returns The result of the function
+ */
+export async function runWithClient<T>(
+  fn: (client: pg.PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await acquireClient();
+
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -42,21 +117,18 @@ export async function getClient(): Promise<pg.PoolClient> {
 export async function withTransaction<T>(
   callback: (client: pg.PoolClient) => Promise<T>
 ): Promise<T> {
-  const client = await getClient();
-  
-  try {
-    // TASK 2: ENFORCE TIMEOUT - Set statement timeout before BEGIN
-    await client.query('SET statement_timeout = 5000');
-    await client.query('BEGIN');
-    const result = await callback(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  return runWithClient(async (client) => {
+    try {
+      await client.query('SET statement_timeout = 5000');
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
 }
 
 /**
@@ -129,17 +201,26 @@ export async function initDb(): Promise<void> {
 
 export const db = {
   query: async <T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> => {
+    // Fast fail if circuit is open
+    if (isCircuitOpen()) {
+      throw new CircuitOpenError();
+    }
+    
     if (!_db) {
       throw new Error('Database not initialized');
     }
-    const result = await _db.query(text, params);
-    return { rows: result.rows };
+    
+    try {
+      const result = await _db.query(text, params);
+      recordSuccess();
+      return { rows: result.rows };
+    } catch (error) {
+      recordFailure();
+      throw error;
+    }
   },
   connect: async (): Promise<pg.PoolClient> => {
-    if (!_db) {
-      throw new Error('Database not initialized');
-    }
-    return await _db.connect();
+    return acquireClient();
   },
   end: async (): Promise<void> => {
     if (_db) {
@@ -148,6 +229,57 @@ export const db = {
     }
   },
 };
+
+/**
+ * Shared function to acquire a DB client with circuit breaker + pool protection.
+ * Tracks active clients and wraps release to prevent leaks.
+ */
+async function acquireClient(): Promise<pg.PoolClient> {
+  // Fast fail if circuit is open
+  if (isCircuitOpen()) {
+    throw new CircuitOpenError();
+  }
+
+  // Check pool capacity
+  if (!incrementDbClients()) {
+    logger.error({
+      event: 'db_pool_exhausted',
+      module: 'database',
+      message: 'Database pool exhausted - too many concurrent connections',
+      active_clients: getActiveDbClients()
+    });
+    throw new DbPoolExhaustedError();
+  }
+
+  if (!_db) {
+    decrementDbClients();
+    throw new Error('Database not initialized');
+  }
+
+  try {
+    const client = await _db.connect();
+
+    const originalRelease = client.release.bind(client);
+    let released = false;
+
+    // Wrap release to track return and prevent double-release
+    client.release = () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      decrementDbClients();
+      return originalRelease();
+    };
+
+    recordSuccess();
+    return client;
+  } catch (err) {
+    decrementDbClients();
+    recordFailure();
+    throw err;
+  }
+}
 
 // Legacy exports for compatibility
 export async function query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> {
