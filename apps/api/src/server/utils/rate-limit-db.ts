@@ -2,7 +2,7 @@ import { db } from 'shared/database/connection';
 
 /**
  * Database-backed rate limiting function
- * Uses sliding window algorithm with PostgreSQL
+ * Uses sliding window algorithm with PostgreSQL and advisory lock for atomic operations
  * @param key - Unique identifier (e.g., IP address)
  * @param limit - Maximum number of requests allowed in the window
  * @param windowMs - Time window in milliseconds
@@ -13,28 +13,48 @@ export async function rateLimitDb(
   limit: number,
   windowMs: number
 ): Promise<boolean> {
-  const windowStart = new Date(Date.now() - windowMs);
+  const client = await db.connect();
 
-  // Count existing requests in the window
-  const result = await db.query<{ count: string }>(
-    `SELECT COUNT(*) as count FROM infra.rate_limits
-     WHERE key = $1 AND created_at > $2`,
-    [key, windowStart]
-  );
+  try {
+    await client.query('BEGIN');
 
-  const count = Number(result.rows[0]?.count || 0);
+    // Acquire advisory lock for this key to prevent concurrent bypass
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      [key]
+    );
 
-  if (count >= limit) {
-    return false;
+    const windowStart = new Date(Date.now() - windowMs);
+
+    // Count existing requests in the window
+    const result = await client.query(
+      `SELECT COUNT(*) FROM infra.rate_limits
+       WHERE key = $1 AND created_at > $2`,
+      [key, windowStart]
+    );
+
+    const count = Number(result.rows[0]?.count || 0);
+
+    if (count >= limit) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    // Insert new request record
+    await client.query(
+      `INSERT INTO infra.rate_limits (key) VALUES ($1)`,
+      [key]
+    );
+
+    await client.query('COMMIT');
+    return true;
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  // Insert new request record
-  await db.query(
-    `INSERT INTO infra.rate_limits (key) VALUES ($1)`,
-    [key]
-  );
-
-  return true;
 }
 
 /**
