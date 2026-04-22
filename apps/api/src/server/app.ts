@@ -9,6 +9,7 @@ import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
+import { mapError } from './utils/error-mapper';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -38,6 +39,29 @@ export function buildApp(): FastifyInstance {
   // Register routes
   app.register(proofRoutes);
   app.register(metricsRoutes);
+
+  // Global error handler - catches all unhandled errors and logs with context
+  app.setErrorHandler((err, request, reply) => {
+    const mapped = mapError(err);
+
+    request.logger.error({
+      event: 'unhandled_error',
+      error_type: mapped.type,
+      error_code: mapped.code,
+      message: err.message,
+      stack: err.stack,
+      request_id: request.id
+    });
+
+    return reply.status(500).send({
+      success: false,
+      data: null,
+      error: {
+        message: mapped.message,
+        code: mapped.code
+      }
+    });
+  });
 
   // Cleanup old idempotency keys on startup (24h retention)
   cleanupIdempotency(24 * 60 * 60 * 1000).catch(() => {});
