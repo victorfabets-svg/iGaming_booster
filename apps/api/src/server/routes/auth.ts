@@ -4,6 +4,8 @@ import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
+import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
+import { auditLog } from '../../../shared/events/audit-log';
 
 interface RegisterBody {
   email: string;
@@ -25,6 +27,40 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: RegisterBody }>(
     '/register',
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
+      // Idempotency - reserve key atomically to prevent race conditions
+      const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
+      if (idemKey) {
+        const reserve = await reserveIdempotency(idemKey);
+        
+        if (!reserve.acquired) {
+          // Another request got the key - check its status
+          const existing = await getIdempotency(idemKey);
+          
+          if (existing?.status === 'done') {
+            // Completed - return cached response
+            return ok(reply, existing.response);
+          }
+          
+          // Check if pending is stale (crashed request)
+          if (isIdempotencyStale(existing)) {
+            // Release stale key and try to re-acquire
+            await releaseStaleIdempotency(idemKey);
+            const retryReserve = await reserveIdempotency(idemKey);
+            if (!retryReserve.acquired) {
+              // Another request got it - check again
+              const retryExisting = await getIdempotency(idemKey);
+              if (retryExisting?.status === 'done') {
+                return ok(reply, retryExisting.response);
+              }
+              return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
+            }
+          } else {
+            // Still in progress - tell client to retry
+            return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
+          }
+        }
+      }
+
       // Rate limiting - 5 requests per minute per IP (stored in DB for persistence)
       const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
       const allowed = await rateLimitDb(clientIp, 5, 60000);
@@ -53,11 +89,22 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       const userId = randomUUID();
 
+      // Get request ID for tracing
+      const requestId = (request as any).requestId;
+
       try {
         await db.query(
           `INSERT INTO identity.users (id, email, created_at) VALUES ($1, $2, NOW())`,
           [userId, email]
         );
+
+        // Audit log for successful registration
+        await auditLog(userId, 'user_registered', { email }, requestId);
+
+        // Save idempotency key with response (only on success)
+        if (idemKey) {
+          await completeIdempotency(idemKey, { user_id: userId, email });
+        }
 
         return ok(reply, { user_id: userId, email });
       } catch (err: any) {

@@ -77,16 +77,18 @@ export async function runCommandTransaction<T>(
 
 /**
  * Insert event within transaction.
+ * @param correlationId - Optional correlation ID. If not provided, generates new UUID.
  */
 export async function insertEventInTransaction(
   client: any,
   event_type: string,
   payload: Record<string, any>,
   producer: string,
-  version = 'v1'
+  version = 'v1',
+  correlationId?: string
 ): Promise<void> {
   const event_id = randomUUID();
-  const correlation_id = randomUUID();
+  const correlation_id = correlationId || randomUUID();
   
   await client.query(
     `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
