@@ -37,6 +37,29 @@ jobs:
       - name: Validate ENV
         run: test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
 
+      - name: TS binary diagnostic
+        run: |
+          set -euxo pipefail
+          echo "--- global tsc ---"
+          which tsc || echo "(no global tsc)"
+          tsc --version 2>&1 || true
+          echo "--- PATH ---"
+          echo "$PATH" | tr ':' '\n'
+          echo "--- root node_modules/.bin/tsc ---"
+          ls -la node_modules/.bin/tsc 2>&1 || echo "(missing)"
+          readlink -f node_modules/.bin/tsc 2>&1 || true
+          echo "--- root node_modules/typescript version ---"
+          node -e "console.log(require('./node_modules/typescript/package.json').version)" 2>&1 || echo "(missing)"
+          echo "--- apps/api/node_modules/.bin/tsc ---"
+          ls -la apps/api/node_modules/.bin/tsc 2>&1 || echo "(missing)"
+          readlink -f apps/api/node_modules/.bin/tsc 2>&1 || true
+          echo "--- apps/api/node_modules/typescript version ---"
+          node -e "console.log(require('./apps/api/node_modules/typescript/package.json').version)" 2>&1 || echo "(missing)"
+          echo "--- when cd apps/api and resolving tsc via npm exec ---"
+          cd apps/api
+          npm exec -c 'which tsc; tsc --version' 2>&1
+          echo "--- done ---"
+
       - name: Build API
         run: |
           cd apps/api
