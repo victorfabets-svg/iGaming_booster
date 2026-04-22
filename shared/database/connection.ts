@@ -70,24 +70,13 @@ export function pool(): pg.Pool {
  */
 export async function getClient(): Promise<pg.PoolClient> {
   // Log every usage for auditing (timestamp auto-injected by logger)
-  logger.error(
-    'unsafe_db_usage_detected',
-    'database',
-    'getClient() called - use runWithClient() or withTransaction() instead',
-    undefined,
-    { strict_mode: STRICT_DB }
-  );
-
-  // Add stack trace in warn mode for debugging
-  if (STRICT_DB === 'warn') {
-    logger.error(
-      'unsafe_db_usage_stack',
-      'database',
-      'Stack trace for getClient() call',
-      undefined,
-      { stack: new Error().stack }
-    );
-  }
+  logger.error({
+    event: 'unsafe_db_usage_detected',
+    context: 'database',
+    data: 'getClient() called - use runWithClient() or withTransaction() instead',
+    strict_mode: STRICT_DB,
+    stack: STRICT_DB === 'warn' ? new Error().stack : undefined
+  });
 
   // Block if STRICT_DB=true
   if (STRICT_DB === 'true') {
