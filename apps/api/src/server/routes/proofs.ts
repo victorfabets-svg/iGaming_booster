@@ -3,6 +3,7 @@ import { createProofUseCase } from '../../domains/validation/application/createP
 import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 import { rateLimitDb } from '../utils/rate-limit-db';
+import { auditLog } from '../../../shared/events/audit-log';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin
@@ -66,6 +67,13 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           response.file_url = result.file_url;
           response.expires_in = result.expires_in;
         }
+
+        // Audit log for successful proof submission
+        await auditLog(user_id, 'proof_submitted', { 
+          proof_id: result.proof_id,
+          filename,
+          size: fileBuffer.length 
+        });
 
         return ok(reply, response);
       } catch (err: any) {

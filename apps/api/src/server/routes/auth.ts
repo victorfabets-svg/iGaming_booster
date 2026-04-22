@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
+import { auditLog } from '../../../shared/events/audit-log';
 
 interface RegisterBody {
   email: string;
@@ -58,6 +59,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           `INSERT INTO identity.users (id, email, created_at) VALUES ($1, $2, NOW())`,
           [userId, email]
         );
+
+        // Audit log for successful registration
+        await auditLog(userId, 'user_registered', { email });
 
         return ok(reply, { user_id: userId, email });
       } catch (err: any) {
