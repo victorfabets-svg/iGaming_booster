@@ -152,6 +152,33 @@ jobs:
             })().catch(e => { console.error(e); process.exit(1); });
           "
 
+      - name: Create S3 bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.R2_REGION }}
+        run: |
+          set -euo pipefail
+          # Wait for s3mock to be responsive
+          for i in $(seq 1 20); do
+            if curl -sf -o /dev/null http://localhost:9090/ 2>/dev/null \
+               || curl -sf -o /dev/null http://localhost:9090/favicon.ico 2>/dev/null; then
+              echo "s3mock ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Create bucket (idempotent — ignore if already exists)
+          aws --endpoint-url http://localhost:9090 \
+              s3api create-bucket --bucket ci-test \
+              || echo "create-bucket returned non-zero (may already exist)"
+          # Verify by listing
+          aws --endpoint-url http://localhost:9090 s3api list-buckets
+          # Hard-assert ci-test is visible
+          aws --endpoint-url http://localhost:9090 s3api list-buckets \
+              | grep -q '"Name": "ci-test"' \
+              || { echo "FAIL: ci-test bucket not found after create"; exit 1; }
+
       - name: Start services
         run: |
           node $API_ENTRY > api.log 2>&1 &
