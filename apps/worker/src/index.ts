@@ -29,7 +29,8 @@ if (removedKeys.length > 0) {
 
 // ============================================================
 
-import { connectWithRetry } from '../../../shared/database/connection';
+import { connectWithRetry, closePool } from '../../../shared/database/connection';
+import { startStuckEventRecovery, stopStuckEventRecovery } from '../../../shared/events/event-consumer.repository';
 
 // Import all consumers
 import { startProofSubmittedConsumer } from '../../api/src/domains/validation/consumers/proof-submitted.consumer';
@@ -41,6 +42,54 @@ import { startPaymentIdentifierRequestedConsumer } from '../../api/src/domains/p
 
 // Track database connection state
 let dbConnected = false;
+
+// Force exit timeout - prevents hanging on failed shutdown
+const FORCE_EXIT_TIMEOUT_MS = 10000;
+
+// Graceful shutdown handler
+async function shutdown(signal: string): Promise<void> {
+  console.log(JSON.stringify({
+    event: 'shutdown_started',
+    signal
+  }));
+
+  // Set force exit timeout
+  const forceExitTimer = setTimeout(() => {
+    console.log(JSON.stringify({
+      event: 'shutdown_timeout',
+      message: 'Force exiting after timeout'
+    }));
+    process.exit(1);
+  }, FORCE_EXIT_TIMEOUT_MS);
+
+  try {
+    // Stop stuck event recovery interval
+    stopStuckEventRecovery();
+
+    // Close database pool
+    await closePool();
+    console.log(JSON.stringify({ event: 'db_pool_closed' }));
+
+    clearTimeout(forceExitTimer);
+
+    console.log(JSON.stringify({
+      event: 'shutdown_completed'
+    }));
+
+    process.exit(0);
+  } catch (err) {
+    clearTimeout(forceExitTimer);
+    console.log(JSON.stringify({
+      event: 'shutdown_error',
+      error: err instanceof Error ? err.message : String(err)
+    }));
+    process.exit(1);
+  }
+}
+
+// Register signal handlers
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 async function start() {
   console.log('🔧 Connecting to database...');
