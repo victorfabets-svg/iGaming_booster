@@ -11,6 +11,8 @@ import healthRoutes from './routes/health';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
+import { CircuitOpenError } from '../../../shared/database/db-circuit';
+import { isCircuitOpen } from '../../../shared/database/db-circuit';
 
 // Request timeout - prevents hanging requests (10s)
 const REQUEST_TIMEOUT_MS = 10000;
@@ -103,6 +105,23 @@ export function buildApp(): FastifyInstance {
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
+    // Fast fail for circuit open
+    if (err instanceof CircuitOpenError) {
+      request.logger.error({
+        event: 'circuit_open',
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Service unavailable',
+          code: 'CIRCUIT_OPEN'
+        }
+      });
+    }
+
     const mapped = mapError(err);
 
     request.logger.error({
@@ -148,7 +167,8 @@ export function buildApp(): FastifyInstance {
       status,
       ts: Date.now(),
       method: req.method,
-      path: req.url
+      path: req.url,
+      circuitOpen: isCircuitOpen()
     };
 
     // Add dbHost only for internal checks

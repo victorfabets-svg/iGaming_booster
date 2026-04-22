@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { isCircuitOpen, recordFailure, recordSuccess, CircuitOpenError } from './db-circuit';
 
 // Re-export types
 export type { Pool, PoolClient } from 'pg';
@@ -129,17 +130,42 @@ export async function initDb(): Promise<void> {
 
 export const db = {
   query: async <T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> => {
+    // Fast fail if circuit is open
+    if (isCircuitOpen()) {
+      throw new CircuitOpenError();
+    }
+    
     if (!_db) {
       throw new Error('Database not initialized');
     }
-    const result = await _db.query(text, params);
-    return { rows: result.rows };
+    
+    try {
+      const result = await _db.query(text, params);
+      recordSuccess();
+      return { rows: result.rows };
+    } catch (error) {
+      recordFailure();
+      throw error;
+    }
   },
   connect: async (): Promise<pg.PoolClient> => {
+    // Fast fail if circuit is open
+    if (isCircuitOpen()) {
+      throw new CircuitOpenError();
+    }
+    
     if (!_db) {
       throw new Error('Database not initialized');
     }
-    return await _db.connect();
+    
+    try {
+      const client = await _db.connect();
+      recordSuccess();
+      return client;
+    } catch (error) {
+      recordFailure();
+      throw error;
+    }
   },
   end: async (): Promise<void> => {
     if (_db) {
