@@ -84,7 +84,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       // Use context-aware logger (automatically includes request_id)
-      request.logger.info({
+      request.log.info({
         event: 'proof_received',
         filename,
         size: fileBuffer.length,
