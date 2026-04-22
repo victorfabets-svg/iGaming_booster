@@ -1,17 +1,20 @@
 # 1. OBJECTIVE
-Eliminate DB client leaks by enforcing automatic client lifecycle management.
+Enforce safe DB usage and eliminate client leaks permanently.
 
 ---
 
 # 2. CONTEXT SUMMARY
 
 **Current state:**
-- ✅ Pool protection exists (max 20 clients)
-- ✅ Release wrapper exists (tracks counter)
+- ✅ `runWithClient` exists (auto acquire + release)
+- ✅ `withTransaction` exists
 - ✅ Circuit breaker exists
+- ✅ Pool protection exists (max 20 clients)
+- ✅ Logging for unsafe usage exists
 
 **New problem to solve:**
-- ❌ Manual `client.release()` still required - risk of leak persists
+- ❌ `getClient()` is still usable and can cause leaks
+- ❌ Developers may still misuse it despite warnings
 
 **Architecture Rule:**
 - `shared/` MUST NOT depend on `apps/`
@@ -20,29 +23,63 @@ Eliminate DB client leaks by enforcing automatic client lifecycle management.
 
 # 3. APPROACH OVERVIEW
 
-1. **Introduce `runWithClient()` wrapper** - Auto acquire + auto release
-2. **Replace manual usage** - Update all code using `getClient()` to use wrapper
-3. **Optional safeguard** - Deprecate `getClient()` to prevent regression
+1. **Add documentation banner** - Clear guidelines at top of connection.ts
+2. **Keep existing wrappers** - `runWithClient` and `withTransaction` work correctly
+3. **Harden getClient** - Logging + optional blocking via STRICT_DB flag
+4. **Audit codebase** - Find all usages of getClient()
+5. **Migrate safely** - Replace only when client usage is local
+6. **Progressive rollout** - Dev → Staging → Production
+7. **Remove completely** - Delete getClient() after clean logs
 
 ---
 
 # 4. IMPLEMENTATION STEPS
 
-## Step 1 — Create runWithClient Wrapper
+## Step 1 — Add Header Banner
 
-**Goal:** Create auto-acquire + auto-release wrapper function
+**Goal:** Document safe usage patterns prominently
 
-**Method:** Add to `shared/database/connection.ts`:
+**Method:** Add banner at top of `shared/database/connection.ts`:
 
 ```typescript
 /**
- * Execute a function with a database client.
- * Automatically acquires a client from the pool and releases it when done.
- * This eliminates the risk of client leaks from manual release() calls.
+ * ============================================================================
+ * ⚠️ DATABASE CONNECTION - SAFE USAGE PATTERNS
+ * ============================================================================
  * 
- * @param fn - Function that receives the client and returns a promise
- * @returns The result of the function
+ * Use ONLY these patterns for database access:
+ * 
+ * 1. runWithClient(fn)     - For single queries with auto-release
+ * 2. withTransaction(fn)   - For transactional operations
+ * 3. db.query()            - For simple queries (uses internal pool)
+ * 
+ * DO NOT use:
+ * - getClient()            - Deprecated, will be removed
+ * - client.query() directly outside wrappers
+ * 
+ * Example - CORRECT:
+ *   const result = await runWithClient(async (client) => {
+ *     return await client.query('SELECT * FROM users WHERE id = $1', [id]);
+ *   });
+ * 
+ * Example - INCORRECT (causes leaks):
+ *   const client = await getClient();
+ *   try { await client.query('...'); } 
+ *   finally { client.release(); }
+ * 
+ * ============================================================================
  */
+```
+
+**Reference:** `shared/database/connection.ts`
+
+---
+
+## Step 2 — runWithClient (Already Exists - DO NOT MODIFY)
+
+The `runWithClient()` wrapper is already implemented. Ensure it remains unchanged:
+
+```typescript
 export async function runWithClient<T>(
   fn: (client: pg.PoolClient) => Promise<T>
 ): Promise<T> {
@@ -56,34 +93,86 @@ export async function runWithClient<T>(
 }
 ```
 
+---
+
+## Step 3 — Harden getClient()
+
+**Goal:** Add logging and optional blocking
+
+**Method:** Update `getClient()` in `shared/database/connection.ts`:
+
+```typescript
+import { createLogger } from '../observability/logger';
+
+const logger = createLogger({ module: 'db-connection' });
+
+/**
+ * ⚠️ DEPRECATED - Use runWithClient() or withTransaction() instead.
+ * 
+ * This function will be removed in a future version.
+ * 
+ * @throws Error if database is not initialized
+ * @deprecated
+ */
+export async function getClient(): Promise<pg.PoolClient> {
+  // Log every usage for auditing
+  logger.error({
+    event: 'unsafe_db_usage_detected',
+    function: 'getClient',
+    stack: new Error().stack,
+    timestamp: new Date().toISOString()
+  });
+
+  // Optional blocking via environment variable
+  const STRICT_DB = process.env.STRICT_DB;
+  
+  if (STRICT_DB === 'true') {
+    throw new Error('getClient() is disabled. Use runWithClient() or withTransaction() instead.');
+  }
+
+  if (!_db) {
+    throw new Error('Database not initialized. Call initDb() first.');
+  }
+
+  return acquireClient();
+}
+```
+
 **Reference:** `shared/database/connection.ts`
 
 ---
 
-## Step 2 — Find All getClient() Usage
+## Step 4 — Audit Codebase
 
-**Goal:** Identify all code that needs to be migrated
+**Goal:** Find all usages that need migration
 
-**Method:** Search for all usages:
+**Method:** Search for patterns:
 
 ```bash
-grep -r "getClient()" --include="*.ts" .
+# Find all getClient() usages
+grep -r "await getClient()" --include="*.ts" .
+
+# Find all client.query usages (may indicate direct usage)
+grep -r "client.query" --include="*.ts" . | grep -v node_modules
 ```
 
-**Important:** Only migrate cases where `client` is used **locally within the same block**. 
-If `client` is passed to external functions or escapes the scope, refactor first before migrating.
+**Important:** Review each result to determine:
+- Is `client` used locally within the same block?
+- Or does it escape to external functions?
+
+Only migrate local usage patterns.
 
 ---
 
-## Step 3 — Replace Manual Usage Pattern (Carefully)
+## Step 5 — Migrate to runWithClient (CRITICAL)
 
-**Goal:** Migrate code to use `runWithClient()` while preserving return values
+**Goal:** Safely replace getClient() usage with runWithClient()
 
-**Method:** For each file found in Step 2, apply **only when client usage is local**:
+**Method:** For each file found in Step 4, apply **only when client usage is local**:
 
-Replace pattern:
+Replace:
 ```typescript
-// BEFORE - manual lifecycle
+// BEFORE - manual lifecycle (unsafe)
 const client = await getClient();
 try {
   const result = await doSomething(client);
@@ -95,69 +184,89 @@ try {
 
 With:
 ```typescript
-// AFTER - automatic lifecycle with return value preserved
+// AFTER - automatic lifecycle (safe)
 const result = await runWithClient(async (client) => {
   return await doSomething(client);
 });
 ```
 
-**CRITICAL:** If code returns the client or passes it to another function that might hold it, DO NOT replace directly. Refactor the caller instead.
+**CRITICAL RULE:** If `client` is:
+- Returned from the function
+- Passed to another function that might store it
+- Used beyond the immediate block
+
+Then DO NOT replace directly. Refactor the caller first.
 
 ---
 
-## Step 4 — Deprecate getClient() (Safe Approach)
+## Step 6 — Progressive Rollout
 
-**Goal:** Warn future developers without breaking existing code
+**Goal:** Safely enable enforcement across environments
 
-**Method:** Add JSDoc deprecation to `getClient()`:
+| Environment | STRICT_DB Value | Behavior |
+|-------------|-----------------|----------|
+| development | undefined/false | Logs warning, continues working |
+| staging | 'warn' | Logs with extra context, continues |
+| production | 'true' | Throws error, blocks usage |
 
+**Recommended rollout:**
+1. Deploy with default (logs only)
+2. Monitor logs for 1-2 days
+3. Enable `STRICT_DB=warn` on staging
+4. After migration complete, enable on production
+
+---
+
+## Step 7 — Remove getClient() Completely
+
+**Goal:** Permanently eliminate unsafe pattern
+
+**Method:** After logs show zero usage:
+
+1. Remove the entire `getClient()` function:
 ```typescript
-/**
- * @deprecated Use runWithClient() instead to prevent client leaks.
- * This function will be removed in a future version.
- * 
- * @throws Error if database is not initialized
- */
-export async function getClient(): Promise<pg.PoolClient> {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  
-  return acquireClient();
-}
+// DELETE THIS:
+export async function getClient(): Promise<pg.PoolClient> { ... }
 ```
 
-**Important:** Do NOT throw an error in getClient() yet - this would break:
-- Worker processes
-- Internal libraries
-- Existing transactional flows
+2. Update any remaining imports
 
-The deprecation warning is sufficient for now.
+3. Ensure all code uses `runWithClient()` or `withTransaction()`
+
+**Warning:** This is irreversible. Ensure all usages have been migrated first.
 
 ---
 
 # 5. TESTING AND VALIDATION
 
-**Manual test scenarios:**
+## Phase 1 - Default (No Flag)
+- [ ] getClient() logs warning on every call
+- [ ] Code continues to work
+- [ ] Check logs for `unsafe_db_usage_detected`
 
-1. **Client released on error:**
-   - Throw an error inside the function
-   - Verify client is still released (counter returns to baseline)
+## Phase 2 - Warning Mode (STRICT_DB=warn)
+- [ ] More detailed logging visible
+- [ ] Usage count visible in logs
+- [ ] No code breakage
 
-2. **Return value preserved:**
-   - Return a value from inside runWithClient
-   - Verify the value is correctly returned to the caller
+## Phase 3 - Strict Mode (STRICT_DB=true)
+- [ ] getClient() throws error
+- [ ] All code must use safe patterns
+- [ ] Verify no production issues
 
-3. **Multiple operations:**
-   - Run multiple concurrent `runWithClient()` calls
-   - Verify no client leaks
+## Phase 4 - Removal
+- [ ] getClient() removed completely
+- [ ] All imports updated
+- [ ] No usage in codebase
+- [ ] No client leaks possible
 
-4. **Active clients return to baseline:**
-   - Run several operations
-   - After all complete, verify `activeDbClients` is 0
+---
 
-**Validation criteria:**
-- ✅ Zero manual release() usage in application code
-- ✅ Zero possible client leaks (auto-release in finally)
-- ✅ Return values are preserved through wrapper
-- ✅ Unified DB access pattern across codebase
+# 6. SUCCESS CRITERIA
+
+- ✅ Zero `getClient()` usage in codebase
+- ✅ Zero manual `client.release()` calls
+- ✅ Zero possible client leaks
+- ✅ Single, consistent DB access pattern (`runWithClient`)
+- ✅ All tests pass
+- ✅ Production monitoring shows no unsafe usage

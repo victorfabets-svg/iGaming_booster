@@ -7,6 +7,37 @@ import {
 // Re-export types
 export type { Pool, PoolClient } from 'pg';
 
+/**
+ * ============================================================================
+ * ⚠️ DATABASE CONNECTION - SAFE USAGE PATTERNS
+ * ============================================================================
+ * 
+ * Use ONLY these patterns for database access:
+ * 
+ * 1. runWithClient(fn)     - For single queries with auto-release
+ * 2. withTransaction(fn)  - For transactional operations
+ * 3. db.query()           - For simple queries (uses internal pool)
+ * 
+ * DO NOT use:
+ * - getClient()           - Deprecated, will be removed
+ * - client.query() directly outside wrappers
+ * 
+ * Example - CORRECT:
+ *   const result = await runWithClient(async (client) => {
+ *     return await client.query('SELECT * FROM users WHERE id = $1', [id]);
+ *   });
+ * 
+ * Example - INCORRECT (causes leaks):
+ *   const client = await getClient();
+ *   try { await client.query('...'); } 
+ *   finally { client.release(); }
+ * 
+ * ============================================================================
+ */
+
+// Safe usage mode - 'true' blocks getClient(), 'warn' logs extra context
+const STRICT_DB = process.env.STRICT_DB;
+
 // Use the Pool from the imported module
 const Pool = pg.Pool;
 
@@ -29,11 +60,37 @@ export function pool(): pg.Pool {
 }
 
 /**
+ * ⚠️ DEPRECATED - Use runWithClient() or withTransaction() instead.
+ * 
  * Get a client from the pool for transactional operations.
  * Caller MUST release the client (even on error).
- * @deprecated Use runWithClient() or withTransaction() instead to prevent client leaks.
+ * 
+ * @deprecated This function will be removed in a future version.
  */
 export async function getClient(): Promise<pg.PoolClient> {
+  // Log every usage for auditing
+  const logEntry = {
+    event: 'unsafe_db_usage_detected',
+    function: 'getClient',
+    timestamp: new Date().toISOString(),
+    strict_mode: STRICT_DB || 'undefined'
+  };
+  
+  if (STRICT_DB === 'warn') {
+    logEntry.stack = new Error().stack;
+  }
+  
+  console.error(JSON.stringify(logEntry));
+
+  // Block if STRICT_DB=true
+  if (STRICT_DB === 'true') {
+    throw new Error('getClient() is disabled. Use runWithClient() or withTransaction() instead.');
+  }
+
+  if (!_db) {
+    throw new Error('Database not initialized. Call initDb() first.');
+  }
+
   return acquireClient();
 }
 
