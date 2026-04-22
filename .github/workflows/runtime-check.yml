@@ -51,7 +51,7 @@ jobs:
         run: |
           if [ ! -d apps/worker/dist ]; then
             echo "Worker dist NOT generated"
-            ls -R apps/worker || true
+            ls -R apps/worker
             exit 1
           fi
           echo "Worker dist OK"
@@ -68,7 +68,7 @@ jobs:
             API_ENTRY="apps/api/dist/apps/api/src/server/index.js"
           else
             echo "API artifact NOT FOUND"
-            ls -R apps/api/dist || true
+            ls -R apps/api/dist
             exit 1
           fi
 
@@ -78,7 +78,7 @@ jobs:
             echo "Worker OK"
           else
             echo "Worker artifact NOT FOUND"
-            ls -R apps/worker/dist || true
+            ls -R apps/worker/dist
             exit 1
           fi
 
@@ -100,20 +100,21 @@ jobs:
             fi
             sleep 1
           done
-          cat api.log 2>/dev/null || true
+          cat api.log 2>/dev/null
           exit 1
 
       - name: Verify worker
         run: |
           test -n "$(cat worker.pid)" && ps -p $(cat worker.pid) > /dev/null && echo "Worker alive" || exit 1
 
-      - name: E2E validation
+      - name: Health smoke
         run: |
-          curl -sf --max-time 2 -X POST http://localhost:$PORT/proofs \
-            -H "Content-Type: application/json" \
-            -d '{"user_id":"ci-test-user","file_url":"https://example.com/test.jpg"}' || true
-          sleep 1
-          curl -sf --max-time 2 http://localhost:$PORT/events | head -20 || true
+          set -euo pipefail
+          curl -sSf --max-time 5 http://localhost:$PORT/health/db > /tmp/health.json
+          echo "--- /health/db response ---"
+          cat /tmp/health.json
+          STATUS=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/health.json','utf8')).status)")
+          test "$STATUS" = "ok" 
 
       - name: Cleanup
         if: always()
