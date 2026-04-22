@@ -1,9 +1,13 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from 'shared/database/connection';
 import { randomUUID } from 'crypto';
+import { ok, fail } from '../utils/response';
+import { requireFields } from '../utils/validation';
+import { rateLimitDb } from '../utils/rate-limit-db';
 
 interface RegisterBody {
   email: string;
+  password: string;
 }
 
 // Simple email validation regex
@@ -21,10 +25,30 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: RegisterBody }>(
     '/register',
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
-      const { email } = request.body;
+      // Rate limiting - 5 requests per minute per IP (stored in DB for persistence)
+      const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
+      const allowed = await rateLimitDb(clientIp, 5, 60000);
 
+      if (!allowed) {
+        return fail(reply, 'Too many requests', 'RATE_LIMIT');
+      }
+
+      // Validate required fields
+      const fieldsError = requireFields(request.body, ['email', 'password']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
+
+      const { email, password } = request.body;
+
+      // Validate email format
       if (!isValidEmail(email)) {
-        return reply.status(400).send({ error: 'Valid email required' });
+        return fail(reply, 'Valid email required', 'VALIDATION_ERROR');
+      }
+
+      // Validate password strength
+      if (password.length < 8) {
+        return fail(reply, 'Password must be at least 8 characters', 'VALIDATION_ERROR');
       }
 
       const userId = randomUUID();
@@ -35,13 +59,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           [userId, email]
         );
 
-        return reply.status(201).send({ user_id: userId, email });
+        return ok(reply, { user_id: userId, email });
       } catch (err: any) {
         if (err.code === '23505') {
-          return reply.status(409).send({ error: 'Email already registered' });
+          return fail(reply, 'Email already registered', 'DUPLICATE_EMAIL');
         }
         console.error(err);
-        return reply.status(500).send({ error: 'Internal server error' });
+        return fail(reply, err.message);
       }
     }
   );

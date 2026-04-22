@@ -6,6 +6,7 @@ import { getDb, db as dbConn } from '../../../../shared/database/connection';
 import { getDbHealth } from './state';
 import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
+import { metricsRoutes } from './routes/metrics';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -31,6 +32,7 @@ export function buildApp(): FastifyInstance {
 
   // Register routes
   app.register(proofRoutes);
+  app.register(metricsRoutes);
 
   // Health check - always returns ok (DB not required)
   app.get('/health', async () => {

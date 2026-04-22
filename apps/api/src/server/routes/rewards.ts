@@ -1,11 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { findAllRewards, findRewardById } from '../../domains/rewards/repositories/reward.repository';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { ok, fail } from '../utils/response';
 
 export async function rewardRoutes(fastify: FastifyInstance): Promise<void> {
+  // Require authentication for all reward endpoints
+  fastify.addHook('preHandler', authMiddleware);
   // Get all rewards
-  fastify.get('/rewards', async () => {
+  fastify.get('/rewards', async (request, reply) => {
     const rewards = await findAllRewards();
-    return rewards;
+    return ok(reply, rewards);
   });
 
   // Get reward by ID
@@ -13,8 +17,8 @@ export async function rewardRoutes(fastify: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const reward = await findRewardById(id);
     if (!reward) {
-      return reply.status(404).send({ error: 'Reward not found' });
+      return fail(reply, 'Reward not found', 'NOT_FOUND');
     }
-    return reward;
+    return ok(reply, reward);
   });
 }

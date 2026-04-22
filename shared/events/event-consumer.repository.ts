@@ -206,6 +206,30 @@ export async function reprocessDlqEvent(eventId: string): Promise<void> {
 }
 
 // ============================================================================
+// TASK 7: OBSERVABILITY - Queue and DLQ metrics
+// ============================================================================
+
+/**
+ * Get current queue size (unprocessed events).
+ */
+export async function getQueueSize(): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM events.events WHERE processed = FALSE`
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+/**
+ * Get current DLQ size.
+ */
+export async function getDlqSize(): Promise<number> {
+  const result = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM events.dlq_events`
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+// ============================================================================
 // TASK 3: RETRY LOGIC - Proper retry with backoff
 // ============================================================================
 
@@ -331,6 +355,7 @@ export async function markEventAsProcessed(eventId: string, consumerName: string
  * Process event with exactly-once guarantee using transaction.
  * - Checks if already processed (skip if yes)
  * - Wraps processing + idempotency record in single transaction
+ * - Logs processing time, errors, and slow events for observability
  * 
  * Returns: { success: boolean, skipped: boolean }
  */
@@ -339,35 +364,76 @@ export async function processEventExactlyOnce(
   processFn: (client: any) => Promise<void>,
   consumerName: string = 'default_consumer'
 ): Promise<{ success: boolean; skipped: boolean }> {
-  // Step 1: Check if already processed (skip duplicate)
-  const alreadyProcessed = await isEventProcessed(eventId, consumerName);
-  if (alreadyProcessed) {
-    console.log(`⏭️  Event ${eventId} already processed, skipping`);
-    return { success: true, skipped: true };
-  }
+  const start = Date.now();
+  let retryCount = 0;
 
-  // Step 2: Process event within transaction with idempotency record
-  const client = await db.connect();
   try {
-    await client.query('BEGIN');
-    
-    // Execute the business logic with client
-    await processFn(client);
-    
-    // Record successful processing (idempotency key)
-    await client.query(
-      `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)`,
-      [eventId, consumerName]
-    );
-    
-    await client.query('COMMIT');
-    console.log(`✅ Event ${eventId} processed exactly-once`);
-    return { success: true, skipped: false };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
+    // Step 1: Check if already processed (skip duplicate)
+    const alreadyProcessed = await isEventProcessed(eventId, consumerName);
+    if (alreadyProcessed) {
+      console.log(`⏭️  Event ${eventId} already processed, skipping`);
+      return { success: true, skipped: true };
+    }
+
+    // Step 2: Get retry count for logging
+    retryCount = await getRetryCount(eventId);
+
+    // Step 3: Process event within transaction with idempotency record
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Execute the business logic with client
+      await processFn(client);
+      
+      // Record successful processing (idempotency key)
+      await client.query(
+        `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)`,
+        [eventId, consumerName]
+      );
+      
+      await client.query('COMMIT');
+      console.log(`✅ Event ${eventId} processed exactly-once`);
+      return { success: true, skipped: false };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    // Step 4: Log error details
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.log(JSON.stringify({
+      event: 'event_error',
+      data: {
+        event_id: eventId,
+        retry_count: retryCount,
+        error: errorMessage
+      }
+    }));
+    throw err;
   } finally {
-    client.release();
+    // Step 5: Log processing time (always, regardless of success/failure)
+    const duration = Date.now() - start;
+    console.log(JSON.stringify({
+      event: 'event_processing_time',
+      data: {
+        event_id: eventId,
+        duration_ms: duration
+      }
+    }));
+
+    // Step 6: Log slow processing events (>2000ms)
+    if (duration > 2000) {
+      console.log(JSON.stringify({
+        event: 'event_slow_processing',
+        data: {
+          event_id: eventId,
+          duration_ms: duration
+        }
+      }));
+    }
   }
 }
 

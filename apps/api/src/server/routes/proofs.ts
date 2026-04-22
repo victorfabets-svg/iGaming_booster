@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
 import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { ok, fail } from '../utils/response';
+import { rateLimitDb } from '../utils/rate-limit-db';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin
@@ -9,11 +11,19 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
     '/proofs',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Rate limiting - 10 requests per minute per IP (stored in DB for persistence)
+      const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
+      const allowed = await rateLimitDb(clientIp, 10, 60000);
+
+      if (!allowed) {
+        return fail(reply, 'Too many requests', 'RATE_LIMIT');
+      }
+
       // Zero trust: user_id extracted from token, NOT from body
       const user_id = (request as any).userId;
       
       if (!user_id) {
-        return reply.status(401).send({ error: 'Unauthorized: valid token required' });
+        return fail(reply, 'Unauthorized: valid token required', 'UNAUTHORIZED');
       }
 
       // Use parts() iterator to handle multipart form data
@@ -32,31 +42,36 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         // NOTE: user_id no longer accepted from body - extracted from token only
       }
 
-      // Validate file
+      // Validate file: File must be present and non-empty (multipart form data)
       if (!fileBuffer || fileBuffer.length === 0) {
-        return reply.status(400).send({ error: 'Missing required file upload or file is empty' });
+        return fail(reply, 'Missing required file upload or file is empty', 'VALIDATION_ERROR');
       }
 
       console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
 
-      const result = await createProofUseCase({
-        user_id,
-        file_buffer: fileBuffer,
-        filename: filename || undefined,
-      });
+      try {
+        const result = await createProofUseCase({
+          user_id,
+          file_buffer: fileBuffer,
+          filename: filename || undefined,
+        });
 
-      // Build response with optional signed URL
-      const response: any = {
-        proof_id: result.proof_id,
-        status: result.status,
-      };
-      
-      if (result.file_url) {
-        response.file_url = result.file_url;
-        response.expires_in = result.expires_in;
+        // Build response with optional signed URL
+        const response: any = {
+          proof_id: result.proof_id,
+          status: result.status,
+        };
+        
+        if (result.file_url) {
+          response.file_url = result.file_url;
+          response.expires_in = result.expires_in;
+        }
+
+        return ok(reply, response);
+      } catch (err: any) {
+        console.error(err);
+        return fail(reply, err.message);
       }
-
-      return reply.status(201).send(response);
     }
   );
 }
