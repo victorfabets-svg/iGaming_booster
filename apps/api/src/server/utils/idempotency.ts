@@ -1,8 +1,12 @@
 import { db } from 'shared/database/connection';
 
+// Timeout in milliseconds before allowing retry (30 seconds)
+const IDEMPOTENCY_TIMEOUT_MS = 30000;
+
 interface IdempotencyRecord {
   response: Record<string, unknown> | null;
   status: string;
+  created_at: Date | null;
 }
 
 /**
@@ -29,10 +33,36 @@ export async function reserveIdempotency(key: string): Promise<{ acquired: boole
  */
 export async function getIdempotency(key: string): Promise<IdempotencyRecord | null> {
   const result = await db.query<IdempotencyRecord>(
-    `SELECT response, status FROM infra.idempotency_keys WHERE key = $1`,
+    `SELECT response, status, created_at FROM infra.idempotency_keys WHERE key = $1`,
     [key]
   );
   return result.rows[0] || null;
+}
+
+/**
+ * Release a stale idempotency key (for recovery after crash)
+ * @returns true if key was released
+ */
+export async function releaseStaleIdempotency(key: string): Promise<boolean> {
+  const result = await db.query(
+    `DELETE FROM infra.idempotency_keys 
+     WHERE key = $1 
+       AND status = 'pending' 
+       AND created_at < NOW() - INTERVAL '30 seconds'`,
+    [key]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Check if a pending key is stale (older than timeout)
+ */
+export function isIdempotencyStale(record: IdempotencyRecord | null): boolean {
+  if (!record || record.status !== 'pending' || !record.created_at) {
+    return false;
+  }
+  const age = Date.now() - new Date(record.created_at).getTime();
+  return age > IDEMPOTENCY_TIMEOUT_MS;
 }
 
 /**

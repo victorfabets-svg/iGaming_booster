@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
-import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency } from '../utils/idempotency';
+import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
 import { auditLog } from '../../../shared/events/audit-log';
 
 interface RegisterBody {
@@ -41,8 +41,23 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             return ok(reply, existing.response);
           }
           
-          // Still in progress - tell client to retry
-          return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
+          // Check if pending is stale (crashed request)
+          if (isIdempotencyStale(existing)) {
+            // Release stale key and try to re-acquire
+            await releaseStaleIdempotency(idemKey);
+            const retryReserve = await reserveIdempotency(idemKey);
+            if (!retryReserve.acquired) {
+              // Another request got it - check again
+              const retryExisting = await getIdempotency(idemKey);
+              if (retryExisting?.status === 'done') {
+                return ok(reply, retryExisting.response);
+              }
+              return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
+            }
+          } else {
+            // Still in progress - tell client to retry
+            return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
+          }
         }
       }
 
