@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
+import { checkIdempotency, saveIdempotency, getIdempotencyKey } from '../utils/idempotency';
 import { auditLog } from '../../../shared/events/audit-log';
 
 interface RegisterBody {
@@ -26,6 +27,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: RegisterBody }>(
     '/register',
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
+      // Idempotency check - return cached response if key reused
+      const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
+      if (idemKey) {
+        const cached = await checkIdempotency(idemKey);
+        if (cached) {
+          return ok(reply, cached);
+        }
+      }
+
       // Rate limiting - 5 requests per minute per IP (stored in DB for persistence)
       const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
       const allowed = await rateLimitDb(clientIp, 5, 60000);
@@ -62,6 +72,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Audit log for successful registration
         await auditLog(userId, 'user_registered', { email });
+
+        // Save idempotency key with response (only on success)
+        if (idemKey) {
+          await saveIdempotency(idemKey, { user_id: userId, email });
+        }
 
         return ok(reply, { user_id: userId, email });
       } catch (err: any) {

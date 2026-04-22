@@ -3,6 +3,7 @@ import { createProofUseCase } from '../../domains/validation/application/createP
 import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { ok, fail } from '../utils/response';
 import { rateLimitDb } from '../utils/rate-limit-db';
+import { checkIdempotency, saveIdempotency, getIdempotencyKey } from '../utils/idempotency';
 import { auditLog } from '../../../shared/events/audit-log';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
@@ -12,6 +13,15 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post(
     '/proofs',
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // Idempotency check - return cached response if key reused
+      const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
+      if (idemKey) {
+        const cached = await checkIdempotency(idemKey);
+        if (cached) {
+          return ok(reply, cached);
+        }
+      }
+
       // Rate limiting - 10 requests per minute per IP (stored in DB for persistence)
       const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
       const allowed = await rateLimitDb(clientIp, 10, 60000);
@@ -74,6 +84,11 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           filename,
           size: fileBuffer.length 
         });
+
+        // Save idempotency key with response (only on success)
+        if (idemKey) {
+          await saveIdempotency(idemKey, response);
+        }
 
         return ok(reply, response);
       } catch (err: any) {
