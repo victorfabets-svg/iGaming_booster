@@ -1,5 +1,8 @@
 import pg from 'pg';
-import { isCircuitOpen, recordFailure, recordSuccess, CircuitOpenError } from './db-circuit';
+import { 
+  isCircuitOpen, recordFailure, recordSuccess, CircuitOpenError, DbPoolExhaustedError,
+  incrementDbClients, decrementDbClients, getActiveDbClients 
+} from './db-circuit';
 
 // Re-export types
 export type { Pool, PoolClient } from 'pg';
@@ -30,10 +33,7 @@ export function pool(): pg.Pool {
  * Caller MUST release the client (even on error).
  */
 export async function getClient(): Promise<pg.PoolClient> {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  return _db.connect();
+  return acquireClient();
 }
 
 /**
@@ -149,23 +149,7 @@ export const db = {
     }
   },
   connect: async (): Promise<pg.PoolClient> => {
-    // Fast fail if circuit is open
-    if (isCircuitOpen()) {
-      throw new CircuitOpenError();
-    }
-    
-    if (!_db) {
-      throw new Error('Database not initialized');
-    }
-    
-    try {
-      const client = await _db.connect();
-      recordSuccess();
-      return client;
-    } catch (error) {
-      recordFailure();
-      throw error;
-    }
+    return acquireClient();
   },
   end: async (): Promise<void> => {
     if (_db) {
@@ -174,6 +158,55 @@ export const db = {
     }
   },
 };
+
+/**
+ * Shared function to acquire a DB client with circuit breaker + pool protection.
+ * Tracks active clients and wraps release to prevent leaks.
+ */
+async function acquireClient(): Promise<pg.PoolClient> {
+  // Fast fail if circuit is open
+  if (isCircuitOpen()) {
+    throw new CircuitOpenError();
+  }
+
+  // Check pool capacity
+  if (!incrementDbClients()) {
+    console.log(JSON.stringify({
+      event: 'db_pool_exhausted',
+      active_clients: getActiveDbClients()
+    }));
+    throw new DbPoolExhaustedError();
+  }
+
+  if (!_db) {
+    decrementDbClients();
+    throw new Error('Database not initialized');
+  }
+
+  try {
+    const client = await _db.connect();
+
+    const originalRelease = client.release.bind(client);
+    let released = false;
+
+    // Wrap release to track return and prevent double-release
+    client.release = () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      decrementDbClients();
+      return originalRelease();
+    };
+
+    recordSuccess();
+    return client;
+  } catch (err) {
+    decrementDbClients();
+    recordFailure();
+    throw err;
+  }
+}
 
 // Legacy exports for compatibility
 export async function query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> {

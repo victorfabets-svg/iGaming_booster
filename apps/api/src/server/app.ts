@@ -11,7 +11,7 @@ import healthRoutes from './routes/health';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
-import { CircuitOpenError } from '../../../shared/database/db-circuit';
+import { CircuitOpenError, DbPoolExhaustedError } from '../../../shared/database/db-circuit';
 import { isCircuitOpen } from '../../../shared/database/db-circuit';
 
 // Request timeout - prevents hanging requests (10s)
@@ -118,6 +118,23 @@ export function buildApp(): FastifyInstance {
         error: {
           message: 'Service unavailable',
           code: 'CIRCUIT_OPEN'
+        }
+      });
+    }
+
+    // Fast fail for DB pool exhaustion
+    if (err instanceof DbPoolExhaustedError) {
+      request.logger.error({
+        event: 'db_pool_exhausted',
+        request_id: request.id
+      });
+
+      return reply.status(503).send({
+        success: false,
+        data: null,
+        error: {
+          message: 'Database overloaded',
+          code: 'DB_POOL_EXHAUSTED'
         }
       });
     }
