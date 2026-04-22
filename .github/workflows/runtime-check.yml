@@ -7,6 +7,11 @@ on:
 
 env:
   NEON_DB_URL: postgres://ci:ci@localhost:5432/ci_test?sslmode=disable
+  R2_ENDPOINT: http://localhost:9090
+  R2_ACCESS_KEY_ID: ci-access
+  R2_SECRET_ACCESS_KEY: ci-secret
+  R2_BUCKET: ci-test
+  R2_REGION: us-east-1
   PORT: 3000
   HOST: 0.0.0.0
   NODE_ENV: production
@@ -32,6 +37,17 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      s3mock:
+        image: adobe/s3mock:latest
+        env:
+          initialBuckets: ci-test
+        ports:
+          - 9090:9090
+        options: >-
+          --health-cmd "wget -qO- http://localhost:9090 >/dev/null 2>&1 || curl -sf http://localhost:9090 >/dev/null 2>&1 || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
 
     steps:
       - name: Checkout
