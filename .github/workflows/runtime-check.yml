@@ -37,29 +37,6 @@ jobs:
       - name: Validate ENV
         run: test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
 
-      - name: TS binary diagnostic
-        run: |
-          set -euxo pipefail
-          echo "--- global tsc ---"
-          which tsc || echo "(no global tsc)"
-          tsc --version 2>&1 || true
-          echo "--- PATH ---"
-          echo "$PATH" | tr ':' '\n'
-          echo "--- root node_modules/.bin/tsc ---"
-          ls -la node_modules/.bin/tsc 2>&1 || echo "(missing)"
-          readlink -f node_modules/.bin/tsc 2>&1 || true
-          echo "--- root node_modules/typescript version ---"
-          node -e "console.log(require('./node_modules/typescript/package.json').version)" 2>&1 || echo "(missing)"
-          echo "--- apps/api/node_modules/.bin/tsc ---"
-          ls -la apps/api/node_modules/.bin/tsc 2>&1 || echo "(missing)"
-          readlink -f apps/api/node_modules/.bin/tsc 2>&1 || true
-          echo "--- apps/api/node_modules/typescript version ---"
-          node -e "console.log(require('./apps/api/node_modules/typescript/package.json').version)" 2>&1 || echo "(missing)"
-          echo "--- when cd apps/api and resolving tsc via npm exec ---"
-          cd apps/api
-          npm exec -c 'which tsc; tsc --version' 2>&1
-          echo "--- done ---"
-
       - name: Build API
         run: |
           cd apps/api
@@ -116,14 +93,17 @@ jobs:
 
       - name: Wait API ready
         run: |
-          for i in {1..6}; do
+          for i in $(seq 1 30); do
             if curl -sf --max-time 2 http://localhost:$PORT/health/db > /dev/null 2>&1; then
-              echo "API ready"
+              echo "API ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          cat api.log 2>/dev/null
+          echo "=== api.log tail ==="
+          tail -n 100 api.log 2>/dev/null || true
+          echo "=== worker.log tail ==="
+          tail -n 100 worker.log 2>/dev/null || true
           exit 1
 
       - name: Verify worker

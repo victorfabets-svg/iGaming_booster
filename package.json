@@ -16,7 +16,6 @@
     "test:e2e:process": "ts-node --esm tests/e2e/pipeline-process-e2e.e2e.ts"
   },
   "devDependencies": {
-    "js-yaml": "^4.1.1",
     "typescript": "~5.8.0"
   }
 }
