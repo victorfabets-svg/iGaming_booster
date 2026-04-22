@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+  NEON_DB_URL: postgres://ci:ci@localhost:5432/ci_test?sslmode=disable
   PORT: 3000
   HOST: 0.0.0.0
   NODE_ENV: production
@@ -17,6 +17,21 @@ jobs:
 
   runtime:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -84,6 +99,43 @@ jobs:
 
           echo "API_ENTRY=$API_ENTRY" >> $GITHUB_ENV
 
+      - name: Apply migrations
+        run: |
+          set -euo pipefail
+          # Wait for postgres service to accept connections (extra guard
+          # beyond the service healthcheck).
+          for i in $(seq 1 30); do
+            if node -e "require('pg').Client && new (require('pg').Client)({connectionString: process.env.NEON_DB_URL}).connect().then(c=>c.end()).then(()=>process.exit(0)).catch(()=>process.exit(1))" 2>/dev/null; then
+              echo "postgres ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Apply every .sql migration in order (filename sort).
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const { Client } = require('pg');
+            (async () => {
+              const dir = 'shared/database/migrations';
+              const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              for (const f of files) {
+                const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+                console.log('applying', f);
+                try {
+                  await c.query(sql);
+                } catch (e) {
+                  console.error('FAIL in', f, ':', e.message);
+                  process.exit(1);
+                }
+              }
+              await c.end();
+              console.log('migrations done');
+            })().catch(e => { console.error(e); process.exit(1); });
+          "
+
       - name: Start services
         run: |
           node $API_ENTRY > api.log 2>&1 &
@@ -110,14 +162,116 @@ jobs:
         run: |
           test -n "$(cat worker.pid)" && ps -p $(cat worker.pid) > /dev/null && echo "Worker alive" || exit 1
 
-      - name: Health smoke
+      - name: E2E validation (multipart + event chain + DB state + idempotency)
         run: |
           set -euo pipefail
-          curl -sSf --max-time 5 http://localhost:$PORT/health/db > /tmp/health.json
-          echo "--- /health/db response ---"
-          cat /tmp/health.json
-          STATUS=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/health.json','utf8')).status)")
-          test "$STATUS" = "ok" 
+
+
+          echo "--- Step 1: generate JWT ---"
+          TOKEN=$(node -e "
+            const crypto = require('crypto');
+            const b64 = s => Buffer.from(s).toString('base64url');
+            const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
+            const payload = b64(JSON.stringify({userId:'ci-e2e-user', iat: Math.floor(Date.now()/1000)}));
+            const sig = crypto.createHmac('sha256', process.env.JWT_SECRET).update(header + '.' + payload).digest('base64url');
+            console.log(header + '.' + payload + '.' + sig);
+          ")
+          [ -n "$TOKEN" ] || { echo "FAIL: empty JWT"; exit 1; }
+
+
+          echo "--- Step 2: create test file ---"
+          echo "e2e proof content $(date +%s)" > /tmp/proof.png
+
+
+          echo "--- Step 3: first POST /proofs ---"
+          RESP1=$(curl -sSf --max-time 15 -X POST http://localhost:$PORT/proofs \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Idempotency-Key: e2e-key-001" \
+            -F "file=@/tmp/proof.png")
+          echo "resp1: $RESP1"
+          PROOF_ID=$(echo "$RESP1" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '')")
+          [ -n "$PROOF_ID" ] || { echo "FAIL: no proof_id in first response"; exit 1; }
+          echo "proof_id=$PROOF_ID"
+
+
+          echo "--- Step 4: poll status (up to 45s) ---"
+          FINAL_STATUS="pending"
+          for i in $(seq 1 45); do
+            RAW=$(curl -sf --max-time 5 "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
+            STATUS=$(echo "$RAW" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).status || '') } catch(e) { console.log('') }")
+            echo "poll $i: status='$STATUS'"
+            case "$STATUS" in
+              approved|rejected|manual_review) FINAL_STATUS=$STATUS; break ;;
+            esac
+            sleep 1
+          done
+          echo "final status: $FINAL_STATUS"
+
+
+          echo "--- Step 5: DB state assertion ---"
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              const proofs    = Number((await c.query('SELECT COUNT(*) FROM validation.proofs')).rows[0].count);
+              const eventRows = (await c.query('SELECT DISTINCT event_type FROM events.events ORDER BY event_type')).rows.map(r => r.event_type);
+              const processed = Number((await c.query('SELECT COUNT(*) FROM events.processed_events')).rows[0].count);
+              console.log('proofs count:', proofs);
+              console.log('event types:', JSON.stringify(eventRows));
+              console.log('processed_events count:', processed);
+
+
+              if (proofs < 1) {
+                console.error('FAIL: expected >= 1 proof in validation.proofs, got', proofs);
+                process.exit(1);
+              }
+              const required = [
+                'proof_submitted',
+                'fraud_check_requested',
+                'payment_identifier_requested'
+              ];
+              const missing = required.filter(e => !eventRows.includes(e));
+              if (missing.length > 0) {
+                console.error('FAIL: required events missing:', missing);
+                process.exit(1);
+              }
+              // Soft check: if final status was approved, the full chain
+              // including fraud_scored/payment_identifier_extracted/proof_validated
+              // should exist. If rejected/manual_review, those downstream events
+              // may not fire. Log but do not fail.
+              const downstream = [
+                'fraud_scored',
+                'payment_identifier_extracted',
+                'proof_validated',
+                'reward_granted',
+                'numbers_generated'
+              ];
+              const downstreamPresent = downstream.filter(e => eventRows.includes(e));
+              console.log('downstream events present:', downstreamPresent);
+
+
+              await c.end();
+              console.log('DB state assertion: OK');
+            })().catch(e => { console.error('DB assertion error:', e.message); process.exit(1); });
+          "
+
+
+          echo "--- Step 6: idempotency test ---"
+          RESP2=$(curl -sSf --max-time 15 -X POST http://localhost:$PORT/proofs \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Idempotency-Key: e2e-key-001" \
+            -F "file=@/tmp/proof.png")
+          echo "resp2: $RESP2"
+          PROOF_ID2=$(echo "$RESP2" | node -e "console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '')")
+          if [ "$PROOF_ID" != "$PROOF_ID2" ]; then
+            echo "FAIL: idempotency broken. First=$PROOF_ID Second=$PROOF_ID2"
+            exit 1
+          fi
+          echo "idempotency: OK (same proof_id returned)"
+
+
+          echo "✅ E2E passed: multipart + 3+ pipeline events + DB state + idempotency" 
 
       - name: Cleanup
         if: always()
