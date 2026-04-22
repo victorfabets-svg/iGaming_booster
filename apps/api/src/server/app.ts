@@ -21,7 +21,7 @@ const REQUEST_TIMEOUT_MS = 10000;
 const MAX_CONCURRENT_REQUESTS = 100;
 let activeRequests = 0;
 
-export function buildApp(): FastifyInstance {
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: true,
   });

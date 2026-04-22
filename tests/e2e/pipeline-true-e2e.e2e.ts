@@ -745,7 +745,7 @@ class TrueE2ETest {
     console.log('\n🚀 Starting API server on port', API_PORT, '...');
     
     // Build and start the Fastify app
-    const app = buildApp();
+    const app = await buildApp();
     
     // Override port for test
     await app.listen({ port: API_PORT, host: '0.0.0.0' });

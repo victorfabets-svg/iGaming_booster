@@ -128,7 +128,7 @@ async function start() {
   // Start stuck event recovery globally (runs once)
   startStuckEventRecovery();
 
-  app = buildApp();
+  app = await buildApp();
 
   const port = config.apiPort;
 
