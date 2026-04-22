@@ -262,7 +262,7 @@ jobs:
             tail -n 200 worker.log 2>/dev/null || echo "(no worker.log)"
             exit 1
           fi
-          PROOF_ID=$(echo "$RESP1" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '') } catch(e) { console.log('') }")
+          PROOF_ID=$(echo "$RESP1" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.proof_id) || j.proof_id || '') } catch(e) { console.log('') }")
           [ -n "$PROOF_ID" ] || { echo "FAIL: no proof_id in first response body"; exit 1; }
           echo "proof_id=$PROOF_ID"
 
@@ -271,7 +271,7 @@ jobs:
           FINAL_STATUS="pending"
           for i in $(seq 1 45); do
             RAW=$(curl -sf --max-time 5 "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
-            STATUS=$(echo "$RAW" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).status || '') } catch(e) { console.log('') }")
+            STATUS=$(echo "$RAW" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.status) || j.status || '') } catch(e) { console.log('') }")
             echo "poll $i: status='$STATUS'"
             case "$STATUS" in
               approved|rejected|manual_review) FINAL_STATUS=$STATUS; break ;;
@@ -341,7 +341,7 @@ jobs:
             echo "FAIL: idempotency POST returned HTTP $HTTP2"
             exit 1
           fi
-          PROOF_ID2=$(echo "$RESP2" | node -e "try { console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).proof_id || '') } catch(e) { console.log('') }")
+          PROOF_ID2=$(echo "$RESP2" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.proof_id) || j.proof_id || '') } catch(e) { console.log('') }")
           if [ "$PROOF_ID" != "$PROOF_ID2" ]; then
             echo "FAIL: idempotency broken. First=$PROOF_ID Second=$PROOF_ID2"
             exit 1
