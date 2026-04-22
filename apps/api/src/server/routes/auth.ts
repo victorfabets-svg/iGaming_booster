@@ -89,6 +89,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       const userId = randomUUID();
 
+      // Get request ID for tracing
+      const requestId = (request as any).requestId;
+
       try {
         await db.query(
           `INSERT INTO identity.users (id, email, created_at) VALUES ($1, $2, NOW())`,
@@ -96,7 +99,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         );
 
         // Audit log for successful registration
-        await auditLog(userId, 'user_registered', { email });
+        await auditLog(userId, 'user_registered', { email }, requestId);
 
         // Save idempotency key with response (only on success)
         if (idemKey) {

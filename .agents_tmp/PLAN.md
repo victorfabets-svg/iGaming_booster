@@ -1,167 +1,266 @@
 # 1. OBJECTIVE
 
-Add basic rate limiting to critical API endpoints (`/register` and `/proofs`) using an in-memory rate limiter, applied per IP address, without creating new branches.
+Add request tracing (correlation ID) across API, events, and worker for end-to-end debugging. This enables correlating logs from a single user request across the entire system.
 
 ---
 
 # 2. CONTEXT SUMMARY
 
-**Current branch:** `feature/backend-sprint-5-7-validation`
+**Current state:**
+- Observability logs exist ✅ (via Fastify's `logger: true`)
+- Audit logs exist ✅ (`shared/events/audit-log.ts`)
+- Transactional outbox exists ✅ (`shared/events/transactional-outbox.ts`) with `correlation_id` field
 
-**System:**
-- Framework: Fastify (based on imports in route files)
-- Routes location: `apps/api/src/server/routes/`
-- Response utility: `apps/api/src/server/utils/response.ts`
-- Validation already implemented ✅
-- API contract already implemented ✅
-- Rate limiting missing ❌
+**Problem:**
+- No `x-request-id` header propagated from API requests
+- Events get new random `correlation_id` instead of inheriting from request
+- Cannot trace a single user flow from API → events → worker
 
 **Key files:**
-- `/apps/api/src/server/routes/auth.ts` - contains `/register` endpoint
-- `/apps/api/src/server/routes/proofs.ts` - contains `/proofs` endpoint
-- No existing rate limiter in `apps/api/src/server/utils/`
+- `apps/api/src/server/app.ts` - Fastify app setup (needs middleware registration)
+- `shared/events/transactional-outbox.ts` - Event creation (generates new correlation_id)
+- `shared/events/audit-log.ts` - Audit logging (no correlation_id)
+- `apps/api/src/server/routes/*.ts` - Route handlers (need to pass requestId)
 
 ---
 
 # 3. APPROACH OVERVIEW
 
-Implement a simple in-memory rate limiter that:
-- Tracks requests per IP address using a Map
-- Applies sliding window algorithm (filters timestamps within window)
-- Returns `false` when limit exceeded, `true` otherwise
-- Must run BEFORE validation and business logic
+1. **Create request ID middleware** - Extract incoming `x-request-id` or generate new UUID
+2. **Register in Fastify app** - Apply middleware to all requests
+3. **Propagate to event creation** - Pass request ID to `insertEventInTransaction`
+4. **Include in audit logs** - Add correlation_id to audit log metadata
+5. **Update worker logs** - Use event's correlation_id in processing logs
 
-**Endpoints to protect:**
-- `/register` - stricter limit (5 requests per minute) due to registration sensitivity
-- `/proofs` - more permissive limit (10 requests per minute) for file uploads
+The approach uses the existing `correlation_id` field in the events table and extends it to be tied to the original HTTP request.
 
 ---
 
 # 4. IMPLEMENTATION STEPS
 
-## Step 1 — Create Rate Limiter Utility
+## Step 1 — Create Request ID Middleware
 
-**Goal:** Create a reusable rate limiting function
+**Goal:** Create Fastify plugin to extract/generate request ID and attach to request
 
-**Method:** Create new file `apps/api/src/server/utils/rate-limit.ts` with:
-- A Map to store IP -> timestamps array
-- Export function `rateLimit(key, limit, windowMs)` that:
-  - Gets current timestamp
-  - Creates entry if key doesn't exist
-  - Filters out timestamps older than window
-  - Returns false if at limit
-  - Adds current timestamp and returns true if allowed
+**Method:** Create new file `apps/api/src/server/middleware/request-id.ts`:
+- Check for incoming `x-request-id` header
+- Generate UUID if not present
+- Attach to `request.requestId`
+- Set response header
 
-**Reference:** `apps/api/src/server/utils/rate-limit.ts` (new file)
+**Reference:** `apps/api/src/server/middleware/request-id.ts` (new file)
 
 ```typescript
-const store = new Map<string, number[]>();
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { randomUUID } from 'crypto';
 
-export function rateLimit(key: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
+/**
+ * Request ID middleware - generates or extracts x-request-id for tracing
+ */
+export async function requestIdMiddleware(
+  fastify: FastifyInstance
+): Promise<void> {
+  fastify.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    const incoming = request.headers['x-request-id'] as string | undefined;
+    const requestId = incoming || randomUUID();
 
-  if (!store.has(key)) {
-    store.set(key, []);
-  }
+    // Attach to request for use in handlers
+    (request as any).requestId = requestId;
 
-  const timestamps = store.get(key)!.filter(t => now - t < windowMs);
-
-  if (timestamps.length >= limit) {
-    return false;
-  }
-
-  timestamps.push(now);
-  store.set(key, timestamps);
-
-  return true;
+    // Set response header
+    reply.header('x-request-id', requestId);
+  });
 }
 ```
 
 ---
 
-## Step 2 — Apply Rate Limiting to /register
+## Step 2 — Register Middleware in App
 
-**Goal:** Protect registration endpoint from abuse
+**Goal:** Apply request ID middleware to all routes
 
-**Method:** 
-1. Import `rateLimit` from `../utils/rate-limit`
-2. At the START of the route handler (before any validation), extract IP from `request.ip`
-3. Call `rateLimit(req.ip, 5, 60000)` - 5 requests per minute
-4. If returns false, call `fail(reply, 'Too many requests', 'RATE_LIMIT')` and return
+**Method:** Update `apps/api/src/server/app.ts`:
+- Import `requestIdMiddleware`
+- Register it BEFORE routes
+
+**Reference:** `apps/api/src/server/app.ts`
+
+**Code changes:**
+```typescript
+import { requestIdMiddleware } from './middleware/request-id';
+
+// Register request ID middleware (before routes)
+await app.register(requestIdMiddleware);
+
+// ... existing route registrations
+```
+
+---
+
+## Step 3 — Update Event Creation to Accept Correlation ID
+
+**Goal:** Allow passing request ID to event creation instead of generating random one
+
+**Method:** Update `shared/events/transactional-outbox.ts`:
+- Modify `insertEventInTransaction` to accept optional `correlationId` parameter
+- Use provided correlation_id if given, otherwise generate new UUID
+
+**Reference:** `shared/events/transactional-outbox.ts`
+
+**Code changes:**
+```typescript
+export async function insertEventInTransaction(
+  client: any,
+  event_type: string,
+  payload: Record<string, any>,
+  producer: string,
+  version = 'v1',
+  correlationId?: string // Add optional parameter
+): Promise<void> {
+  const event_id = randomUUID();
+  const correlation_id = correlationId || randomUUID(); // Use provided or generate
+  
+  await client.query(
+    `INSERT INTO events.events (id, event_type, version, producer, correlation_id, payload, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [event_id, event_type, version, producer, correlation_id, JSON.stringify(payload)]
+  );
+}
+```
+
+---
+
+## Step 4 — Update Audit Log to Include Correlation ID
+
+**Goal:** Include request ID in audit log metadata
+
+**Method:** Update `shared/events/audit-log.ts`:
+- Add optional `correlationId` parameter to `auditLog`
+- Include in metadata
+
+**Reference:** `shared/events/audit-log.ts`
+
+**Code changes:**
+```typescript
+export async function auditLog(
+  userId: string | null,
+  action: string,
+  metadata: Record<string, unknown> = {},
+  correlationId?: string
+): Promise<void> {
+  // Include correlation_id in metadata for traceability
+  const fullMetadata = {
+    ...metadata,
+    ...(correlationId && { correlation_id: correlationId })
+  };
+  
+  await db.query(
+    `INSERT INTO audit.logs (user_id, action, metadata)
+     VALUES ($1, $2, $3)`,
+    [userId, action, JSON.stringify(fullMetadata)]
+  );
+}
+
+// Update systemAuditLog similarly
+export async function systemAuditLog(
+  action: string,
+  metadata: Record<string, unknown> = {},
+  correlationId?: string
+): Promise<void> {
+  return auditLog(null, action, metadata, correlationId);
+}
+```
+
+---
+
+## Step 5 — Update /register Route to Pass Request ID
+
+**Goal:** Pass request ID to event creation and audit logging
+
+**Method:** Update `apps/api/src/server/routes/auth.ts`:
+- Extract `requestId` from request
+- Pass to auditLog calls
 
 **Reference:** `apps/api/src/server/routes/auth.ts`
 
-**Code to add (at start of route handler, before requireFields):**
+**Code changes:**
 ```typescript
-const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
-const allowed = rateLimit(clientIp, 5, 60000);
+// In route handler, get requestId
+const requestId = (request as any).requestId;
 
-if (!allowed) {
-  return fail(reply, 'Too many requests', 'RATE_LIMIT');
-}
+// Pass to auditLog
+await auditLog(userId, 'user_registered', { email }, requestId);
 ```
 
 ---
 
-## Step 3 — Apply Rate Limiting to /proofs
+## Step 6 — Update /proofs Route to Pass Request ID
 
-**Goal:** Protect proof submission endpoint from abuse
+**Goal:** Pass request ID to event creation and audit logging
 
-**Method:**
-1. Import `rateLimit` from `../../utils/rate-limit` (note: different relative path)
-2. At the START of the route handler (before auth check), extract IP
-3. Call `rateLimit(req.ip, 10, 60000)` - 10 requests per minute
-4. If returns false, call `fail(reply, 'Too many requests', 'RATE_LIMIT')` and return
+**Method:** Update `apps/api/src/server/routes/proofs.ts`:
+- Extract `requestId` from request
+- Pass to auditLog calls
 
 **Reference:** `apps/api/src/server/routes/proofs.ts`
 
-**Code to add (at start of route handler, before user_id check):**
+**Code changes:**
 ```typescript
-const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
-const allowed = rateLimit(clientIp, 10, 60000);
+// In route handler, get requestId
+const requestId = (request as any).requestId;
 
-if (!allowed) {
-  return fail(reply, 'Too many requests', 'RATE_LIMIT');
-}
+// Pass to auditLog
+await auditLog(user_id, 'proof_submitted', { 
+  proof_id: result.proof_id,
+  filename,
+  size: fileBuffer.length 
+}, requestId);
 ```
 
 ---
 
-## Step 4 — Verify Execution Order
+## Step 7 — Update Worker Logs to Include Correlation ID
 
-**Goal:** Ensure rate limiting runs before validation and business logic
+**Goal:** Log correlation ID when processing events for end-to-end tracing
 
-**Method:** Confirm in both files that rate limit check is the FIRST code executed in the route handler, BEFORE:
-- Field validation
-- Auth middleware results processing
-- Business logic
+**Method:** Update relevant consumer files to log with correlation_id:
+- `apps/api/src/domains/validation/consumers/validation-aggregator.consumer.ts`
+- Any other event consumers
+
+**Reference:** Event consumer files
+
+**Code changes:**
+```typescript
+// When processing event, include correlation_id in logs
+console.log(JSON.stringify({
+  event: 'validation_aggregated',
+  correlation_id: event.correlation_id, // From the event itself
+  proof_id: payload.proof_id,
+  user_id: payload.user_id
+}));
+```
 
 ---
 
 # 5. TESTING AND VALIDATION
 
 **Manual test approach:**
-1. Start the API server
-2. Make rapid requests to `/register` endpoint (more than 5 in 1 minute) → should get RATE_LIMIT error after 5th request
-3. Wait 1 minute → should allow again
-4. Make rapid requests to `/proofs` endpoint with valid auth (more than 10 in 1 minute) → should get RATE_LIMIT error after 10th request
-5. Normal usage within limits → should work normally
+1. Start API server and worker
+2. Send request to `/register` without `x-request-id` → response contains new UUID in `x-request-id` header
+3. Send request with custom `x-request-id: my-test-id` → same ID returned in response
+4. Check database events table → `correlation_id` matches the request ID
+5. Check audit logs → `correlation_id` in metadata matches
+6. Check worker logs → contains same correlation_id
 
 **Expected behavior:**
-- RATE_LIMIT error response format:
-  ```json
-  {
-    "success": false,
-    "data": null,
-    "error": {
-      "message": "Too many requests",
-      "code": "RATE_LIMIT"
-    }
-  }
-  ```
+- Response always includes `x-request-id` header
+- If client sends `x-request-id`, it's preserved (not regenerated)
+- Events and audit logs contain same correlation_id
+- Full trace from API → event → worker logs
 
 **Success criteria:**
-- [ ] `/register` endpoint returns RATE_LIMIT after 5 requests in 1 minute window
-- [ ] `/proofs` endpoint returns RATE_LIMIT after 10 requests in 1 minute window  
-- [ ] Error response has consistent `code: "RATE_LIMIT"`
-- [ ] Rate limiting runs before validation (no validation errors shown when rate limited)
+- [ ] All API responses include `x-request-id` header
+- [ ] Events table stores correlation_id matching original request
+- [ ] Audit logs include correlation_id in metadata
+- [ ] Worker logs include correlation_id from events
+- [ ] End-to-end trace is possible with single ID

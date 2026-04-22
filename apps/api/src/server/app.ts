@@ -8,6 +8,7 @@ import { NEON_DB_URL } from '../../../../shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import { cleanupIdempotency } from './utils/idempotency';
+import { requestIdMiddleware } from './middleware/request-id';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -30,6 +31,9 @@ export function buildApp(): FastifyInstance {
       fileSize: 10 * 1024 * 1024, // 10MB limit
     },
   });
+
+  // Register request ID middleware for tracing (before routes)
+  await app.register(requestIdMiddleware);
 
   // Register routes
   app.register(proofRoutes);

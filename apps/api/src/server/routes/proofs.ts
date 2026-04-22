@@ -85,6 +85,9 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
 
       console.log(`[PROOF] Received file: ${filename}, size: ${fileBuffer.length} bytes, user: ${user_id}`);
 
+      // Get request ID for tracing
+      const requestId = (request as any).requestId;
+
       try {
         const result = await createProofUseCase({
           user_id,
@@ -108,7 +111,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           proof_id: result.proof_id,
           filename,
           size: fileBuffer.length 
-        });
+        }, requestId);
 
         // Save idempotency key with response (only on success)
         if (idemKey) {
