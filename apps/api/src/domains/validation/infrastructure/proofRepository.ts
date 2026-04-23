@@ -14,13 +14,19 @@ export async function createProofInTransaction(
   const id = randomUUID();
   const submitted_at = new Date().toISOString();
 
-  try {
-    await client.query(
-      `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, proof.user_id, fileUrl, hash, submitted_at]
-    );
+  // Use ON CONFLICT so a duplicate hash doesn't abort the outer transaction.
+  // Throwing on 23505 (as the previous try/catch did) leaves the tx in a
+  // poisoned state and every subsequent query fails with 'current transaction
+  // is aborted'. DO NOTHING RETURNING lets us detect the conflict cleanly.
+  const inserted = await client.query(
+    `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (hash) DO NOTHING
+     RETURNING id`,
+    [id, proof.user_id, fileUrl, hash, submitted_at]
+  );
 
+  if (inserted.rows.length > 0) {
     return {
       proof: {
         id,
@@ -31,17 +37,18 @@ export async function createProofInTransaction(
       },
       isNew: true,
     };
-  } catch (error: any) {
-    // Handle UNIQUE constraint violation - return existing proof (within same transaction)
-    if (error.code === '23505' && error.constraint === 'validation_proofs_hash_key') {
-      const existing = await findByHashWithClient(client, hash);
-      if (existing) {
-        console.log('[PROOF] Duplicate detected at DB level, returning existing:', existing.id);
-        return { proof: existing, isNew: false };
-      }
-    }
-    throw error;
   }
+
+  // Conflict: the same hash already exists. Fetch and return it.
+  const existing = await findByHashWithClient(client, hash);
+  if (existing) {
+    console.log('[PROOF] Duplicate hash detected, returning existing:', existing.id);
+    return { proof: existing, isNew: false };
+  }
+
+  // Extremely rare: conflict reported but row missing (concurrent delete?).
+  // Surface as an error rather than lying about success.
+  throw new Error(`Proof insert conflict on hash ${hash} but no matching row found`);
 }
 
 /**
