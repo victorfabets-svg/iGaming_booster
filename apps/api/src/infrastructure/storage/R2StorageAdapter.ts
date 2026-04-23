@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageService } from './StorageService';
+import { LocalStorageAdapter } from './LocalStorageAdapter';
 
 /**
  * R2 Storage Configuration
@@ -113,21 +114,40 @@ export class R2StorageAdapter implements StorageService {
 }
 
 /**
- * Create a singleton instance of the storage adapter
+ * Create a singleton instance of the storage adapter.
+ * In development, when R2 credentials are absent, falls back to
+ * LocalStorageAdapter so the happy-path flow works without cloud setup.
+ * Production ALWAYS uses R2 (no fallback).
  */
-let storageInstance: R2StorageAdapter | null = null;
+let storageInstance: StorageService | null = null;
+
+function hasR2Config(): boolean {
+  return Boolean(
+    process.env.R2_ENDPOINT &&
+    process.env.R2_ACCESS_KEY_ID &&
+    process.env.R2_SECRET_ACCESS_KEY
+  );
+}
 
 export function getStorageService(): StorageService {
   if (!storageInstance) {
-    storageInstance = new R2StorageAdapter();
+    if (!hasR2Config() && process.env.NODE_ENV === 'development') {
+      console.warn('[Storage] R2 credentials absent in NODE_ENV=development — using LocalStorageAdapter');
+      storageInstance = new LocalStorageAdapter();
+    } else {
+      storageInstance = new R2StorageAdapter();
+    }
   }
   return storageInstance;
 }
 
-// Export the typed R2 adapter for signed URLs
+// Export the typed R2 adapter for signed URLs (dedicated singleton — never
+// returns the dev LocalStorageAdapter even when the main factory did).
+let r2Instance: R2StorageAdapter | null = null;
+
 export function getR2StorageService(): R2StorageAdapter {
-  if (!storageInstance) {
-    storageInstance = new R2StorageAdapter();
+  if (!r2Instance) {
+    r2Instance = new R2StorageAdapter();
   }
-  return storageInstance;
+  return r2Instance;
 }
