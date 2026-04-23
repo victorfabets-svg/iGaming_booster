@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import createApiClient from '../services/api';
+import { track } from '../lib/tracking';
 
 const api = createApiClient('');
 
@@ -117,6 +118,10 @@ export function useProofFlow(): UseProofFlowReturn {
           const confidence = proof.confidence_score ?? null;
           if (TERMINAL_STATUSES.has(status)) {
             clearTimers();
+            track(status as 'approved' | 'rejected' | 'manual_review', {
+              proof_id: proofId,
+              confidence_score: confidence,
+            });
           }
           dispatch({ type: 'POLL_UPDATE', status, confidenceScore: confidence });
         } catch (err) {
@@ -135,10 +140,12 @@ export function useProofFlow(): UseProofFlowReturn {
       dispatch({ type: 'SUBMIT_START' });
       try {
         const res = await api.submitProof(file);
+        track('proof_submitted', { proof_id: res.proof_id });
         dispatch({ type: 'SUBMIT_OK', proofId: res.proof_id });
         startPolling(res.proof_id);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Upload failed';
+        track('upload_failed', { error: message });
         dispatch({ type: 'SUBMIT_FAIL', error: message });
       }
     },
