@@ -12,8 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "moduleDetection": "force",
-    "types": ["vite/client"]
+    "moduleDetection": "force"
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]
