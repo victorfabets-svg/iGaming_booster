@@ -14,7 +14,6 @@ const IndexPage: React.FC = () => {
 
   const [health, setHealth] = useState<'healthy' | 'degraded' | 'unknown'>('unknown');
   const [latency, setLatency] = useState<number | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
 
   // Health pulse
   useEffect(() => {
@@ -25,13 +24,11 @@ const IndexPage: React.FC = () => {
         if (cancelled) return;
         setHealth(h.status === 'ok' ? 'healthy' : 'degraded');
         setLatency(h.latencyMs ?? null);
-        setHealthError(null); // Clear error on success
       } catch (err) {
         console.error('Health check failed:', err);
         if (!cancelled) { 
           setHealth('degraded'); 
           setLatency(null);
-          setHealthError(err instanceof Error ? err.message : 'Falha na verificação de saúde');
         }
       }
     };
@@ -39,6 +36,17 @@ const IndexPage: React.FC = () => {
     const id = window.setInterval(tick, 15_000);
     return () => { cancelled = true; window.clearInterval(id); };
   }, []);
+
+  if (section === 'flow') {
+    return (
+      <>
+        <div className="bg-image-container" />
+        <main style={{ minHeight: '100vh' }}>
+          <ConversionFlow />
+        </main>
+      </>
+    );
+  }
 
   return (
     <div className={`app-shell${expanded ? ' expanded' : ''}`}>
@@ -50,8 +58,7 @@ const IndexPage: React.FC = () => {
         onToggle={() => setExpanded(v => !v)}
       />
       <main className="main-content">
-        <Header health={health} latencyMs={latency} healthError={healthError} />
-        {section === 'flow' && <ConversionFlow />}
+        <Header health={health} latencyMs={latency} />
         {section === 'historico' && <HistoricoSection />}
         {section === 'systemflow' && <SystemFlow />}
       </main>

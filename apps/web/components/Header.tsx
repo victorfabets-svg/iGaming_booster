@@ -4,10 +4,9 @@ import Icon from './Icon';
 interface HeaderProps {
   health: 'healthy' | 'degraded' | 'unknown';
   latencyMs?: number | null;
-  healthError?: string | null;
 }
 
-const Header: React.FC<HeaderProps> = ({ health, latencyMs, healthError }) => {
+const Header: React.FC<HeaderProps> = ({ health, latencyMs }) => {
   const dotColor =
     health === 'healthy' ? 'var(--color-success-primary)' :
     health === 'degraded' ? 'var(--color-error-primary)' :
@@ -19,18 +18,6 @@ const Header: React.FC<HeaderProps> = ({ health, latencyMs, healthError }) => {
 
   return (
     <header className="global-header">
-      {healthError && (
-        <div className="error-banner" style={{ 
-          padding: '8px 16px', 
-          backgroundColor: 'var(--color-error-primary)', 
-          color: 'white',
-          marginBottom: 8,
-          borderRadius: 4
-        }}>
-          <Icon name="alert" size={14} />
-          <span style={{ marginLeft: 8 }}>Erro: {healthError}</span>
-        </div>
-      )}
       <div className="header-controls">
         <div className="selector"><Icon name="calendar" size={14} /> Período ▼</div>
         <div className="selector"><Icon name="target" size={14} /> Campanha ▼</div>

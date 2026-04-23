@@ -86,6 +86,15 @@ const DEV_JWT: string | undefined = (import.meta as any).env?.VITE_DEV_JWT;
 const authHeaders = (): Record<string, string> =>
   DEV_JWT ? { Authorization: `Bearer ${DEV_JWT}` } : {};
 
+function httpErrorMessage(status: number, fallback: string): string {
+  if (status === 401 || status === 403) return 'Sessão expirada. Faça login novamente.';
+  if (status === 404) return 'Recurso não encontrado.';
+  if (status === 413) return 'Arquivo muito grande.';
+  if (status === 429) return 'Muitas tentativas. Aguarde alguns instantes.';
+  if (status >= 500) return 'Serviço temporariamente indisponível.';
+  return fallback;
+}
+
 const createApiClient = (baseUrl: string) => {
   const url = (path: string) => `${baseUrl}${path}`;
 
@@ -114,7 +123,7 @@ const createApiClient = (baseUrl: string) => {
         headers: { ...authHeaders() },
       });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao enviar comprovante.'));
       }
       return response.json();
     },
@@ -122,7 +131,7 @@ const createApiClient = (baseUrl: string) => {
     async getRecentProofs(): Promise<Proof[]> {
       const response = await fetch(url('/proofs'), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch proofs: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar comprovantes.'));
       }
       return response.json();
     },
@@ -130,7 +139,7 @@ const createApiClient = (baseUrl: string) => {
     async getProof(id: string): Promise<Proof> {
       const response = await fetch(url(`/proofs/${id}`), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch proof: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar comprovante.'));
       }
       return response.json();
     },
@@ -138,7 +147,7 @@ const createApiClient = (baseUrl: string) => {
     async getRewards(): Promise<Reward[]> {
       const response = await fetch(url('/rewards'), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch rewards: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar recompensas.'));
       }
       return response.json();
     },
@@ -146,7 +155,7 @@ const createApiClient = (baseUrl: string) => {
     async getRaffles(): Promise<Raffle[]> {
       const response = await fetch(url('/raffles'), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch raffles: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar sorteios.'));
       }
       return response.json();
     },
@@ -154,7 +163,7 @@ const createApiClient = (baseUrl: string) => {
     async getRaffleById(id: string): Promise<Raffle> {
       const response = await fetch(url(`/raffles/${id}`), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch raffle: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar sorteio.'));
       }
       return response.json();
     },
@@ -162,7 +171,7 @@ const createApiClient = (baseUrl: string) => {
     async getRaffleResult(id: string): Promise<RaffleResult> {
       const response = await fetch(url(`/raffles/${id}/result`), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch raffle result: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar resultado do sorteio.'));
       }
       return response.json();
     },
@@ -170,7 +179,7 @@ const createApiClient = (baseUrl: string) => {
     async getMetrics(): Promise<MetricsResponse> {
       const response = await fetch(url('/metrics'), { headers: authHeaders() });
       if (!response.ok) {
-        throw new Error(`Failed to fetch metrics: ${response.status}`);
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar métricas.'));
       }
       return response.json();
     },
