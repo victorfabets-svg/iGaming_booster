@@ -354,9 +354,11 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          echo "=== api.log tail (last 200 lines) ==="
-          tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
-          echo "=== worker.log tail (last 200 lines) ==="
-          tail -n 200 worker.log 2>/dev/null || echo "(no worker.log)"
+          echo "=== api.log tail (last 300 lines) ==="
+          tail -n 300 api.log 2>/dev/null || echo "(no api.log)"
+          echo "=== worker.log DBG lines (all) ==="
+          grep -E "\[DBG|\[DBG-AGG" worker.log 2>/dev/null || echo "(no DBG lines)"
+          echo "=== worker.log tail (last 500 lines) ==="
+          tail -n 500 worker.log 2>/dev/null || echo "(no worker.log)"
           kill $(cat api.pid) 2>/dev/null || true
           kill $(cat worker.pid) 2>/dev/null || true
