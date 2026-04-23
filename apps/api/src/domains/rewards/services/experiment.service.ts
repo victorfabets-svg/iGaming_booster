@@ -69,7 +69,7 @@ class ExperimentService {
        FROM rewards.experiment_assignments
        WHERE user_id = $1 AND experiment_name = $2`,
       [userId, experimentName]
-    ).then(rows => rows[0] || null);
+    ).then(r => r.rows[0] || null);
 
     if (existing) {
       return existing.variant;
@@ -101,7 +101,7 @@ class ExperimentService {
       `SELECT variant FROM rewards.experiment_assignments
        WHERE user_id = $1 AND experiment_name = $2`,
       [userId, experimentName]
-    ).then(rows => rows[0] || null);
+    ).then(r => r.rows[0] || null);
     
     return assignment?.variant || null;
   }

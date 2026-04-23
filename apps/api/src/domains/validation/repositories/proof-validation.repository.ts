@@ -44,12 +44,13 @@ export async function createProofValidationWithClient(
 }
 
 export async function findValidationByProofId(proofId: string): Promise<ProofValidation | null> {
-  return await db.query<ProofValidation>(
+  const result = await db.query<ProofValidation>(
     `SELECT id, proof_id, status, confidence_score, validation_version, validated_at, created_at
      FROM validation.proof_validations
      WHERE proof_id = $1`,
     [proofId]
-  ).then(rows => rows[0] || null);
+  );
+  return result.rows[0] || null;
 }
 
 export async function updateValidationStatus(

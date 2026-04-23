@@ -48,7 +48,7 @@ export async function findProofByHash(hash: string): Promise<Proof | null> {
      FROM validation.proofs 
      WHERE hash = $1`,
     [hash]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function findProofById(id: string): Promise<Proof | null> {
@@ -57,7 +57,7 @@ export async function findProofById(id: string): Promise<Proof | null> {
      FROM validation.proofs 
      WHERE id = $1`,
     [id]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function findProofsByUserId(userId: string): Promise<Proof[]> {

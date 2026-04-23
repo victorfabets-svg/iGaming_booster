@@ -31,7 +31,7 @@ export async function checkRateLimit(userId: string, limitType: keyof typeof RAT
      FROM fraud.rate_limits
      WHERE user_id = $1 AND limit_type = $2 AND window_start >= $3`,
     [userId, limitType, windowStart]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 
   if (!existing) {
     // No record, allow request

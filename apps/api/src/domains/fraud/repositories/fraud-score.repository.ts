@@ -47,5 +47,5 @@ export async function findFraudScoreByProofId(proofId: string): Promise<FraudSco
      FROM fraud.fraud_scores 
      WHERE proof_id = $1`,
     [proofId]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }

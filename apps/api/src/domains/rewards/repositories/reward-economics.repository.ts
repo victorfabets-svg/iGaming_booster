@@ -33,7 +33,7 @@ export async function findRewardEconomicsByRewardId(rewardId: string): Promise<R
      FROM rewards.reward_economics
      WHERE reward_id = $1`,
     [rewardId]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function getTotalEconomics(): Promise<{
