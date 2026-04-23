@@ -316,6 +316,35 @@ jobs:
               ;;
           esac
 
+          # After status becomes terminal, give downstream consumers (reward,
+          # raffle) time to catch up before asserting the full event chain.
+          # Each consumer polls its upstream event every POLL_INTERVAL_MS (2s),
+          # so ~6s of headroom is typically enough for the two remaining hops.
+          echo "--- Step 4b: wait for downstream event chain (reward_granted + numbers_generated) ---"
+          DOWNSTREAM_OK=0
+          for i in $(seq 1 15); do
+            COUNT=$(node -e "
+              const { Client } = require('pg');
+              (async () => {
+                const c = new Client({ connectionString: process.env.NEON_DB_URL });
+                await c.connect();
+                const r = await c.query(\"SELECT COUNT(*) FROM events.events WHERE event_type IN ('reward_granted','numbers_generated')\");
+                await c.end();
+                process.stdout.write(r.rows[0].count.toString());
+              })().catch(() => { process.stdout.write('0'); });
+            " 2>/dev/null || echo "0")
+            echo "downstream poll $i (t=$((i*2))s): reward_granted+numbers_generated count=$COUNT"
+            if [ "$COUNT" -ge "2" ]; then
+              DOWNSTREAM_OK=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$DOWNSTREAM_OK" != "1" ]; then
+            echo "FAIL: downstream events (reward_granted + numbers_generated) not present after 30s post-terminal"
+            exit 1
+          fi
+
 
           echo "--- Step 5: DB state assertion ---"
           node -e "
