@@ -5,6 +5,8 @@ import { ok, fail } from '../utils/response';
 import { rateLimitDb } from '../utils/rate-limit-db';
 import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
 import { auditLog } from '@shared/events/audit-log';
+import { findProofById } from '../../domains/validation/repositories/proof.repository';
+import { findValidationByProofId } from '../../domains/validation/repositories/proof-validation.repository';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin
@@ -23,10 +25,10 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           const existing = await getIdempotency(idemKey);
           
           if (existing?.status === 'done') {
-            // Completed - return cached response
-            return ok(reply, existing.response);
+            // Completed - return cached response (flat shape, no wrapper)
+            return reply.send(existing.response);
           }
-          
+
           // Check if pending is stale (crashed request)
           if (isIdempotencyStale(existing)) {
             // Release stale key and try to re-acquire
@@ -36,7 +38,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
               // Another request got it - check again
               const retryExisting = await getIdempotency(idemKey);
               if (retryExisting?.status === 'done') {
-                return ok(reply, retryExisting.response);
+                return reply.send(retryExisting.response);
               }
               return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
             }
@@ -124,11 +126,41 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           await completeIdempotency(idemKey, response);
         }
 
-        return ok(reply, response);
+        // Flat shape — no { data } wrapper.
+        return reply.send(response);
       } catch (err: any) {
         console.error(err);
         return fail(reply, err.message);
       }
+    }
+  );
+
+  // GET /proofs/:id — read final validation status.
+  // Source of truth: validation.proof_validations.status.
+  // Fallback: if proof exists but no validation row yet, status = 'pending'.
+  // Response shape is intentionally flat ({ proof_id, status }) — no { data } wrapper.
+  fastify.get(
+    '/proofs/:id',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const { id } = request.params;
+
+      const proof = await findProofById(id);
+      if (!proof) {
+        return reply.status(404).send({ proof_id: id, status: 'not_found' });
+      }
+
+      const validation = await findValidationByProofId(id);
+      const status = validation?.status ?? 'pending';
+
+      const payload: Record<string, unknown> = {
+        proof_id: id,
+        status,
+      };
+      if (validation?.confidence_score != null) {
+        payload.confidence_score = validation.confidence_score;
+      }
+
+      return reply.send(payload);
     }
   );
 }

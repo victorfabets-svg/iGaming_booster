@@ -296,18 +296,23 @@ jobs:
           echo "proof_id=$PROOF_ID"
 
 
-          echo "--- Step 4: poll status (up to 45s) ---"
+          echo "--- Step 4: poll status (interval 2s, total 30s) ---"
           FINAL_STATUS="pending"
-          for i in $(seq 1 45); do
-            RAW=$(curl -sf --max-time 5 "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
+          for i in $(seq 1 15); do
+            RAW=$(curl -sf --max-time 5 -H "Authorization: Bearer $TOKEN" "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
             STATUS=$(echo "$RAW" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.status) || j.status || '') } catch(e) { console.log('') }")
-            echo "poll $i: status='$STATUS'"
-            case "$STATUS" in
-              approved|rejected|manual_review) FINAL_STATUS=$STATUS; break ;;
-            esac
-            sleep 1
+            echo "poll $i (t=$((i*2))s): status='$STATUS'"
+            if [ -n "$STATUS" ] && [ "$STATUS" != "pending" ]; then
+              FINAL_STATUS=$STATUS
+              break
+            fi
+            sleep 2
           done
           echo "final status: $FINAL_STATUS"
+          if [ "$FINAL_STATUS" = "pending" ]; then
+            echo "FAIL: polling converged on 'pending' after 30s — read path not reflecting final state"
+            exit 1
+          fi
 
 
           echo "--- Step 5: DB state assertion ---"
@@ -316,12 +321,15 @@ jobs:
             (async () => {
               const c = new Client({ connectionString: process.env.NEON_DB_URL });
               await c.connect();
-              const proofs    = Number((await c.query('SELECT COUNT(*) FROM validation.proofs')).rows[0].count);
-              const eventRows = (await c.query('SELECT DISTINCT event_type FROM events.events ORDER BY event_type')).rows.map(r => r.event_type);
-              const processed = Number((await c.query('SELECT COUNT(*) FROM events.processed_events')).rows[0].count);
-              const rewards = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
-              const tickets = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
+              const proofId = '$PROOF_ID';
+              const proofs      = Number((await c.query('SELECT COUNT(*) FROM validation.proofs')).rows[0].count);
+              const validations = Number((await c.query('SELECT COUNT(*) FROM validation.proof_validations WHERE proof_id = \$1', [proofId])).rows[0].count);
+              const eventRows   = (await c.query('SELECT DISTINCT event_type FROM events.events ORDER BY event_type')).rows.map(r => r.event_type);
+              const processed   = Number((await c.query('SELECT COUNT(*) FROM events.processed_events')).rows[0].count);
+              const rewards     = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
+              const tickets     = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
               console.log('proofs count:', proofs);
+              console.log('proof_validations count (for proof_id):', validations);
               console.log('event types:', JSON.stringify(eventRows));
               console.log('processed_events count:', processed);
               console.log('rewards count:', rewards);
@@ -330,6 +338,11 @@ jobs:
 
               if (proofs < 1) {
                 console.error('FAIL: expected >= 1 proof in validation.proofs, got', proofs);
+                process.exit(1);
+              }
+              // Sprint 5.3 Task 3: validation record must exist for this proof.
+              if (validations !== 1) {
+                console.error('FAIL: expected exactly 1 row in validation.proof_validations for proof_id', proofId, ', got', validations);
                 process.exit(1);
               }
               // Sprint 5.2 contract: all 8 pipeline events must fire.
@@ -382,7 +395,32 @@ jobs:
           echo "idempotency: OK (same proof_id returned)"
 
 
-          echo "✅ E2E passed: multipart + 3+ pipeline events + DB state + idempotency" 
+          echo "--- Step 7: post-idempotency DB reassertion (no duplicates created) ---"
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              const proofId = '$PROOF_ID';
+              const proofs      = Number((await c.query('SELECT COUNT(*) FROM validation.proofs WHERE id = \$1', [proofId])).rows[0].count);
+              const validations = Number((await c.query('SELECT COUNT(*) FROM validation.proof_validations WHERE proof_id = \$1', [proofId])).rows[0].count);
+              const rewards     = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
+              const tickets     = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
+              console.log('post-retry proofs count (for proof_id):', proofs);
+              console.log('post-retry proof_validations count (for proof_id):', validations);
+              console.log('post-retry rewards count:', rewards);
+              console.log('post-retry tickets count:', tickets);
+              if (proofs !== 1)      { console.error('FAIL: duplicate proof created on retry, expected 1 got', proofs); process.exit(1); }
+              if (validations !== 1) { console.error('FAIL: duplicate validation created on retry, expected 1 got', validations); process.exit(1); }
+              if (rewards !== 1)     { console.error('FAIL: duplicate reward created on retry, expected 1 got', rewards); process.exit(1); }
+              if (tickets !== 1)     { console.error('FAIL: duplicate ticket created on retry, expected 1 got', tickets); process.exit(1); }
+              await c.end();
+              console.log('post-retry reassertion: OK (no duplicates)');
+            })().catch(e => { console.error('post-retry error:', e.message); process.exit(1); });
+          "
+
+
+          echo "✅ E2E passed: multipart + 8/8 event chain + DB state + read path + idempotency (no duplicates)"
 
       - name: Cleanup
         if: always()
