@@ -8,6 +8,7 @@ import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import healthRoutes from './routes/health';
+import { devRoutes } from './routes/dev';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -102,6 +103,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(proofRoutes);
   app.register(metricsRoutes);
   app.register(healthRoutes);
+  // Dev routes only registered in development mode (guards inside)
+  app.register(devRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
