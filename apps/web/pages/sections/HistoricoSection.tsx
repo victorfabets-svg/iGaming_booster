@@ -1,10 +1,32 @@
 import React, { useState } from 'react';
-import ProofTable from '../../components/ProofTable';
+import ProofTable, { ProofRow } from '../../components/ProofTable';
 import ProofUpload from '../../components/ProofUpload';
 import { useSystemState } from '../../state/useSystemState';
-import createApiClient from '../../services/api';
+import createApiClient, { Proof } from '../../services/api';
 
 const api = createApiClient('');
+
+const TABLE_STATUSES = new Set<ProofRow['status']>([
+  'approved',
+  'rejected',
+  'manual_review',
+  'processing',
+  'pending',
+]);
+
+function toProofRow(p: Proof): ProofRow {
+  const raw = p.status ?? 'pending';
+  const status = (TABLE_STATUSES as Set<string>).has(raw)
+    ? (raw as ProofRow['status'])
+    : 'pending';
+  return {
+    id: p.id,
+    date: p.submitted_at,
+    user: p.user_id,
+    status,
+    confidence: p.confidence_score,
+  };
+}
 
 const HistoricoSection: React.FC = () => {
   // Use ONLY global system state - no duplicate local state
@@ -12,7 +34,6 @@ const HistoricoSection: React.FC = () => {
   
   // Keep UI-only state (filters are not data state)
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [campaignFilter, setCampaignFilter] = useState<string>('');
 
   const handleUpload = async (file: File) => {
     try {
@@ -33,12 +54,11 @@ const HistoricoSection: React.FC = () => {
 
   // Show single proof from global state or empty state if no proof exists
   const proofsToShow = proof ? [proof] : [];
-  const hasFilter = statusFilter || campaignFilter;
+  const hasFilter = Boolean(statusFilter);
   
   // Apply filters if they exist
   const filteredProofs = proofsToShow.filter(p => {
     if (statusFilter && p.status !== statusFilter) return false;
-    if (campaignFilter && p.campaign !== campaignFilter) return false;
     return true;
   });
 
@@ -90,16 +110,6 @@ const HistoricoSection: React.FC = () => {
             <input type="date" />
           </div>
         </div>
-        <div className="filter-divider" />
-        <div className="filter-group">
-          <span className="filter-label">Campanha</span>
-          <select value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)}>
-            <option value="">Todas</option>
-            <option value="FB-23">FB-23</option>
-            <option value="TT-Promo">TT-Promo</option>
-            <option value="GG-Slot">GG-Slot</option>
-          </select>
-        </div>
         <button className="btn-filter-apply">Aplicar Filtros</button>
       </div>
 
@@ -111,7 +121,7 @@ const HistoricoSection: React.FC = () => {
             </div>
           </div>
         ) : (
-          <ProofTable rows={filteredProofs} />
+          <ProofTable rows={filteredProofs.map(toProofRow)} />
         )}
       </div>
     </section>
