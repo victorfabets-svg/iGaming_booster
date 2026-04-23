@@ -73,7 +73,7 @@ async function getOrCreateUser(email: string | null, userId: string | null): Pro
       [userId]
     );
     if (existing.rows.length > 0) {
-      return existing.rows[0];
+      return { user_id: existing.rows[0].id, email: existing.rows[0].email };
     }
     // If user doesn't exist, create with the given user_id
     if (email) {
@@ -92,7 +92,7 @@ async function getOrCreateUser(email: string | null, userId: string | null): Pro
       [email]
     );
     if (existing.rows.length > 0) {
-      return existing.rows[0];
+      return { user_id: existing.rows[0].id, email: existing.rows[0].email };
     }
 
     // Create user
