@@ -172,30 +172,32 @@ async function tryMakeDecision(
   fraudPayload?: FraudScoredPayload, 
   paymentPayload?: PaymentExtractedPayload
 ): Promise<void> {
-  // Get fraud data if not provided (check processed_events for fraud_scored)
+  // Get fraud data if not provided (lookup in events.events by type + proof_id)
   let fraud = fraudPayload;
   if (!fraud) {
-    const fraudResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+    const fraudResult = await client.query<{ payload: Record<string, any> }>(
       `SELECT e.payload FROM events.events e
-       JOIN events.processed_events pe ON e.id = pe.event_id
-       WHERE pe.consumer_name = $1
-       AND e.payload->>'proof_id' = $2`,
-      [FRAUD_SCORED_CONSUMER, proofId]
+       WHERE e.event_type = $1
+         AND e.payload->>'proof_id' = $2
+       ORDER BY e.timestamp DESC
+       LIMIT 1`,
+      [FRAUD_SCORED_EVENT, proofId]
     );
     if (fraudResult.rows.length > 0) {
       fraud = fraudResult.rows[0].payload as FraudScoredPayload;
     }
   }
 
-  // Get payment data if not provided (check processed_events for payment_extracted)
+  // Get payment data if not provided (lookup in events.events by type + proof_id)
   let payment = paymentPayload;
   if (!payment) {
-    const paymentResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+    const paymentResult = await client.query<{ payload: Record<string, any> }>(
       `SELECT e.payload FROM events.events e
-       JOIN events.processed_events pe ON e.id = pe.event_id
-       WHERE pe.consumer_name = $1
-       AND e.payload->>'proof_id' = $2`,
-      [PAYMENT_EXTRACTED_CONSUMER, proofId]
+       WHERE e.event_type = $1
+         AND e.payload->>'proof_id' = $2
+       ORDER BY e.timestamp DESC
+       LIMIT 1`,
+      [PAYMENT_EXTRACTED_EVENT, proofId]
     );
     if (paymentResult.rows.length > 0) {
       payment = paymentResult.rows[0].payload as PaymentExtractedPayload;
