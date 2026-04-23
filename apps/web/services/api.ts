@@ -81,13 +81,18 @@ export interface SystemEvent {
   payload: Record<string, unknown>;
 }
 
+const DEV_JWT: string | undefined = (import.meta as any).env?.VITE_DEV_JWT;
+
+const authHeaders = (): Record<string, string> =>
+  DEV_JWT ? { Authorization: `Bearer ${DEV_JWT}` } : {};
+
 const createApiClient = (baseUrl: string) => {
   const url = (path: string) => `${baseUrl}${path}`;
 
   return {
     async getHealth(): Promise<HealthResponse> {
       const start = performance.now();
-      const res = await fetch(url('/health/db'));
+      const res = await fetch(url('/health/db'), { headers: authHeaders() });
       const latencyMs = Math.round(performance.now() - start);
       if (!res.ok) return { status: 'degraded', db: 'down', latencyMs };
       try {
@@ -103,7 +108,11 @@ const createApiClient = (baseUrl: string) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('user_id', userId);
-      const response = await fetch(url('/proofs'), { method: 'POST', body: formData });
+      const response = await fetch(url('/proofs'), {
+        method: 'POST',
+        body: formData,
+        headers: { ...authHeaders() },
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -111,7 +120,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getRecentProofs(): Promise<Proof[]> {
-      const response = await fetch(url('/proofs'));
+      const response = await fetch(url('/proofs'), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch proofs: ${response.status}`);
       }
@@ -119,7 +128,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getProof(id: string): Promise<Proof> {
-      const response = await fetch(url(`/proofs/${id}`));
+      const response = await fetch(url(`/proofs/${id}`), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch proof: ${response.status}`);
       }
@@ -127,7 +136,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getRewards(): Promise<Reward[]> {
-      const response = await fetch(url('/rewards'));
+      const response = await fetch(url('/rewards'), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch rewards: ${response.status}`);
       }
@@ -135,7 +144,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getRaffles(): Promise<Raffle[]> {
-      const response = await fetch(url('/raffles'));
+      const response = await fetch(url('/raffles'), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch raffles: ${response.status}`);
       }
@@ -143,7 +152,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getRaffleById(id: string): Promise<Raffle> {
-      const response = await fetch(url(`/raffles/${id}`));
+      const response = await fetch(url(`/raffles/${id}`), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch raffle: ${response.status}`);
       }
@@ -151,7 +160,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getRaffleResult(id: string): Promise<RaffleResult> {
-      const response = await fetch(url(`/raffles/${id}/result`));
+      const response = await fetch(url(`/raffles/${id}/result`), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch raffle result: ${response.status}`);
       }
@@ -159,7 +168,7 @@ const createApiClient = (baseUrl: string) => {
     },
 
     async getMetrics(): Promise<MetricsResponse> {
-      const response = await fetch(url('/metrics'));
+      const response = await fetch(url('/metrics'), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(`Failed to fetch metrics: ${response.status}`);
       }
