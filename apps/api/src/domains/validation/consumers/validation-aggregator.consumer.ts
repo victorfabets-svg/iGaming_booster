@@ -11,7 +11,7 @@
  * [this consumer] → correlation + decision → proof_validated / proof_rejected
  */
 
-import { fetchAndLockEvents, isEventProcessed, markEventAsProcessed } from '@shared/events/event-consumer.repository';
+import { fetchAndLockEvents, isEventProcessed } from '@shared/events/event-consumer.repository';
 import { findValidationByProofId, updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
 import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
@@ -111,8 +111,12 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
   try {
     await client.query('BEGIN');
     
-    // Record this event as processed
-    await markEventAsProcessed(eventId, FRAUD_SCORED_CONSUMER);
+    // Record this event as processed (inline so it's part of same transaction)
+    await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [eventId, FRAUD_SCORED_CONSUMER]
+    );
     
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, payload);
@@ -150,8 +154,12 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   try {
     await client.query('BEGIN');
     
-    // Record this event as processed
-    await markEventAsProcessed(eventId, PAYMENT_EXTRACTED_CONSUMER);
+    // Record this event as processed (inline so it's part of same transaction)
+    await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [eventId, PAYMENT_EXTRACTED_CONSUMER]
+    );
     
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, undefined, payload);
