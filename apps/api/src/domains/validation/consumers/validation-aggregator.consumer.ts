@@ -73,7 +73,6 @@ async function pollEvents(): Promise<void> {
     const allEvents = await fetchAndLockEvents(BATCH_SIZE);
     const fraudEvents = allEvents.filter(e => e.event_type === FRAUD_SCORED_EVENT);
     const paymentEvents = allEvents.filter(e => e.event_type === PAYMENT_EXTRACTED_EVENT);
-    console.log(`[DBG-AGG] pollEvents fetched total=${allEvents.length} fraud=${fraudEvents.length} payment=${paymentEvents.length}`);
 
     // Process fraud_scored events
     for (const event of fraudEvents) {
@@ -85,7 +84,6 @@ async function pollEvents(): Promise<void> {
       await processPaymentExtracted(event);
     }
   } catch (error) {
-    console.log(`[DBG-AGG] pollEvents ERROR: ${(error as Error).message}`);
     logger.error('poll_events_error', 'validation', `Error polling events: ${error}`);
   }
 }
@@ -95,7 +93,6 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
   const payload = event.payload as FraudScoredPayload;
   const proofId = payload.proof_id;
 
-  console.log(`[DBG] processFraudScored entry eventId=${eventId} proofId=${proofId}`);
 
   logger.info({
     event: 'fraud_scored_received',
@@ -105,7 +102,6 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
 
   // Check if already processed
   const alreadyProcessed = await isEventProcessed(eventId, FRAUD_SCORED_CONSUMER);
-  console.log(`[DBG] processFraudScored isEventProcessed=${alreadyProcessed} eventId=${eventId}`);
   if (alreadyProcessed) {
     logger.info({ event: 'event_skipped', context: 'validation', data: { event_id: eventId } });
     return;
@@ -115,7 +111,6 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    console.log(`[DBG] processFraudScored BEGIN eventId=${eventId}`);
 
     // Record this event as processed (inline so it's part of same transaction)
     await client.query(
@@ -123,18 +118,13 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [eventId, FRAUD_SCORED_CONSUMER]
     );
-    console.log(`[DBG] processFraudScored INSERT processed_events eventId=${eventId}`);
 
     // Try to make decision if both events received
-    console.log(`[DBG] processFraudScored before tryMakeDecision proofId=${proofId}`);
     await tryMakeDecision(proofId, client, payload);
-    console.log(`[DBG] processFraudScored after tryMakeDecision proofId=${proofId}`);
 
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
-    console.log(`[DBG] processFraudScored COMMIT eventId=${eventId}`);
   } catch (error) {
-    console.log(`[DBG] processFraudScored CATCH eventId=${eventId} err=${(error as Error).message}`);
     await client.query('ROLLBACK');
     throw error;
   } finally {
@@ -147,7 +137,6 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   const payload = event.payload as PaymentExtractedPayload;
   const proofId = payload.proof_id;
 
-  console.log(`[DBG] processPaymentExtracted entry eventId=${eventId} proofId=${proofId}`);
 
   logger.info({
     event: 'payment_extracted_received',
@@ -157,7 +146,6 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
 
   // Check if already processed
   const alreadyProcessed = await isEventProcessed(eventId, PAYMENT_EXTRACTED_CONSUMER);
-  console.log(`[DBG] processPaymentExtracted isEventProcessed=${alreadyProcessed} eventId=${eventId}`);
   if (alreadyProcessed) {
     logger.info({ event: 'event_skipped', context: 'validation', data: { event_id: eventId } });
     return;
@@ -167,7 +155,6 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    console.log(`[DBG] processPaymentExtracted BEGIN eventId=${eventId}`);
 
     // Record this event as processed (inline so it's part of same transaction)
     await client.query(
@@ -175,18 +162,13 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [eventId, PAYMENT_EXTRACTED_CONSUMER]
     );
-    console.log(`[DBG] processPaymentExtracted INSERT processed_events eventId=${eventId}`);
 
     // Try to make decision if both events received
-    console.log(`[DBG] processPaymentExtracted before tryMakeDecision proofId=${proofId}`);
     await tryMakeDecision(proofId, client, undefined, payload);
-    console.log(`[DBG] processPaymentExtracted after tryMakeDecision proofId=${proofId}`);
 
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
-    console.log(`[DBG] processPaymentExtracted COMMIT eventId=${eventId}`);
   } catch (error) {
-    console.log(`[DBG] processPaymentExtracted CATCH eventId=${eventId} err=${(error as Error).message}`);
     await client.query('ROLLBACK');
     throw error;
   } finally {
@@ -200,7 +182,6 @@ async function tryMakeDecision(
   fraudPayload?: FraudScoredPayload,
   paymentPayload?: PaymentExtractedPayload
 ): Promise<void> {
-  console.log(`[DBG] tryMakeDecision entry proofId=${proofId} hasFraudPayload=${!!fraudPayload} hasPaymentPayload=${!!paymentPayload}`);
 
   // Get fraud data if not provided (lookup in events.events by type + proof_id)
   let fraud = fraudPayload;
@@ -213,7 +194,6 @@ async function tryMakeDecision(
        LIMIT 1`,
       [FRAUD_SCORED_EVENT, proofId]
     );
-    console.log(`[DBG] tryMakeDecision fraudLookup rows=${fraudResult.rows.length} proofId=${proofId}`);
     if (fraudResult.rows.length > 0) {
       fraud = fraudResult.rows[0].payload as FraudScoredPayload;
     }
@@ -230,13 +210,11 @@ async function tryMakeDecision(
        LIMIT 1`,
       [PAYMENT_EXTRACTED_EVENT, proofId]
     );
-    console.log(`[DBG] tryMakeDecision paymentLookup rows=${paymentResult.rows.length} proofId=${proofId}`);
     if (paymentResult.rows.length > 0) {
       payment = paymentResult.rows[0].payload as PaymentExtractedPayload;
     }
   }
 
-  console.log(`[DBG] tryMakeDecision hasFraud=${!!fraud} hasPayment=${!!payment} proofId=${proofId}`);
 
   // Need both events to make decision
   if (!fraud || !payment) {
@@ -245,7 +223,6 @@ async function tryMakeDecision(
       context: 'validation',
       data: { proof_id: proofId, has_fraud: !!fraud, has_payment: !!payment }
     });
-    console.log(`[DBG] tryMakeDecision RETURN waiting_for_correlation proofId=${proofId}`);
     return;
   }
 

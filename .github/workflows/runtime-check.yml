@@ -17,6 +17,10 @@ env:
   NODE_ENV: production
   JWT_SECRET: test-jwt-secret-ci
   CANARY_TOKEN: test-canary-token
+  # Force "approved" decision in CI so the full 8-event chain fires
+  # (synthetic test file produces a low fraud score; threshold=0 bypasses).
+  VALIDATION_APPROVAL_THRESHOLD: "0"
+  VALIDATION_MANUAL_REVIEW_THRESHOLD: "0"
 
 jobs:
 
@@ -200,6 +204,31 @@ jobs:
             })().catch(e => { console.error('seed error:', e.message); process.exit(1); });
           "
 
+      - name: Seed active raffle
+        run: |
+          set -euo pipefail
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              // Active raffle so reward-granted consumer can assign tickets.
+              await c.query(\`
+                INSERT INTO raffles.raffles (id, name, prize, total_numbers, start_at, end_at, status)
+                VALUES ('00000000-0000-4000-8000-00000000000a',
+                        'CI Raffle', 'CI Test Prize', 1000,
+                        NOW() - INTERVAL '1 day',
+                        NOW() + INTERVAL '30 days',
+                        'active')
+                ON CONFLICT (id) DO NOTHING
+              \`);
+              const r = await c.query(\"SELECT id, status FROM raffles.raffles WHERE id='00000000-0000-4000-8000-00000000000a'\");
+              if (r.rows.length !== 1) { console.error('FAIL: seed raffle not present'); process.exit(1); }
+              await c.end();
+              console.log('seed raffle OK:', r.rows[0]);
+            })().catch(e => { console.error('seed error:', e.message); process.exit(1); });
+          "
+
       - name: Start services
         run: |
           node $API_ENTRY > api.log 2>&1 &
@@ -290,42 +319,46 @@ jobs:
               const proofs    = Number((await c.query('SELECT COUNT(*) FROM validation.proofs')).rows[0].count);
               const eventRows = (await c.query('SELECT DISTINCT event_type FROM events.events ORDER BY event_type')).rows.map(r => r.event_type);
               const processed = Number((await c.query('SELECT COUNT(*) FROM events.processed_events')).rows[0].count);
+              const rewards = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
+              const tickets = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
               console.log('proofs count:', proofs);
               console.log('event types:', JSON.stringify(eventRows));
               console.log('processed_events count:', processed);
+              console.log('rewards count:', rewards);
+              console.log('tickets count:', tickets);
 
 
               if (proofs < 1) {
                 console.error('FAIL: expected >= 1 proof in validation.proofs, got', proofs);
                 process.exit(1);
               }
+              // Sprint 5.2 contract: all 8 pipeline events must fire.
               const required = [
                 'proof_submitted',
                 'fraud_check_requested',
-                'payment_identifier_requested'
+                'fraud_scored',
+                'payment_identifier_requested',
+                'payment_identifier_extracted',
+                'proof_validated',
+                'reward_granted',
+                'numbers_generated'
               ];
               const missing = required.filter(e => !eventRows.includes(e));
               if (missing.length > 0) {
                 console.error('FAIL: required events missing:', missing);
                 process.exit(1);
               }
-              // Soft check: if final status was approved, the full chain
-              // including fraud_scored/payment_identifier_extracted/proof_validated
-              // should exist. If rejected/manual_review, those downstream events
-              // may not fire. Log but do not fail.
-              const downstream = [
-                'fraud_scored',
-                'payment_identifier_extracted',
-                'proof_validated',
-                'reward_granted',
-                'numbers_generated'
-              ];
-              const downstreamPresent = downstream.filter(e => eventRows.includes(e));
-              console.log('downstream events present:', downstreamPresent);
-
+              if (rewards < 1) {
+                console.error('FAIL: expected >= 1 reward in rewards.rewards, got', rewards);
+                process.exit(1);
+              }
+              if (tickets < 1) {
+                console.error('FAIL: expected >= 1 ticket in raffles.tickets, got', tickets);
+                process.exit(1);
+              }
 
               await c.end();
-              console.log('DB state assertion: OK');
+              console.log('DB state assertion: OK (8/8 pipeline events + DB counts)');
             })().catch(e => { console.error('DB assertion error:', e.message); process.exit(1); });
           "
 
@@ -354,11 +387,9 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          echo "=== api.log tail (last 300 lines) ==="
-          tail -n 300 api.log 2>/dev/null || echo "(no api.log)"
-          echo "=== worker.log DBG lines (all) ==="
-          grep -E "\[DBG|\[DBG-AGG" worker.log 2>/dev/null || echo "(no DBG lines)"
-          echo "=== worker.log tail (last 500 lines) ==="
-          tail -n 500 worker.log 2>/dev/null || echo "(no worker.log)"
+          echo "=== api.log tail (last 200 lines) ==="
+          tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
+          echo "=== worker.log tail (last 400 lines) ==="
+          tail -n 400 worker.log 2>/dev/null || echo "(no worker.log)"
           kill $(cat api.pid) 2>/dev/null || true
           kill $(cat worker.pid) 2>/dev/null || true
