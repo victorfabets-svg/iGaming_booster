@@ -296,23 +296,25 @@ jobs:
           echo "proof_id=$PROOF_ID"
 
 
-          echo "--- Step 4: poll status (interval 2s, total 30s) ---"
+          echo "--- Step 4: poll status (interval 2s, total 30s; terminal = approved|rejected|manual_review) ---"
           FINAL_STATUS="pending"
           for i in $(seq 1 15); do
             RAW=$(curl -sf --max-time 5 -H "Authorization: Bearer $TOKEN" "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
             STATUS=$(echo "$RAW" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.status) || j.status || '') } catch(e) { console.log('') }")
             echo "poll $i (t=$((i*2))s): status='$STATUS'"
-            if [ -n "$STATUS" ] && [ "$STATUS" != "pending" ]; then
-              FINAL_STATUS=$STATUS
-              break
-            fi
+            case "$STATUS" in
+              approved|rejected|manual_review) FINAL_STATUS=$STATUS; break ;;
+            esac
             sleep 2
           done
           echo "final status: $FINAL_STATUS"
-          if [ "$FINAL_STATUS" = "pending" ]; then
-            echo "FAIL: polling converged on 'pending' after 30s — read path not reflecting final state"
-            exit 1
-          fi
+          case "$FINAL_STATUS" in
+            approved|rejected|manual_review) ;;
+            *)
+              echo "FAIL: read path did not reach terminal state after 30s (final='$FINAL_STATUS')"
+              exit 1
+              ;;
+          esac
 
 
           echo "--- Step 5: DB state assertion ---"
