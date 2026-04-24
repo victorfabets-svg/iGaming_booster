@@ -43,8 +43,7 @@ export async function startProofSubmittedConsumer(): Promise<void> {
 
 async function pollEvents(): Promise<void> {
   try {
-    const allEvents = await fetchAndLockEvents(BATCH_SIZE);
-    const events = allEvents.filter(e => e.event_type === EVENT_TYPE);
+    const events = await fetchAndLockEvents(BATCH_SIZE, [EVENT_TYPE]);
 
     if (events.length === 0) {
       return;
