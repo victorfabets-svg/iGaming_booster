@@ -1,13 +1,14 @@
 import React from 'react';
 import useProofFlow from '../state/useProofFlow';
 import UploadScreen from '../components/flow/UploadScreen';
-import ProcessingScreen from '../components/flow/ProcessingScreen';
-import ApprovedScreen from '../components/flow/ApprovedScreen';
-import RejectedScreen from '../components/flow/RejectedScreen';
-import ManualReviewScreen from '../components/flow/ManualReviewScreen';
+import SubmittedScreen from '../components/flow/SubmittedScreen';
 import ErrorScreen from '../components/flow/ErrorScreen';
 
-const ConversionFlow: React.FC = () => {
+export interface ConversionFlowProps {
+  onOpenHistory: () => void;
+}
+
+const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
   const flow = useProofFlow();
 
   switch (flow.phase) {
@@ -19,32 +20,12 @@ const ConversionFlow: React.FC = () => {
           isSubmitting={flow.phase === 'submitting'}
         />
       );
-    case 'polling':
-      return <ProcessingScreen proofId={flow.proofId ?? ''} />;
-    case 'approved':
+    case 'submitted':
       return (
-        <ApprovedScreen
-          onReset={flow.reset}
-          confidenceScore={flow.confidenceScore}
-        />
-      );
-    case 'rejected':
-      return (
-        <RejectedScreen
-          onReset={flow.reset}
-          confidenceScore={flow.confidenceScore}
-        />
-      );
-    case 'manual_review':
-      return <ManualReviewScreen onReset={flow.reset} />;
-    case 'timeout':
-      return (
-        <ErrorScreen
-          title="Tempo esgotado"
-          description="A análise demorou mais que o esperado. Tente retomar em alguns instantes."
-          onRetry={flow.retry}
-          onReset={flow.reset}
-          canRetry={true}
+        <SubmittedScreen
+          proofId={flow.proofId ?? ''}
+          onOpenHistory={onOpenHistory}
+          onSubmitAnother={flow.reset}
         />
       );
     case 'error':
@@ -52,9 +33,9 @@ const ConversionFlow: React.FC = () => {
         <ErrorScreen
           title="Falha no envio"
           description={flow.error ?? 'Não foi possível concluir a operação.'}
-          onRetry={flow.retry}
+          onRetry={flow.reset}
           onReset={flow.reset}
-          canRetry={flow.proofId !== null}
+          canRetry={false}
         />
       );
     default: {

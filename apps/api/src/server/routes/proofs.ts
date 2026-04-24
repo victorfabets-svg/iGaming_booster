@@ -163,4 +163,47 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.send(payload);
     }
   );
+
+  // GET /proofs — list the authenticated user's recent proofs with status.
+  // LEFT JOIN proof_validations so rows without a validation yet get status='pending'.
+  // Flat array response, newest first, capped at 50.
+  fastify.get(
+    '/proofs',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user_id = (request as any).userId;
+      if (!user_id) {
+        return fail(reply, 'Unauthorized: valid token required', 'UNAUTHORIZED');
+      }
+
+      const { db } = await import('@shared/database/connection');
+      const result = await db.query<{
+        proof_id: string;
+        submitted_at: Date;
+        status: string | null;
+        confidence_score: number | null;
+      }>(
+        `SELECT p.id AS proof_id,
+                p.submitted_at,
+                COALESCE(v.status, 'pending') AS status,
+                v.confidence_score
+           FROM validation.proofs p
+           LEFT JOIN validation.proof_validations v ON v.proof_id = p.id
+          WHERE p.user_id = $1
+          ORDER BY p.submitted_at DESC
+          LIMIT 50`,
+        [user_id]
+      );
+
+      return reply.send(
+        result.rows.map(row => ({
+          proof_id: row.proof_id,
+          submitted_at: row.submitted_at instanceof Date
+            ? row.submitted_at.toISOString()
+            : row.submitted_at,
+          status: row.status,
+          confidence_score: row.confidence_score,
+        }))
+      );
+    }
+  );
 }
