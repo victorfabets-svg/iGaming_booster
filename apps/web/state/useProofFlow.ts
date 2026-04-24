@@ -1,13 +1,22 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import createApiClient from '../services/api';
 import { track } from '../lib/tracking';
 
 const api = createApiClient('');
 
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 60_000;
+
+type TerminalStatus = 'approved' | 'rejected' | 'manual_review';
+
 export type ProofFlowPhase =
   | 'idle'
   | 'submitting'
   | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'manual_review'
+  | 'timeout'
   | 'error';
 
 export interface UseProofFlowReturn {
@@ -16,6 +25,7 @@ export interface UseProofFlowReturn {
   error: string | null;
   isNew: boolean | null;
   submittedAt: string | null;
+  confidenceScore: number | null;
   submit: (file: File) => Promise<void>;
   reset: () => void;
 }
@@ -26,12 +36,15 @@ interface State {
   error: string | null;
   isNew: boolean | null;
   submittedAt: string | null;
+  confidenceScore: number | null;
 }
 
 type Action =
   | { type: 'SUBMIT_START' }
   | { type: 'SUBMIT_OK'; proofId: string; isNew: boolean | null; submittedAt: string | null }
   | { type: 'SUBMIT_FAIL'; error: string }
+  | { type: 'POLL_UPDATE'; status: TerminalStatus; confidenceScore: number | null }
+  | { type: 'POLL_TIMEOUT' }
   | { type: 'RESET' };
 
 const INITIAL: State = {
@@ -40,6 +53,7 @@ const INITIAL: State = {
   error: null,
   isNew: null,
   submittedAt: null,
+  confidenceScore: null,
 };
 
 function reducer(state: State, action: Action): State {
@@ -53,10 +67,21 @@ function reducer(state: State, action: Action): State {
         proofId: action.proofId,
         isNew: action.isNew,
         submittedAt: action.submittedAt,
+        confidenceScore: null,
         error: null,
       };
     case 'SUBMIT_FAIL':
       return { ...state, phase: 'error', error: action.error };
+    case 'POLL_UPDATE':
+      if (state.phase !== 'submitted') return state;
+      return {
+        ...state,
+        phase: action.status,
+        confidenceScore: action.confidenceScore,
+      };
+    case 'POLL_TIMEOUT':
+      if (state.phase !== 'submitted') return state;
+      return { ...state, phase: 'timeout' };
     case 'RESET':
       return INITIAL;
     default:
@@ -66,6 +91,57 @@ function reducer(state: State, action: Action): State {
 
 export function useProofFlow(): UseProofFlowReturn {
   const [state, dispatch] = useReducer(reducer, INITIAL);
+
+  const intervalRef = useRef<number | null>(null);
+  const deadlineRef = useRef<number | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    deadlineRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (state.phase !== 'submitted' || !state.proofId) {
+      stopPolling();
+      return;
+    }
+    if (intervalRef.current !== null) return;
+
+    const proofId = state.proofId;
+    deadlineRef.current = Date.now() + POLL_TIMEOUT_MS;
+
+    const tick = async () => {
+      if (deadlineRef.current !== null && Date.now() >= deadlineRef.current) {
+        stopPolling();
+        track('proof_poll_timeout', { proof_id: proofId });
+        dispatch({ type: 'POLL_TIMEOUT' });
+        return;
+      }
+      try {
+        const proof = await api.getProof(proofId);
+        const status = proof.status;
+        if (status === 'approved' || status === 'rejected' || status === 'manual_review') {
+          stopPolling();
+          const confidence = proof.confidence_score ?? null;
+          track(`proof_${status}` as const, { proof_id: proofId, confidence_score: confidence });
+          dispatch({ type: 'POLL_UPDATE', status, confidenceScore: confidence });
+        }
+      } catch (err) {
+        console.warn('[useProofFlow] poll failed:', err);
+      }
+    };
+
+    intervalRef.current = window.setInterval(tick, POLL_INTERVAL_MS);
+
+    return () => {
+      stopPolling();
+    };
+  }, [state.phase, state.proofId, stopPolling]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
 
   const submit = useCallback(async (file: File) => {
     dispatch({ type: 'SUBMIT_START' });
@@ -86,8 +162,9 @@ export function useProofFlow(): UseProofFlowReturn {
   }, []);
 
   const reset = useCallback(() => {
+    stopPolling();
     dispatch({ type: 'RESET' });
-  }, []);
+  }, [stopPolling]);
 
   return {
     phase: state.phase,
@@ -95,6 +172,7 @@ export function useProofFlow(): UseProofFlowReturn {
     error: state.error,
     isNew: state.isNew,
     submittedAt: state.submittedAt,
+    confidenceScore: state.confidenceScore,
     submit,
     reset,
   };
