@@ -7,6 +7,7 @@ import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotenc
 import { auditLog } from '@shared/events/audit-log';
 import { findProofById } from '../../domains/validation/repositories/proof.repository';
 import { findValidationByProofId } from '../../domains/validation/repositories/proof-validation.repository';
+import { getStorageService } from '../../infrastructure/storage';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin
@@ -207,6 +208,35 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           confidence_score: row.confidence_score,
         }))
       );
+    }
+  );
+
+  // GET /proofs/:id/file — stream the uploaded file back.
+  // Auth + ownership gated: only the user who submitted the proof can read it.
+  fastify.get(
+    '/proofs/:id/file',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const user_id = (request as any).userId;
+      if (!user_id) {
+        return fail(reply, 'Unauthorized: valid token required', 'UNAUTHORIZED');
+      }
+
+      const proof = await findProofById(request.params.id);
+      if (!proof || proof.user_id !== user_id) {
+        // Don't leak existence to non-owners — always 404.
+        return reply.status(404).send({ error: 'Not found' });
+      }
+
+      const storage = getStorageService();
+      const file = await storage.download(proof.file_url);
+      if (!file) {
+        return reply.status(404).send({ error: 'File missing in storage' });
+      }
+
+      return reply
+        .header('Content-Type', file.contentType)
+        .header('Cache-Control', 'private, max-age=60')
+        .send(file.buffer);
     }
   );
 }

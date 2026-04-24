@@ -157,6 +157,14 @@ const createApiClient = (baseUrl: string) => {
       return response.json();
     },
 
+    async getProofFileBlob(id: string): Promise<Blob> {
+      const response = await fetch(url(`/proofs/${id}/file`), { headers: authHeaders() });
+      if (!response.ok) {
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar arquivo.'));
+      }
+      return response.blob();
+    },
+
     async getRewards(): Promise<Reward[]> {
       const response = await fetch(url('/rewards'), { headers: authHeaders() });
       if (!response.ok) {

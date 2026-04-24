@@ -40,6 +40,41 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => void }) {
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | null>(null);
+  const [fileLoading, setFileLoading] = useState<boolean>(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // Load the file as soon as the modal opens.
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setFileLoading(true);
+    setFileError(null);
+    (async () => {
+      try {
+        const blob = await api.getProofFileBlob(proof.proof_id);
+        if (cancelled) return;
+        createdUrl = URL.createObjectURL(blob);
+        setFileUrl(createdUrl);
+        setFileType(blob.type || 'application/octet-stream');
+      } catch (err) {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Falha ao carregar arquivo.';
+        setFileError(msg);
+      } finally {
+        if (!cancelled) setFileLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [proof.proof_id]);
+
+  const isImage = fileType?.startsWith('image/');
+  const isPdf = fileType === 'application/pdf';
+
   return (
     <div
       role="dialog"
@@ -55,7 +90,7 @@ function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => 
       <div
         className="card"
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 520, width: '100%', padding: 24 }}
+        style={{ maxWidth: 720, width: '100%', maxHeight: '90vh', overflow: 'auto', padding: 24 }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
           <h3 className="card-title" style={{ margin: 0 }}>Detalhes do comprovante</h3>
@@ -66,7 +101,7 @@ function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => 
           >×</button>
         </div>
 
-        <dl style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 12, columnGap: 16, margin: 0 }}>
+        <dl style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 12, columnGap: 16, margin: '0 0 24px' }}>
           <dt style={{ color: 'var(--text-secondary)' }}>ID</dt>
           <dd style={{ margin: 0, fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>{proof.proof_id}</dd>
 
@@ -82,7 +117,53 @@ function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => 
           </dd>
         </dl>
 
-        <div style={{ marginTop: 24, textAlign: 'right' }}>
+        <div
+          style={{
+            border: '1px solid var(--color-border, #333)',
+            borderRadius: 8,
+            padding: 12,
+            background: 'var(--color-surface, #0c0c0c)',
+            minHeight: 120,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {fileLoading && <p style={{ color: 'var(--text-muted)' }}>Carregando arquivo…</p>}
+          {fileError && <p style={{ color: 'var(--color-error-primary)' }}>{fileError}</p>}
+          {!fileLoading && !fileError && fileUrl && isImage && (
+            <img
+              src={fileUrl}
+              alt="Comprovante"
+              style={{ maxWidth: '100%', maxHeight: '60vh', display: 'block' }}
+            />
+          )}
+          {!fileLoading && !fileError && fileUrl && isPdf && (
+            <iframe
+              src={fileUrl}
+              title="Comprovante"
+              style={{ width: '100%', height: '60vh', border: 0, background: '#fff' }}
+            />
+          )}
+          {!fileLoading && !fileError && fileUrl && !isImage && !isPdf && (
+            <a href={fileUrl} download style={{ color: 'var(--color-success-primary)' }}>
+              Baixar arquivo ({fileType})
+            </a>
+          )}
+        </div>
+
+        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          {fileUrl ? (
+            <a
+              className="btn btn-secondary"
+              href={fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: 'none' }}
+            >
+              Abrir em nova aba
+            </a>
+          ) : <span />}
           <button className="btn btn-secondary" onClick={onClose}>Fechar</button>
         </div>
       </div>
