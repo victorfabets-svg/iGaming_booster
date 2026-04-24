@@ -21,11 +21,17 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
         />
       );
     case 'submitted':
+    case 'approved':
+    case 'rejected':
+    case 'manual_review':
+    case 'timeout':
       return (
         <SubmittedScreen
           proofId={flow.proofId ?? ''}
           isNew={flow.isNew}
           submittedAt={flow.submittedAt}
+          status={flow.phase}
+          confidenceScore={flow.confidenceScore}
           onOpenHistory={onOpenHistory}
           onSubmitAnother={flow.reset}
         />
