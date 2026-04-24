@@ -2,10 +2,23 @@
 // - All endpoints call real backend APIs
 // - No mock or seed data
 
-export interface SubmitProofResponse { proof_id: string; status: string; }
+export interface SubmitProofResponse {
+  proof_id: string;
+  status: string;
+  is_new?: boolean;
+  submitted_at?: string;
+}
 export interface HealthResponse { status: 'ok' | 'degraded'; db?: 'ok' | 'down'; latencyMs?: number; }
 
-// Proof types
+// List item shape returned by GET /proofs (flat, status joined from proof_validations).
+export interface ProofListItem {
+  proof_id: string;
+  submitted_at: string;
+  status: string;
+  confidence_score: number | null;
+}
+
+// Detail shape returned by GET /proofs/:id.
 export interface Proof {
   id: string;
   user_id: string;
@@ -128,7 +141,7 @@ const createApiClient = (baseUrl: string) => {
       return response.json();
     },
 
-    async getRecentProofs(): Promise<Proof[]> {
+    async getRecentProofs(): Promise<ProofListItem[]> {
       const response = await fetch(url('/proofs'), { headers: authHeaders() });
       if (!response.ok) {
         throw new Error(httpErrorMessage(response.status, 'Falha ao carregar comprovantes.'));
@@ -142,6 +155,14 @@ const createApiClient = (baseUrl: string) => {
         throw new Error(httpErrorMessage(response.status, 'Falha ao carregar comprovante.'));
       }
       return response.json();
+    },
+
+    async getProofFileBlob(id: string): Promise<Blob> {
+      const response = await fetch(url(`/proofs/${id}/file`), { headers: authHeaders() });
+      if (!response.ok) {
+        throw new Error(httpErrorMessage(response.status, 'Falha ao carregar arquivo.'));
+      }
+      return response.blob();
     },
 
     async getRewards(): Promise<Reward[]> {

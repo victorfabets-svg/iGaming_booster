@@ -7,6 +7,7 @@ import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotenc
 import { auditLog } from '@shared/events/audit-log';
 import { findProofById } from '../../domains/validation/repositories/proof.repository';
 import { findValidationByProofId } from '../../domains/validation/repositories/proof-validation.repository';
+import { getStorageService } from '../../infrastructure/storage';
 
 export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
   // Apply auth middleware to all routes in this plugin
@@ -103,12 +104,15 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           filename: filename || undefined,
         });
 
-        // Build response with optional signed URL
+        // Build response — include is_new + submitted_at so the frontend
+        // can distinguish a fresh submission from a deduped one.
         const response: any = {
           proof_id: result.proof_id,
           status: result.status,
+          is_new: result.is_new,
+          submitted_at: result.submitted_at,
         };
-        
+
         if (result.file_url) {
           response.file_url = result.file_url;
           response.expires_in = result.expires_in;
@@ -161,6 +165,78 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       return reply.send(payload);
+    }
+  );
+
+  // GET /proofs — list the authenticated user's recent proofs with status.
+  // LEFT JOIN proof_validations so rows without a validation yet get status='pending'.
+  // Flat array response, newest first, capped at 50.
+  fastify.get(
+    '/proofs',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user_id = (request as any).userId;
+      if (!user_id) {
+        return fail(reply, 'Unauthorized: valid token required', 'UNAUTHORIZED');
+      }
+
+      const { db } = await import('@shared/database/connection');
+      const result = await db.query<{
+        proof_id: string;
+        submitted_at: Date;
+        status: string | null;
+        confidence_score: number | null;
+      }>(
+        `SELECT p.id AS proof_id,
+                p.submitted_at,
+                COALESCE(v.status, 'pending') AS status,
+                v.confidence_score
+           FROM validation.proofs p
+           LEFT JOIN validation.proof_validations v ON v.proof_id = p.id
+          WHERE p.user_id = $1
+          ORDER BY p.submitted_at DESC
+          LIMIT 50`,
+        [user_id]
+      );
+
+      return reply.send(
+        result.rows.map(row => ({
+          proof_id: row.proof_id,
+          submitted_at: row.submitted_at instanceof Date
+            ? row.submitted_at.toISOString()
+            : row.submitted_at,
+          status: row.status,
+          confidence_score: row.confidence_score,
+        }))
+      );
+    }
+  );
+
+  // GET /proofs/:id/file — stream the uploaded file back.
+  // Auth + ownership gated: only the user who submitted the proof can read it.
+  fastify.get(
+    '/proofs/:id/file',
+    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const user_id = (request as any).userId;
+      if (!user_id) {
+        return fail(reply, 'Unauthorized: valid token required', 'UNAUTHORIZED');
+      }
+
+      const proof = await findProofById(request.params.id);
+      if (!proof || proof.user_id !== user_id) {
+        // Don't leak existence to non-owners — always 404.
+        return reply.status(404).send({ error: 'Not found' });
+      }
+
+      const storage = getStorageService();
+      const file = await storage.download(proof.file_url);
+      if (!file) {
+        return reply.status(404).send({ error: 'File missing in storage' });
+      }
+
+      return reply
+        .header('Content-Type', file.contentType)
+        .header('Cache-Control', 'private, max-age=60')
+        .send(file.buffer);
     }
   );
 }

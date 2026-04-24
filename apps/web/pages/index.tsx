@@ -51,7 +51,7 @@ const IndexPage: React.FC = () => {
       />
       <main className="main-content">
         <Header health={health} latencyMs={latency} healthError={healthError} />
-        {section === 'flow' && <ConversionFlow />}
+        {section === 'flow' && <ConversionFlow onOpenHistory={() => setSection('historico')} />}
         {section === 'historico' && <HistoricoSection />}
         {section === 'systemflow' && <SystemFlow />}
       </main>

@@ -81,6 +81,31 @@ export class R2StorageAdapter implements StorageService {
   }
 
   /**
+   * Read a file back from R2 by its key.
+   * Returns null on 404 (NoSuchKey); any other S3 error bubbles.
+   */
+  async download(key: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+    try {
+      const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+      const response = await this.client.send(command);
+      const body = response.Body as any;
+      if (!body) return null;
+      const bytes = await body.transformToByteArray();
+      return {
+        buffer: Buffer.from(bytes),
+        contentType: response.ContentType || 'application/octet-stream',
+      };
+    } catch (error: any) {
+      if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      const err = error as Error;
+      console.error('[R2] Download failed:', err.message);
+      throw new Error(`Storage download failed: ${err.message}`);
+    }
+  }
+
+  /**
    * Get the public URL for an uploaded file
    */
   getPublicUrl(path: string): string {
