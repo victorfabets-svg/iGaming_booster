@@ -4,8 +4,9 @@ import { track } from '../lib/tracking';
 
 const api = createApiClient('');
 
-const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 60_000;
+// Sprint 6 spec: poll every 2s, timeout 30s.
+const POLL_INTERVAL_MS = 2_000;
+const POLL_TIMEOUT_MS = 30_000;
 
 type TerminalStatus = 'approved' | 'rejected' | 'manual_review';
 
@@ -26,7 +27,9 @@ export interface UseProofFlowReturn {
   isNew: boolean | null;
   submittedAt: string | null;
   confidenceScore: number | null;
+  canRetry: boolean;
   submit: (file: File) => Promise<void>;
+  retry: () => Promise<void>;
   reset: () => void;
 }
 
@@ -94,6 +97,10 @@ export function useProofFlow(): UseProofFlowReturn {
 
   const intervalRef = useRef<number | null>(null);
   const deadlineRef = useRef<number | null>(null);
+  // Keeps the last file the user submitted so 'Tentar novamente' on the
+  // ErrorScreen can re-fire the same upload without forcing them to pick
+  // the file again from disk.
+  const lastFileRef = useRef<File | null>(null);
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current !== null) {
@@ -144,6 +151,7 @@ export function useProofFlow(): UseProofFlowReturn {
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const submit = useCallback(async (file: File) => {
+    lastFileRef.current = file;
     dispatch({ type: 'SUBMIT_START' });
     try {
       const res = await api.submitProof(file);
@@ -161,8 +169,18 @@ export function useProofFlow(): UseProofFlowReturn {
     }
   }, []);
 
+  const retry = useCallback(async () => {
+    const file = lastFileRef.current;
+    if (!file) {
+      dispatch({ type: 'RESET' });
+      return;
+    }
+    await submit(file);
+  }, [submit]);
+
   const reset = useCallback(() => {
     stopPolling();
+    lastFileRef.current = null;
     dispatch({ type: 'RESET' });
   }, [stopPolling]);
 
@@ -173,7 +191,9 @@ export function useProofFlow(): UseProofFlowReturn {
     isNew: state.isNew,
     submittedAt: state.submittedAt,
     confidenceScore: state.confidenceScore,
+    canRetry: lastFileRef.current !== null,
     submit,
+    retry,
     reset,
   };
 }

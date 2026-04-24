@@ -139,10 +139,10 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // GET /proofs/:id — read final validation status.
-  // Source of truth: validation.proof_validations.status.
-  // Fallback: if proof exists but no validation row yet, status = 'pending'.
-  // Response shape is intentionally flat ({ proof_id, status }) — no { data } wrapper.
+  // GET /proofs/:id — full proof + latest validation snapshot.
+  // Returns the proof row joined with its validation. Status falls back to
+  // 'pending' when the validation hasn't landed yet. Shape matches the
+  // frontend Proof interface so the client type is honest.
   fastify.get(
     '/proofs/:id',
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
@@ -155,16 +155,23 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
 
       const validation = await findValidationByProofId(id);
       const status = validation?.status ?? 'pending';
+      const submitted_at = proof.submitted_at instanceof Date
+        ? proof.submitted_at.toISOString()
+        : proof.submitted_at;
 
-      const payload: Record<string, unknown> = {
-        proof_id: id,
+      return reply.send({
+        // legacy/admin alias kept so existing dashboards that key on .id
+        // don't break; new clients should prefer proof_id.
+        id: proof.id,
+        proof_id: proof.id,
+        user_id: proof.user_id,
+        file_url: proof.file_url,
+        hash: proof.hash,
+        submitted_at,
         status,
-      };
-      if (validation?.confidence_score != null) {
-        payload.confidence_score = validation.confidence_score;
-      }
-
-      return reply.send(payload);
+        confidence_score: validation?.confidence_score ?? null,
+        validated_at: validation?.validated_at ?? null,
+      });
     }
   );
 

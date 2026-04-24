@@ -41,9 +41,9 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
         <ErrorScreen
           title="Falha no envio"
           description={flow.error ?? 'Não foi possível concluir a operação.'}
-          onRetry={flow.reset}
+          onRetry={flow.retry}
           onReset={flow.reset}
-          canRetry={false}
+          canRetry={flow.canRetry}
         />
       );
     default: {
