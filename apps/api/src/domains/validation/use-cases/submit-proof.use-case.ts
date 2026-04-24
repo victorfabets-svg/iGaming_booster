@@ -1,11 +1,11 @@
 import * as crypto from 'crypto';
 import { createProofInTransaction, findProofByHash, CreateProofInput } from '../repositories/proof.repository';
-import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 // Import rate limit and behavior services
 import { rateLimitService } from '../../fraud/services/rate-limit.service';
 import { behaviorAnalysisService } from '../../fraud/services/behavior.service';
-import { logger, alertMonitor } from '../../../../../../shared/observability/logger';
-import { recordProofSubmission } from '../../../../../../shared/observability/metrics.service';
+import { logger, alertMonitor } from '@shared/observability/logger';
+import { recordProofSubmission } from '@shared/observability/metrics.service';
 
 export interface SubmitProofInput {
   user_id: string;

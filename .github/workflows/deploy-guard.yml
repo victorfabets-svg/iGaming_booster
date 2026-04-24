@@ -107,8 +107,13 @@ jobs:
           echo "✅ Canary DB host validated: $HOST"
 
       - name: Verify signed response (anti-replay + integrity)
-        if: secrets.CANARY_TOKEN != ''
+        env:
+          CANARY_TOKEN: ${{ secrets.CANARY_TOKEN }}
         run: |
+          if [ -z "$CANARY_TOKEN" ]; then
+            echo "skip: CANARY_TOKEN not configured"
+            exit 0
+          fi
           # Extract body and headers
           BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
           HEADERS=$(cat canary_response.txt | sed -n '1,/^\r*$/p')

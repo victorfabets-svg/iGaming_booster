@@ -19,7 +19,7 @@ export async function findBenefitRuleByAmount(amount: number): Promise<BenefitRu
      ORDER BY min_amount DESC
      LIMIT 1`,
     [amount]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function findDynamicBenefitRule(amount: number): Promise<BenefitRule | null> {
@@ -30,7 +30,7 @@ export async function findDynamicBenefitRule(amount: number): Promise<BenefitRul
      ORDER BY min_amount DESC
      LIMIT 1`,
     [amount]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function getAllBenefitRules(): Promise<BenefitRule[]> {

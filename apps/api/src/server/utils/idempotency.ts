@@ -1,4 +1,4 @@
-import { db } from 'shared/database/connection';
+import { db } from '@shared/database/connection';
 import { createLogger } from './logger';
 
 // Module-level logger with static context
@@ -19,13 +19,16 @@ interface IdempotencyRecord {
  */
 export async function reserveIdempotency(key: string): Promise<{ acquired: boolean }> {
   try {
-    await db.query(
+    const result = await db.query(
       `INSERT INTO infra.idempotency_keys (key, status)
        VALUES ($1, 'pending')
        ON CONFLICT (key) DO NOTHING`,
       [key]
     );
-    return { acquired: true };
+    // rowCount === 0 means the row already existed (ON CONFLICT fired).
+    // rowCount >= 1 means this request actually inserted and therefore
+    // holds the reservation.
+    return { acquired: (result.rowCount ?? 0) > 0 };
   } catch {
     return { acquired: false };
   }

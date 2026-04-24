@@ -1,11 +1,11 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { db } from 'shared/database/connection';
+import { db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
 import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
-import { auditLog } from '../../../shared/events/audit-log';
+import { auditLog } from '@shared/events/audit-log';
 
 interface RegisterBody {
   email: string;

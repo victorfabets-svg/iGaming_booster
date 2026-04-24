@@ -11,14 +11,14 @@
  * [this consumer] → correlation + decision → proof_validated / proof_rejected
  */
 
-import { fetchAndLockEvents, isEventProcessed, markEventAsProcessed } from '@shared/events/event-consumer.repository';
+import { fetchAndLockEvents, isEventProcessed } from '@shared/events/event-consumer.repository';
 import { findValidationByProofId, updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
 import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger, alertMonitor } from '@shared/observability/logger';
 import { recordValidationResult } from '@shared/observability/metrics.service';
 import { config } from '@shared/config/env';
-import { db } from '@shared/database/connection';
+import { db, type PoolClient } from '@shared/database/connection';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
@@ -71,15 +71,15 @@ export async function startValidationAggregatorConsumer(): Promise<void> {
 async function pollEvents(): Promise<void> {
   try {
     const allEvents = await fetchAndLockEvents(BATCH_SIZE);
-    
-    // Process fraud_scored events
     const fraudEvents = allEvents.filter(e => e.event_type === FRAUD_SCORED_EVENT);
+    const paymentEvents = allEvents.filter(e => e.event_type === PAYMENT_EXTRACTED_EVENT);
+
+    // Process fraud_scored events
     for (const event of fraudEvents) {
       await processFraudScored(event);
     }
 
     // Process payment_identifier_extracted events
-    const paymentEvents = allEvents.filter(e => e.event_type === PAYMENT_EXTRACTED_EVENT);
     for (const event of paymentEvents) {
       await processPaymentExtracted(event);
     }
@@ -92,6 +92,7 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as FraudScoredPayload;
   const proofId = payload.proof_id;
+
 
   logger.info({
     event: 'fraud_scored_received',
@@ -110,13 +111,17 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    
-    // Record this event as processed
-    await markEventAsProcessed(eventId, FRAUD_SCORED_CONSUMER);
-    
+
+    // Record this event as processed (inline so it's part of same transaction)
+    await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [eventId, FRAUD_SCORED_CONSUMER]
+    );
+
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, payload);
-    
+
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
   } catch (error) {
@@ -131,6 +136,7 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   const eventId = event.event_id || event.id || '';
   const payload = event.payload as PaymentExtractedPayload;
   const proofId = payload.proof_id;
+
 
   logger.info({
     event: 'payment_extracted_received',
@@ -149,13 +155,17 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    
-    // Record this event as processed
-    await markEventAsProcessed(eventId, PAYMENT_EXTRACTED_CONSUMER);
-    
+
+    // Record this event as processed (inline so it's part of same transaction)
+    await client.query(
+      `INSERT INTO events.processed_events (event_id, consumer_name)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [eventId, PAYMENT_EXTRACTED_CONSUMER]
+    );
+
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, undefined, payload);
-    
+
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
   } catch (error) {
@@ -167,40 +177,44 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
 }
 
 async function tryMakeDecision(
-  proofId: string, 
-  client: any, 
-  fraudPayload?: FraudScoredPayload, 
+  proofId: string,
+  client: PoolClient,
+  fraudPayload?: FraudScoredPayload,
   paymentPayload?: PaymentExtractedPayload
 ): Promise<void> {
-  // Get fraud data if not provided (check processed_events for fraud_scored)
+
+  // Get fraud data if not provided (lookup in events.events by type + proof_id)
   let fraud = fraudPayload;
   if (!fraud) {
-    const fraudResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+    const fraudResult = await client.query<{ payload: Record<string, any> }>(
       `SELECT e.payload FROM events.events e
-       JOIN events.processed_events pe ON e.id = pe.event_id
-       WHERE pe.consumer_name = $1
-       AND e.payload->>'proof_id' = $2`,
-      [FRAUD_SCORED_CONSUMER, proofId]
+       WHERE e.event_type = $1
+         AND e.payload->>'proof_id' = $2
+       ORDER BY e.timestamp DESC
+       LIMIT 1`,
+      [FRAUD_SCORED_EVENT, proofId]
     );
     if (fraudResult.rows.length > 0) {
       fraud = fraudResult.rows[0].payload as FraudScoredPayload;
     }
   }
 
-  // Get payment data if not provided (check processed_events for payment_extracted)
+  // Get payment data if not provided (lookup in events.events by type + proof_id)
   let payment = paymentPayload;
   if (!payment) {
-    const paymentResult = await client.query<{ proof_id: string; payload: Record<string, any> }>(
+    const paymentResult = await client.query<{ payload: Record<string, any> }>(
       `SELECT e.payload FROM events.events e
-       JOIN events.processed_events pe ON e.id = pe.event_id
-       WHERE pe.consumer_name = $1
-       AND e.payload->>'proof_id' = $2`,
-      [PAYMENT_EXTRACTED_CONSUMER, proofId]
+       WHERE e.event_type = $1
+         AND e.payload->>'proof_id' = $2
+       ORDER BY e.timestamp DESC
+       LIMIT 1`,
+      [PAYMENT_EXTRACTED_EVENT, proofId]
     );
     if (paymentResult.rows.length > 0) {
       payment = paymentResult.rows[0].payload as PaymentExtractedPayload;
     }
   }
+
 
   // Need both events to make decision
   if (!fraud || !payment) {

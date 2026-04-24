@@ -1,4 +1,4 @@
-import { db, queryOne } from 'shared/database/connection';
+import { db, queryOne } from '@shared/database/connection';
 
 export interface Raffle {
   id: string;

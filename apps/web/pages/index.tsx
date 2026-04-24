@@ -3,12 +3,13 @@ import Sidebar, { SectionId } from '../components/Sidebar';
 import Header from '../components/Header';
 import HistoricoSection from './sections/HistoricoSection';
 import SystemFlow from './SystemFlow';
+import ConversionFlow from './ConversionFlow';
 import createApiClient from '../services/api';
 
 const api = createApiClient('');
 
 const IndexPage: React.FC = () => {
-  const [section, setSection] = useState<SectionId>('historico');
+  const [section, setSection] = useState<SectionId>('flow');
   const [expanded, setExpanded] = useState<boolean>(false);
 
   const [health, setHealth] = useState<'healthy' | 'degraded' | 'unknown'>('unknown');
@@ -50,6 +51,7 @@ const IndexPage: React.FC = () => {
       />
       <main className="main-content">
         <Header health={health} latencyMs={latency} healthError={healthError} />
+        {section === 'flow' && <ConversionFlow />}
         {section === 'historico' && <HistoricoSection />}
         {section === 'systemflow' && <SystemFlow />}
       </main>

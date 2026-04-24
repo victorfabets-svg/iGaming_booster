@@ -25,13 +25,13 @@ if (removedKeys.length > 0) {
 // ============================================================
 
 import { buildApp } from './app';
-import { config, NEON_DB_URL } from '../../../../shared/config/env';
-import { connectWithRetry, getDb, closePool } from '../../../../shared/database/connection';
-import { startStuckEventRecovery, stopStuckEventRecovery } from '../../../../shared/events/event-consumer.repository';
+import { config, NEON_DB_URL } from '@shared/config/env';
+import { connectWithRetry, getDb, closePool } from '@shared/database/connection';
+import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 import { setDbHealth } from './state';
 
 // Global app reference for graceful shutdown
-let app: ReturnType<typeof buildApp> | null = null;
+let app: Awaited<ReturnType<typeof buildApp>> | null = null;
 
 // Force exit timeout - prevents hanging on failed shutdown
 const FORCE_EXIT_TIMEOUT_MS = 10000;
@@ -128,7 +128,7 @@ async function start() {
   // Start stuck event recovery globally (runs once)
   startStuckEventRecovery();
 
-  app = buildApp();
+  app = await buildApp();
 
   const port = config.apiPort;
 

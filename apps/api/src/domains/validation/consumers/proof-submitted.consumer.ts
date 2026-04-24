@@ -7,7 +7,7 @@
  * proof_submitted → [this consumer] → emits fraud_check_requested + payment_identifier_requested
  */
 
-import { fetchAndLockEvents, processEventExactlyOnce, Event } from '../../../../../../shared/events/event-consumer.repository';
+import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { processProofSubmitted, ProofSubmittedEventPayload } from '../use-cases/process-proof-submitted.use-case';
 import { logger } from '@shared/observability/logger';
 

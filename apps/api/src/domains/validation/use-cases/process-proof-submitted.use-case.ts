@@ -73,6 +73,32 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload,
       { proof_id: payload.proof_id }
     );
 
+    // EVENT CHAIN: proof_submitted → fraud_check_requested + payment_identifier_requested
+    // Sprint 5.2 pipeline contract — both events fan out from validation_started.
+    await insertEventInTransaction(
+      client,
+      'fraud_check_requested',
+      {
+        proof_id: payload.proof_id,
+        user_id: payload.user_id,
+        validation_id: validation.id,
+      },
+      'validation'
+    );
+
+
+    await insertEventInTransaction(
+      client,
+      'payment_identifier_requested',
+      {
+        proof_id: payload.proof_id,
+        user_id: payload.user_id,
+        validation_id: validation.id,
+        file_url: payload.file_url,
+      },
+      'validation'
+    );
+
     logger.info({
       event: 'validation_pipeline_completed',
       context: 'validation',

@@ -56,7 +56,7 @@ export async function findRewardByProofId(proofId: string): Promise<Reward | nul
      FROM rewards.rewards
      WHERE proof_id = $1`,
     [proofId]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function findRewardById(id: string): Promise<Reward | null> {
@@ -65,7 +65,7 @@ export async function findRewardById(id: string): Promise<Reward | null> {
      FROM rewards.rewards
      WHERE id = $1`,
     [id]
-  ).then(rows => rows[0] || null);
+  ).then(r => r.rows[0] || null);
 }
 
 export async function updateRewardStatus(id: string, status: string): Promise<void> {

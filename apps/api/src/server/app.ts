@@ -2,17 +2,18 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import crypto from 'crypto';
-import { getDb, db as dbConn } from '../../../../shared/database/connection';
+import { getDb, db as dbConn } from '@shared/database/connection';
 import { getDbHealth } from './state';
-import { NEON_DB_URL } from '../../../../shared/config/env';
+import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import healthRoutes from './routes/health';
+import { devRoutes } from './routes/dev';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
-import { CircuitOpenError, DbPoolExhaustedError } from '../../../shared/database/db-circuit';
-import { isCircuitOpen } from '../../../shared/database/db-circuit';
+import { CircuitOpenError, DbPoolExhaustedError } from '@shared/database/db-circuit';
+import { isCircuitOpen } from '@shared/database/db-circuit';
 
 // Request timeout - prevents hanging requests (10s)
 const REQUEST_TIMEOUT_MS = 10000;
@@ -21,7 +22,7 @@ const REQUEST_TIMEOUT_MS = 10000;
 const MAX_CONCURRENT_REQUESTS = 100;
 let activeRequests = 0;
 
-export function buildApp(): FastifyInstance {
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: true,
   });
@@ -30,7 +31,7 @@ export function buildApp(): FastifyInstance {
   app.addHook('onRequest', async (request, reply) => {
     // Concurrency check - reject if overloaded
     if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
-      request.logger.error({
+      request.log.error({
         event: 'server_overloaded',
         active_requests: activeRequests,
         request_id: request.id
@@ -51,7 +52,7 @@ export function buildApp(): FastifyInstance {
 
     // Request timeout timer
     const timer = setTimeout(() => {
-      request.logger.error({
+      request.log.error({
         event: 'request_timeout',
         request_id: request.id,
         path: request.url,
@@ -102,12 +103,14 @@ export function buildApp(): FastifyInstance {
   app.register(proofRoutes);
   app.register(metricsRoutes);
   app.register(healthRoutes);
+  // Dev routes only registered in development mode (guards inside)
+  app.register(devRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
     // Fast fail for circuit open
     if (err instanceof CircuitOpenError) {
-      request.logger.error({
+      request.log.error({
         event: 'circuit_open',
         request_id: request.id
       });
@@ -124,7 +127,7 @@ export function buildApp(): FastifyInstance {
 
     // Fast fail for DB pool exhaustion
     if (err instanceof DbPoolExhaustedError) {
-      request.logger.error({
+      request.log.error({
         event: 'db_pool_exhausted',
         request_id: request.id
       });
@@ -141,7 +144,7 @@ export function buildApp(): FastifyInstance {
 
     const mapped = mapError(err);
 
-    request.logger.error({
+    request.log.error({
       event: 'unhandled_error',
       error_type: mapped.type,
       error_code: mapped.code,

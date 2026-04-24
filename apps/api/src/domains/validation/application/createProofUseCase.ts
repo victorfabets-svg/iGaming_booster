@@ -1,12 +1,9 @@
 import { createProofInTransaction } from '../infrastructure/proofRepository';
 import { ProofInput } from '../domain/proof';
-import { generateSHA256 } from '../../../../../../shared/utils/hash';
+import { generateSHA256 } from '@shared/utils/hash';
 import { getStorageService } from '../../../infrastructure/storage';
-import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '../../../../../../shared/events/transactional-outbox';
-import { createLogger } from '../../../../../server/utils/logger';
-
-// Module-level logger with static context
-const logger = createLogger({ module: 'createProof' });
+import { runCommandTransaction, insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
+import { logger } from '@shared/observability/logger';
 
 /**
  * Determine content type from file extension

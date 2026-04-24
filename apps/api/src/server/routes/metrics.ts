@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getQueueSize, getDlqSize } from '../../../../shared/events/event-consumer.repository';
+import { getQueueSize, getDlqSize } from '@shared/events/event-consumer.repository';
 import { ok } from '../utils/response';
 
 export async function metricsRoutes(fastify: FastifyInstance): Promise<void> {

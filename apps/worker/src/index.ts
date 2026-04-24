@@ -29,8 +29,8 @@ if (removedKeys.length > 0) {
 
 // ============================================================
 
-import { connectWithRetry, closePool } from '../../../shared/database/connection';
-import { startStuckEventRecovery, stopStuckEventRecovery } from '../../../shared/events/event-consumer.repository';
+import { connectWithRetry, closePool } from '@shared/database/connection';
+import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 
 // Import all consumers
 import { startProofSubmittedConsumer } from '../../api/src/domains/validation/consumers/proof-submitted.consumer';

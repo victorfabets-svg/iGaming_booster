@@ -6,17 +6,52 @@ on:
   workflow_dispatch: {}
 
 env:
-  NEON_DB_URL: ${{ secrets.NEON_DB_URL }}
+  NEON_DB_URL: postgres://ci:ci@localhost:5432/ci_test?sslmode=disable
+  R2_ENDPOINT: http://localhost:9090
+  R2_ACCESS_KEY_ID: ci-access
+  R2_SECRET_ACCESS_KEY: ci-secret
+  R2_BUCKET: ci-test
+  R2_REGION: us-east-1
   PORT: 3000
   HOST: 0.0.0.0
   NODE_ENV: production
   JWT_SECRET: test-jwt-secret-ci
   CANARY_TOKEN: test-canary-token
+  # Force "approved" decision in CI so the full 8-event chain fires
+  # (synthetic test file produces a low fraud score; threshold=0 bypasses).
+  VALIDATION_APPROVAL_THRESHOLD: "0"
+  VALIDATION_MANUAL_REVIEW_THRESHOLD: "0"
 
 jobs:
 
   runtime:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      s3mock:
+        image: adobe/s3mock:latest
+        env:
+          initialBuckets: ci-test
+        ports:
+          - 9090:9090
+        options: >-
+          --health-cmd "wget -qO- http://localhost:9090 >/dev/null 2>&1 || curl -sf http://localhost:9090 >/dev/null 2>&1 || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
 
     steps:
       - name: Checkout
@@ -32,7 +67,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Validate ENV
         run: test -n "$NEON_DB_URL" || (echo "NEON_DB_URL missing" && exit 1)
@@ -51,7 +86,7 @@ jobs:
         run: |
           if [ ! -d apps/worker/dist ]; then
             echo "Worker dist NOT generated"
-            ls -R apps/worker || true
+            ls -R apps/worker
             exit 1
           fi
           echo "Worker dist OK"
@@ -68,7 +103,7 @@ jobs:
             API_ENTRY="apps/api/dist/apps/api/src/server/index.js"
           else
             echo "API artifact NOT FOUND"
-            ls -R apps/api/dist || true
+            ls -R apps/api/dist
             exit 1
           fi
 
@@ -78,11 +113,121 @@ jobs:
             echo "Worker OK"
           else
             echo "Worker artifact NOT FOUND"
-            ls -R apps/worker/dist || true
+            ls -R apps/worker/dist
             exit 1
           fi
 
           echo "API_ENTRY=$API_ENTRY" >> $GITHUB_ENV
+
+      - name: Apply migrations
+        run: |
+          set -euo pipefail
+          # Wait for postgres service to accept connections (extra guard
+          # beyond the service healthcheck).
+          for i in $(seq 1 30); do
+            if node -e "require('pg').Client && new (require('pg').Client)({connectionString: process.env.NEON_DB_URL}).connect().then(c=>c.end()).then(()=>process.exit(0)).catch(()=>process.exit(1))" 2>/dev/null; then
+              echo "postgres ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Apply every .sql migration in order (filename sort).
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const { Client } = require('pg');
+            (async () => {
+              const dir = 'shared/database/migrations';
+              const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              for (const f of files) {
+                const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+                console.log('applying', f);
+                try {
+                  await c.query(sql);
+                } catch (e) {
+                  console.error('FAIL in', f, ':', e.message);
+                  process.exit(1);
+                }
+              }
+              await c.end();
+              console.log('migrations done');
+            })().catch(e => { console.error(e); process.exit(1); });
+          "
+
+      - name: Create S3 bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.R2_REGION }}
+        run: |
+          set -euo pipefail
+          # Wait for s3mock to be responsive
+          for i in $(seq 1 20); do
+            if curl -sf -o /dev/null http://localhost:9090/ 2>/dev/null \
+               || curl -sf -o /dev/null http://localhost:9090/favicon.ico 2>/dev/null; then
+              echo "s3mock ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Create bucket (idempotent — ignore if already exists)
+          aws --endpoint-url http://localhost:9090 \
+              s3api create-bucket --bucket ci-test \
+              || echo "create-bucket returned non-zero (may already exist)"
+          # Verify by listing
+          aws --endpoint-url http://localhost:9090 s3api list-buckets
+          # Hard-assert ci-test is visible
+          aws --endpoint-url http://localhost:9090 s3api list-buckets \
+              | grep -q '"Name": "ci-test"' \
+              || { echo "FAIL: ci-test bucket not found after create"; exit 1; }
+
+      - name: Seed test user
+        run: |
+          set -euo pipefail
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              await c.query(\`
+                INSERT INTO identity.users (id, email, phone, status)
+                VALUES ('00000000-0000-4000-8000-000000000001',
+                        'ci-e2e@example.com', NULL, 'active')
+                ON CONFLICT (id) DO NOTHING
+              \`);
+              const r = await c.query(\"SELECT id FROM identity.users WHERE id='00000000-0000-4000-8000-000000000001'\");
+              if (r.rows.length !== 1) { console.error('FAIL: seed user not present after insert'); process.exit(1); }
+              await c.end();
+              console.log('seed user OK: 00000000-0000-4000-8000-000000000001');
+            })().catch(e => { console.error('seed error:', e.message); process.exit(1); });
+          "
+
+      - name: Seed active raffle
+        run: |
+          set -euo pipefail
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              // Active raffle so reward-granted consumer can assign tickets.
+              await c.query(\`
+                INSERT INTO raffles.raffles (id, name, prize, total_numbers, start_at, end_at, status)
+                VALUES ('00000000-0000-4000-8000-00000000000a',
+                        'CI Raffle', 'CI Test Prize', 1000,
+                        NOW() - INTERVAL '1 day',
+                        NOW() + INTERVAL '30 days',
+                        'active')
+                ON CONFLICT (id) DO NOTHING
+              \`);
+              const r = await c.query(\"SELECT id, status FROM raffles.raffles WHERE id='00000000-0000-4000-8000-00000000000a'\");
+              if (r.rows.length !== 1) { console.error('FAIL: seed raffle not present'); process.exit(1); }
+              await c.end();
+              console.log('seed raffle OK:', r.rows[0]);
+            })().catch(e => { console.error('seed error:', e.message); process.exit(1); });
+          "
 
       - name: Start services
         run: |
@@ -93,30 +238,227 @@ jobs:
 
       - name: Wait API ready
         run: |
-          for i in {1..6}; do
+          for i in $(seq 1 30); do
             if curl -sf --max-time 2 http://localhost:$PORT/health/db > /dev/null 2>&1; then
-              echo "API ready"
+              echo "API ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          cat api.log 2>/dev/null || true
+          echo "=== api.log tail ==="
+          tail -n 100 api.log 2>/dev/null || true
+          echo "=== worker.log tail ==="
+          tail -n 100 worker.log 2>/dev/null || true
           exit 1
 
       - name: Verify worker
         run: |
           test -n "$(cat worker.pid)" && ps -p $(cat worker.pid) > /dev/null && echo "Worker alive" || exit 1
 
-      - name: E2E validation
+      - name: E2E validation (multipart + event chain + DB state + idempotency)
         run: |
-          curl -sf --max-time 2 -X POST http://localhost:$PORT/proofs \
-            -H "Content-Type: application/json" \
-            -d '{"user_id":"ci-test-user","file_url":"https://example.com/test.jpg"}' || true
-          sleep 1
-          curl -sf --max-time 2 http://localhost:$PORT/events | head -20 || true
+          set -euo pipefail
+
+
+          echo "--- Step 1: generate JWT ---"
+          TOKEN=$(node -e "
+            const crypto = require('crypto');
+            const b64 = s => Buffer.from(s).toString('base64url');
+            const header = b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
+            const payload = b64(JSON.stringify({user_id:'00000000-0000-4000-8000-000000000001', iat: Math.floor(Date.now()/1000)}));
+            const sig = crypto.createHmac('sha256', process.env.JWT_SECRET).update(header + '.' + payload).digest('base64url');
+            console.log(header + '.' + payload + '.' + sig);
+          ")
+          [ -n "$TOKEN" ] || { echo "FAIL: empty JWT"; exit 1; }
+
+
+          echo "--- Step 2: create test file ---"
+          echo "e2e proof content $(date +%s)" > /tmp/proof.png
+
+
+          echo "--- Step 3: first POST /proofs ---"
+          HTTP1=$(curl -sS -o /tmp/resp1.json -w "%{http_code}" --max-time 15 -X POST http://localhost:$PORT/proofs \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Idempotency-Key: e2e-key-001" \
+            -F "file=@/tmp/proof.png" || true)
+          RESP1=$(cat /tmp/resp1.json 2>/dev/null || echo "")
+          echo "resp1 (HTTP $HTTP1): $RESP1"
+          if [ "$HTTP1" != "200" ] && [ "$HTTP1" != "201" ]; then
+            echo "FAIL: POST /proofs returned HTTP $HTTP1"
+            echo "=== api.log tail (last 200) ==="
+            tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
+            echo "=== worker.log tail (last 200) ==="
+            tail -n 200 worker.log 2>/dev/null || echo "(no worker.log)"
+            exit 1
+          fi
+          PROOF_ID=$(echo "$RESP1" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.proof_id) || j.proof_id || '') } catch(e) { console.log('') }")
+          [ -n "$PROOF_ID" ] || { echo "FAIL: no proof_id in first response body"; exit 1; }
+          echo "proof_id=$PROOF_ID"
+
+
+          echo "--- Step 4: poll status (interval 2s, total 30s; terminal = approved|rejected|manual_review) ---"
+          FINAL_STATUS="pending"
+          for i in $(seq 1 15); do
+            RAW=$(curl -sf --max-time 5 -H "Authorization: Bearer $TOKEN" "http://localhost:$PORT/proofs/$PROOF_ID" || echo "")
+            STATUS=$(echo "$RAW" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.status) || j.status || '') } catch(e) { console.log('') }")
+            echo "poll $i (t=$((i*2))s): status='$STATUS'"
+            case "$STATUS" in
+              approved|rejected|manual_review) FINAL_STATUS=$STATUS; break ;;
+            esac
+            sleep 2
+          done
+          echo "final status: $FINAL_STATUS"
+          case "$FINAL_STATUS" in
+            approved|rejected|manual_review) ;;
+            *)
+              echo "FAIL: read path did not reach terminal state after 30s (final='$FINAL_STATUS')"
+              exit 1
+              ;;
+          esac
+
+          # After status becomes terminal, give downstream consumers (reward,
+          # raffle) time to catch up before asserting the full event chain.
+          # Each consumer polls its upstream event every POLL_INTERVAL_MS (2s),
+          # so ~6s of headroom is typically enough for the two remaining hops.
+          echo "--- Step 4b: wait for downstream event chain (reward_granted + numbers_generated) ---"
+          DOWNSTREAM_OK=0
+          for i in $(seq 1 15); do
+            COUNT=$(node -e "
+              const { Client } = require('pg');
+              (async () => {
+                const c = new Client({ connectionString: process.env.NEON_DB_URL });
+                await c.connect();
+                const r = await c.query(\"SELECT COUNT(*) FROM events.events WHERE event_type IN ('reward_granted','numbers_generated')\");
+                await c.end();
+                process.stdout.write(r.rows[0].count.toString());
+              })().catch(() => { process.stdout.write('0'); });
+            " 2>/dev/null || echo "0")
+            echo "downstream poll $i (t=$((i*2))s): reward_granted+numbers_generated count=$COUNT"
+            if [ "$COUNT" -ge "2" ]; then
+              DOWNSTREAM_OK=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$DOWNSTREAM_OK" != "1" ]; then
+            echo "FAIL: downstream events (reward_granted + numbers_generated) not present after 30s post-terminal"
+            exit 1
+          fi
+
+
+          echo "--- Step 5: DB state assertion ---"
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              const proofId = '$PROOF_ID';
+              const proofs      = Number((await c.query('SELECT COUNT(*) FROM validation.proofs')).rows[0].count);
+              const validations = Number((await c.query('SELECT COUNT(*) FROM validation.proof_validations WHERE proof_id = \$1', [proofId])).rows[0].count);
+              const eventRows   = (await c.query('SELECT DISTINCT event_type FROM events.events ORDER BY event_type')).rows.map(r => r.event_type);
+              const processed   = Number((await c.query('SELECT COUNT(*) FROM events.processed_events')).rows[0].count);
+              const rewards     = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
+              const tickets     = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
+              console.log('proofs count:', proofs);
+              console.log('proof_validations count (for proof_id):', validations);
+              console.log('event types:', JSON.stringify(eventRows));
+              console.log('processed_events count:', processed);
+              console.log('rewards count:', rewards);
+              console.log('tickets count:', tickets);
+
+
+              if (proofs < 1) {
+                console.error('FAIL: expected >= 1 proof in validation.proofs, got', proofs);
+                process.exit(1);
+              }
+              // Sprint 5.3 Task 3: validation record must exist for this proof.
+              if (validations !== 1) {
+                console.error('FAIL: expected exactly 1 row in validation.proof_validations for proof_id', proofId, ', got', validations);
+                process.exit(1);
+              }
+              // Sprint 5.2 contract: all 8 pipeline events must fire.
+              const required = [
+                'proof_submitted',
+                'fraud_check_requested',
+                'fraud_scored',
+                'payment_identifier_requested',
+                'payment_identifier_extracted',
+                'proof_validated',
+                'reward_granted',
+                'numbers_generated'
+              ];
+              const missing = required.filter(e => !eventRows.includes(e));
+              if (missing.length > 0) {
+                console.error('FAIL: required events missing:', missing);
+                process.exit(1);
+              }
+              if (rewards < 1) {
+                console.error('FAIL: expected >= 1 reward in rewards.rewards, got', rewards);
+                process.exit(1);
+              }
+              if (tickets < 1) {
+                console.error('FAIL: expected >= 1 ticket in raffles.tickets, got', tickets);
+                process.exit(1);
+              }
+
+              await c.end();
+              console.log('DB state assertion: OK (8/8 pipeline events + DB counts)');
+            })().catch(e => { console.error('DB assertion error:', e.message); process.exit(1); });
+          "
+
+
+          echo "--- Step 6: idempotency test ---"
+          HTTP2=$(curl -sS -o /tmp/resp2.json -w "%{http_code}" --max-time 15 -X POST http://localhost:$PORT/proofs \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Idempotency-Key: e2e-key-001" \
+            -F "file=@/tmp/proof.png" || true)
+          RESP2=$(cat /tmp/resp2.json 2>/dev/null || echo "")
+          echo "resp2 (HTTP $HTTP2): $RESP2"
+          if [ "$HTTP2" != "200" ] && [ "$HTTP2" != "201" ]; then
+            echo "FAIL: idempotency POST returned HTTP $HTTP2"
+            exit 1
+          fi
+          PROOF_ID2=$(echo "$RESP2" | node -e "try { const j=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((j.data && j.data.proof_id) || j.proof_id || '') } catch(e) { console.log('') }")
+          if [ "$PROOF_ID" != "$PROOF_ID2" ]; then
+            echo "FAIL: idempotency broken. First=$PROOF_ID Second=$PROOF_ID2"
+            exit 1
+          fi
+          echo "idempotency: OK (same proof_id returned)"
+
+
+          echo "--- Step 7: post-idempotency DB reassertion (no duplicates created) ---"
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const c = new Client({ connectionString: process.env.NEON_DB_URL });
+              await c.connect();
+              const proofId = '$PROOF_ID';
+              const proofs      = Number((await c.query('SELECT COUNT(*) FROM validation.proofs WHERE id = \$1', [proofId])).rows[0].count);
+              const validations = Number((await c.query('SELECT COUNT(*) FROM validation.proof_validations WHERE proof_id = \$1', [proofId])).rows[0].count);
+              const rewards     = Number((await c.query('SELECT COUNT(*) FROM rewards.rewards')).rows[0].count);
+              const tickets     = Number((await c.query('SELECT COUNT(*) FROM raffles.tickets')).rows[0].count);
+              console.log('post-retry proofs count (for proof_id):', proofs);
+              console.log('post-retry proof_validations count (for proof_id):', validations);
+              console.log('post-retry rewards count:', rewards);
+              console.log('post-retry tickets count:', tickets);
+              if (proofs !== 1)      { console.error('FAIL: duplicate proof created on retry, expected 1 got', proofs); process.exit(1); }
+              if (validations !== 1) { console.error('FAIL: duplicate validation created on retry, expected 1 got', validations); process.exit(1); }
+              if (rewards !== 1)     { console.error('FAIL: duplicate reward created on retry, expected 1 got', rewards); process.exit(1); }
+              if (tickets !== 1)     { console.error('FAIL: duplicate ticket created on retry, expected 1 got', tickets); process.exit(1); }
+              await c.end();
+              console.log('post-retry reassertion: OK (no duplicates)');
+            })().catch(e => { console.error('post-retry error:', e.message); process.exit(1); });
+          "
+
+
+          echo "✅ E2E passed: multipart + 8/8 event chain + DB state + read path + idempotency (no duplicates)"
 
       - name: Cleanup
         if: always()
         run: |
+          echo "=== api.log tail (last 200 lines) ==="
+          tail -n 200 api.log 2>/dev/null || echo "(no api.log)"
+          echo "=== worker.log tail (last 400 lines) ==="
+          tail -n 400 worker.log 2>/dev/null || echo "(no worker.log)"
           kill $(cat api.pid) 2>/dev/null || true
           kill $(cat worker.pid) 2>/dev/null || true

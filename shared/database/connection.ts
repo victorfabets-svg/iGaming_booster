@@ -200,7 +200,7 @@ export async function initDb(): Promise<void> {
 }
 
 export const db = {
-  query: async <T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> => {
+  query: async <T = any>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> => {
     // Fast fail if circuit is open
     if (isCircuitOpen()) {
       throw new CircuitOpenError();
@@ -213,7 +213,7 @@ export const db = {
     try {
       const result = await _db.query(text, params);
       recordSuccess();
-      return { rows: result.rows };
+      return { rows: result.rows, rowCount: result.rowCount ?? 0 };
     } catch (error) {
       recordFailure();
       throw error;
@@ -282,7 +282,7 @@ async function acquireClient(): Promise<pg.PoolClient> {
 }
 
 // Legacy exports for compatibility
-export async function query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[] }> {
+export async function query<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> {
   return db.query<T>(text, params);
 }
 
