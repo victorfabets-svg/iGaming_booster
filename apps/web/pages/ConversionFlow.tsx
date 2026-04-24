@@ -24,6 +24,8 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
       return (
         <SubmittedScreen
           proofId={flow.proofId ?? ''}
+          isNew={flow.isNew}
+          submittedAt={flow.submittedAt}
           onOpenHistory={onOpenHistory}
           onSubmitAnother={flow.reset}
         />

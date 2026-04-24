@@ -23,6 +23,8 @@ function getContentType(ext: string): string {
 export interface CreateProofResult {
   proof_id: string;
   status: string;
+  is_new: boolean;
+  submitted_at: string;
   file_url?: string;
   expires_in?: number;
 }
@@ -109,10 +111,12 @@ export async function createProofUseCase(input: ProofInput): Promise<CreateProof
     logger.warn({ event: 'proof_signed_url_failed', error: String(error) });
   }
 
-  return { 
-    proof_id: result.proof.id, 
+  return {
+    proof_id: result.proof.id,
     status: 'submitted',
+    is_new: result.isNew,
+    submitted_at: result.proof.submitted_at,
     file_url: signedUrl,
-    expires_in: expiresIn
+    expires_in: expiresIn,
   };
 }

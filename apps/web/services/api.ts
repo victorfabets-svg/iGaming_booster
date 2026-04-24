@@ -2,7 +2,12 @@
 // - All endpoints call real backend APIs
 // - No mock or seed data
 
-export interface SubmitProofResponse { proof_id: string; status: string; }
+export interface SubmitProofResponse {
+  proof_id: string;
+  status: string;
+  is_new?: boolean;
+  submitted_at?: string;
+}
 export interface HealthResponse { status: 'ok' | 'degraded'; db?: 'ok' | 'down'; latencyMs?: number; }
 
 // List item shape returned by GET /proofs (flat, status joined from proof_validations).

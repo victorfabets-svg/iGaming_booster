@@ -103,12 +103,15 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           filename: filename || undefined,
         });
 
-        // Build response with optional signed URL
+        // Build response — include is_new + submitted_at so the frontend
+        // can distinguish a fresh submission from a deduped one.
         const response: any = {
           proof_id: result.proof_id,
           status: result.status,
+          is_new: result.is_new,
+          submitted_at: result.submitted_at,
         };
-        
+
         if (result.file_url) {
           response.file_url = result.file_url;
           response.expires_in = result.expires_in;

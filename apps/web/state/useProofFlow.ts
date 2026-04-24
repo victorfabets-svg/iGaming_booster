@@ -14,6 +14,8 @@ export interface UseProofFlowReturn {
   phase: ProofFlowPhase;
   proofId: string | null;
   error: string | null;
+  isNew: boolean | null;
+  submittedAt: string | null;
   submit: (file: File) => Promise<void>;
   reset: () => void;
 }
@@ -22,11 +24,13 @@ interface State {
   phase: ProofFlowPhase;
   proofId: string | null;
   error: string | null;
+  isNew: boolean | null;
+  submittedAt: string | null;
 }
 
 type Action =
   | { type: 'SUBMIT_START' }
-  | { type: 'SUBMIT_OK'; proofId: string }
+  | { type: 'SUBMIT_OK'; proofId: string; isNew: boolean | null; submittedAt: string | null }
   | { type: 'SUBMIT_FAIL'; error: string }
   | { type: 'RESET' };
 
@@ -34,6 +38,8 @@ const INITIAL: State = {
   phase: 'idle',
   proofId: null,
   error: null,
+  isNew: null,
+  submittedAt: null,
 };
 
 function reducer(state: State, action: Action): State {
@@ -41,7 +47,14 @@ function reducer(state: State, action: Action): State {
     case 'SUBMIT_START':
       return { ...INITIAL, phase: 'submitting' };
     case 'SUBMIT_OK':
-      return { ...state, phase: 'submitted', proofId: action.proofId, error: null };
+      return {
+        ...state,
+        phase: 'submitted',
+        proofId: action.proofId,
+        isNew: action.isNew,
+        submittedAt: action.submittedAt,
+        error: null,
+      };
     case 'SUBMIT_FAIL':
       return { ...state, phase: 'error', error: action.error };
     case 'RESET':
@@ -58,8 +71,13 @@ export function useProofFlow(): UseProofFlowReturn {
     dispatch({ type: 'SUBMIT_START' });
     try {
       const res = await api.submitProof(file);
-      track('proof_submitted', { proof_id: res.proof_id });
-      dispatch({ type: 'SUBMIT_OK', proofId: res.proof_id });
+      track('proof_submitted', { proof_id: res.proof_id, is_new: res.is_new });
+      dispatch({
+        type: 'SUBMIT_OK',
+        proofId: res.proof_id,
+        isNew: res.is_new ?? null,
+        submittedAt: res.submitted_at ?? null,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
       track('upload_failed', { error: message });
@@ -75,6 +93,8 @@ export function useProofFlow(): UseProofFlowReturn {
     phase: state.phase,
     proofId: state.proofId,
     error: state.error,
+    isNew: state.isNew,
+    submittedAt: state.submittedAt,
     submit,
     reset,
   };

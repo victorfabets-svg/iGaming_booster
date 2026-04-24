@@ -4,6 +4,7 @@ import createApiClient, { ProofListItem } from '../../services/api';
 const api = createApiClient('');
 
 const POLL_INTERVAL_MS = 5000;
+const BRT = 'America/Sao_Paulo';
 
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   approved:      { label: 'Aprovado',    cls: 'badge badge-success' },
@@ -16,7 +17,21 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString('pt-BR', {
+    timeZone: BRT,
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function formatDateFull(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('pt-BR', {
+    timeZone: BRT,
+    dateStyle: 'full',
+    timeStyle: 'medium',
+  });
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -24,10 +39,62 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={s.cls}>{s.label}</span>;
 }
 
+function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        className="card"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: 520, width: '100%', padding: 24 }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
+          <h3 className="card-title" style={{ margin: 0 }}>Detalhes do comprovante</h3>
+          <button
+            onClick={onClose}
+            aria-label="Fechar"
+            style={{ background: 'transparent', border: 0, color: 'var(--text-secondary)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}
+          >×</button>
+        </div>
+
+        <dl style={{ display: 'grid', gridTemplateColumns: '140px 1fr', rowGap: 12, columnGap: 16, margin: 0 }}>
+          <dt style={{ color: 'var(--text-secondary)' }}>ID</dt>
+          <dd style={{ margin: 0, fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-all' }}>{proof.proof_id}</dd>
+
+          <dt style={{ color: 'var(--text-secondary)' }}>Enviado em</dt>
+          <dd style={{ margin: 0 }}>{formatDateFull(proof.submitted_at)}</dd>
+
+          <dt style={{ color: 'var(--text-secondary)' }}>Status</dt>
+          <dd style={{ margin: 0 }}><StatusBadge status={proof.status} /></dd>
+
+          <dt style={{ color: 'var(--text-secondary)' }}>Confiança</dt>
+          <dd style={{ margin: 0 }}>
+            {proof.confidence_score != null ? proof.confidence_score.toFixed(2) : '—'}
+          </dd>
+        </dl>
+
+        <div style={{ marginTop: 24, textAlign: 'right' }}>
+          <button className="btn btn-secondary" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const HistoricoSection: React.FC = () => {
   const [items, setItems] = useState<ProofListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [selected, setSelected] = useState<ProofListItem | null>(null);
   const intervalRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -54,6 +121,16 @@ const HistoricoSection: React.FC = () => {
       }
     };
   }, [load]);
+
+  // ESC closes the modal
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelected(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected]);
 
   if (loading && items === null) {
     return (
@@ -105,6 +182,7 @@ const HistoricoSection: React.FC = () => {
                 <th>ID</th>
                 <th>Status</th>
                 <th>Confiança</th>
+                <th style={{ textAlign: 'right' }}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -116,12 +194,23 @@ const HistoricoSection: React.FC = () => {
                   </td>
                   <td><StatusBadge status={row.status} /></td>
                   <td>{row.confidence_score != null ? row.confidence_score.toFixed(2) : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '4px 12px', fontSize: 12 }}
+                      onClick={() => setSelected(row)}
+                    >
+                      Visualizar
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {selected && <DetailModal proof={selected} onClose={() => setSelected(null)} />}
     </section>
   );
 };
