@@ -50,12 +50,29 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
         }
       }
 
-      // Rate limiting - 10 requests per minute per IP (stored in DB for persistence)
+      // Rate limiting — defense in depth.
+      // Order matters: cheapest check first, most aggressive last.
       const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
-      const allowed = await rateLimitDb(clientIp, 10, 60000);
+      const userId = (request as any).userId as string | null;
 
-      if (!allowed) {
-        return fail(reply, 'Too many requests', 'RATE_LIMIT');
+      // 1) IP-keyed: 10 req / 60s (legacy default — public surface)
+      const ipAllowed = await rateLimitDb(`ip:${clientIp}`, 10, 60_000);
+      if (!ipAllowed) {
+        return fail(reply, 'Muitas tentativas. Aguarde alguns instantes.', 'RATE_LIMIT');
+      }
+
+      // 2) Burst per user — 3 req / 10s (catches rapid retries / duplo-click bots)
+      if (userId) {
+        const burstAllowed = await rateLimitDb(`user-burst:${userId}`, 3, 10_000);
+        if (!burstAllowed) {
+          return fail(reply, 'Muitas tentativas. Aguarde alguns instantes.', 'RATE_LIMIT');
+        }
+
+        // 3) Sustained per user — 30 req / 60s (protects against drip abuse from rotating IPs)
+        const sustainedAllowed = await rateLimitDb(`user-min:${userId}`, 30, 60_000);
+        if (!sustainedAllowed) {
+          return fail(reply, 'Muitas tentativas. Aguarde alguns instantes.', 'RATE_LIMIT');
+        }
       }
 
       // Zero trust: user_id extracted from token, NOT from body
