@@ -44,7 +44,26 @@ interface Thresholds {
 const NORMAL_THRESHOLDS: Thresholds = { high: 0.7, medium: 0.3 };
 const STRICT_THRESHOLDS: Thresholds = { high: 0.5, medium: 0.2 };
 
+function readEnvFloat(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return null;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
 function getActiveProfile(): { thresholds: Thresholds; version: string } {
+  // Operational/test override — both envs must be set together.
+  // Used by runtime-check CI to force a known decision against synthetic
+  // fixtures. Not for production tuning (rule semantics are versioned).
+  const envHigh = readEnvFloat('VALIDATION_FRAUD_REJECT_THRESHOLD');
+  const envMedium = readEnvFloat('VALIDATION_FRAUD_REVIEW_THRESHOLD');
+  if (envHigh !== null && envMedium !== null) {
+    return {
+      thresholds: { high: envHigh, medium: envMedium },
+      version: `${RULES_VERSION}-env-override`,
+    };
+  }
+
   if (getFlag('STRICT_MODE')) {
     return { thresholds: STRICT_THRESHOLDS, version: RULES_VERSION_STRICT };
   }
