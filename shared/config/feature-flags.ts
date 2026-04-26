@@ -12,7 +12,8 @@ export type FlagName =
   | 'FRAUD_V1_ENABLED'
   | 'STRICT_MODE'
   | 'T3_SHORT_CIRCUIT_ENABLED'
-  | 'T3_OCR_REAL_ENABLED';
+  | 'T3_OCR_REAL_ENABLED'
+  | 'T4_OCR_CACHE_ENABLED';
 
 const TRUE_VALUES = new Set(['true', '1', 'on', 'yes']);
 
@@ -26,6 +27,7 @@ const FLAGS: Record<FlagName, FlagSpec> = {
   STRICT_MODE:          { envVar: 'STRICT_MODE',          defaultValue: false },
   T3_SHORT_CIRCUIT_ENABLED: { envVar: 'T3_SHORT_CIRCUIT_ENABLED', defaultValue: false },
   T3_OCR_REAL_ENABLED: { envVar: 'T3_OCR_REAL_ENABLED', defaultValue: false },
+  T4_OCR_CACHE_ENABLED: { envVar: 'T4_OCR_CACHE_ENABLED', defaultValue: false },
 };
 
 export function getFlag(name: FlagName): boolean {
@@ -54,6 +56,7 @@ export const featureFlags = {
     console.log(`   ${getFlag('STRICT_MODE') ? '✅' : '❌'} STRICT_MODE: ${getFlag('STRICT_MODE')}`);
     console.log(`   ${getFlag('T3_SHORT_CIRCUIT_ENABLED') ? '✅' : '❌'} T3_SHORT_CIRCUIT_ENABLED: ${getFlag('T3_SHORT_CIRCUIT_ENABLED')}`);
     console.log(`   ${getFlag('T3_OCR_REAL_ENABLED') ? '✅' : '❌'} T3_OCR_REAL_ENABLED: ${getFlag('T3_OCR_REAL_ENABLED')}`);
+    console.log(`   ${getFlag('T4_OCR_CACHE_ENABLED') ? '✅' : '❌'} T4_OCR_CACHE_ENABLED: ${getFlag('T4_OCR_CACHE_ENABLED')}`);
     // legacy stubs for out-of-scope consumers
     console.log(`   ${isRewardsEnabled() ? '✅' : '❌'} ENABLE_REWARDS: ${isRewardsEnabled()}`);
     console.log(`   ${isValidationEnabled() ? '✅' : '❌'} ENABLE_VALIDATION: ${isValidationEnabled()}`);

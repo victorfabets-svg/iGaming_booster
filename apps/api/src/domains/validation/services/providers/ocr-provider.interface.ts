@@ -21,5 +21,19 @@ export interface OcrResult {
 
 export interface OcrProvider {
   readonly name: string;
+  readonly model: string;
   extract(input: OcrInput): Promise<OcrResult>;
+}
+
+/**
+ * Extended interface for providers that can extract from raw bytes.
+ * Used by CachedOcrProvider decorator to pass already-fetched bytes.
+ */
+export interface OcrExtractor {
+  extractFromBytes(
+    bytes: Buffer,
+    mediaType: 'image/jpeg' | 'image/png',
+    fileHash: string,
+    proofId?: string
+  ): Promise<OcrResult>;
 }
