@@ -191,3 +191,52 @@ export async function listAll(filters?: TipFilters, limit: number = 100): Promis
   );
   return result.rows;
 }
+
+/**
+ * List pending tips for WhatsApp delivery
+ * Returns: status='pending' AND event_starts_at > NOW() AND created_at > since
+ *         ORDER BY created_at ASC LIMIT N
+ */
+export async function listPendingForDelivery(
+  since: Date,
+  limit: number = 100
+): Promise<Tip[]> {
+  const result = await db.query<Tip>(
+    `SELECT id, external_id, sport, league, event_name, event_starts_at, 
+            market, selection, odds, stake_units, confidence, house_slug,
+            status, settled_at, settled_value, tipster_created_at, 
+            metadata, created_at, updated_at
+     FROM tipster.tips 
+     WHERE status = 'pending' 
+       AND event_starts_at > NOW() 
+       AND created_at > $1
+     ORDER BY created_at ASC
+     LIMIT $2`,
+    [since, limit]
+  );
+  return result.rows;
+}
+
+/**
+ * List settled tips for WhatsApp notification
+ * Returns: status IN ('won','lost','void') AND settled_at > since
+ *         ORDER BY settled_at ASC LIMIT N
+ */
+export async function listSettledForNotification(
+  since: Date,
+  limit: number = 100
+): Promise<Tip[]> {
+  const result = await db.query<Tip>(
+    `SELECT id, external_id, sport, league, event_name, event_starts_at, 
+            market, selection, odds, stake_units, confidence, house_slug,
+            status, settled_at, settled_value, tipster_created_at, 
+            metadata, created_at, updated_at
+     FROM tipster.tips 
+     WHERE status IN ('won', 'lost', 'void') 
+       AND settled_at > $1
+     ORDER BY settled_at ASC
+     LIMIT $2`,
+    [since, limit]
+  );
+  return result.rows;
+}
