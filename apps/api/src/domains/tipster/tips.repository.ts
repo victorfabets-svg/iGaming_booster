@@ -83,17 +83,18 @@ export async function findById(id: string): Promise<Tip | null> {
 }
 
 /**
- * Insert a new tip using a transaction client
+ * Insert a new tip using a transaction client (atomic via ON CONFLICT DO NOTHING)
  */
 export async function insertWithClient(
   client: PoolClient,
   input: TipInput
-): Promise<Tip> {
+): Promise<Tip | null> {
   const result = await client.query<Tip>(
     `INSERT INTO tipster.tips 
      (external_id, sport, league, event_name, event_starts_at, market, selection, 
       odds, stake_units, confidence, house_slug, tipster_created_at, metadata)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     ON CONFLICT (external_id) DO NOTHING
      RETURNING id, external_id, sport, league, event_name, event_starts_at, 
                market, selection, odds, stake_units, confidence, house_slug,
                status, settled_at, settled_value, tipster_created_at, 
@@ -114,11 +115,11 @@ export async function insertWithClient(
       JSON.stringify(input.metadata ?? {}),
     ]
   );
-  return result.rows[0];
+  return result.rows[0] || null;
 }
 
 /**
- * Settle a tip using a transaction client
+ * Settle a tip using a transaction client (atomic via WHERE status = 'pending')
  */
 export async function settleWithClient(
   client: PoolClient,
@@ -126,14 +127,11 @@ export async function settleWithClient(
   status: 'won' | 'lost' | 'void',
   settledValue?: number | null,
   settledAt?: Date
-): Promise<Tip> {
+): Promise<Tip | null> {
   const result = await client.query<Tip>(
     `UPDATE tipster.tips 
-     SET status = $2, 
-         settled_at = $3, 
-         settled_value = $4,
-         updated_at = NOW()
-     WHERE external_id = $1
+     SET status = $2, settled_at = $3, settled_value = $4, updated_at = NOW()
+     WHERE external_id = $1 AND status = 'pending'
      RETURNING id, external_id, sport, league, event_name, event_starts_at, 
                market, selection, odds, stake_units, confidence, house_slug,
                status, settled_at, settled_value, tipster_created_at, 
@@ -145,13 +143,13 @@ export async function settleWithClient(
       settledValue ?? null,
     ]
   );
-  return result.rows[0];
+  return result.rows[0] || null;
 }
 
 /**
- * List all tips with optional filters
+ * List all tips with optional filters and limit
  */
-export async function listAll(filters?: TipFilters): Promise<Tip[]> {
+export async function listAll(filters?: TipFilters, limit: number = 100): Promise<Tip[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
   let paramIndex = 1;
@@ -172,11 +170,13 @@ export async function listAll(filters?: TipFilters): Promise<Tip[]> {
   }
 
   if (filters?.until) {
-    conditions.push(`created_at <= $${paramIndex++}`);
+    conditions.push(`created_at < $${paramIndex++}`);
     params.push(filters.until);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const limitParam = `$${paramIndex}`;
+  params.push(limit);
 
   const result = await db.query<Tip>(
     `SELECT id, external_id, sport, league, event_name, event_starts_at, 
@@ -185,7 +185,8 @@ export async function listAll(filters?: TipFilters): Promise<Tip[]> {
             metadata, created_at, updated_at
      FROM tipster.tips 
      ${whereClause}
-     ORDER BY created_at DESC`,
+     ORDER BY created_at DESC
+     LIMIT ${limitParam}`,
     params
   );
   return result.rows;

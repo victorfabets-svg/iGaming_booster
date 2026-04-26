@@ -37,6 +37,15 @@ interface SettleBody {
 }
 
 /**
+ * Parse ISO timestamp string to Date, returning null for invalid dates
+ */
+function parseIsoTimestamp(s: unknown): Date | null {
+  if (typeof s !== 'string' || !s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
  * Validate tipster tip body
  */
 function validateTipBody(body: unknown): string | null {
@@ -55,8 +64,11 @@ function validateTipBody(body: unknown): string | null {
   if (typeof b.event_name !== 'string' || !b.event_name) {
     return 'event_name is required and must be non-empty';
   }
-  if (typeof b.event_starts_at !== 'string' || !b.event_starts_at) {
+  if (typeof b.event_starts_at !== 'string' || parseIsoTimestamp(b.event_starts_at) === null) {
     return 'event_starts_at is required and must be a valid ISO timestamp';
+  }
+  if (b.tipster_created_at !== undefined && parseIsoTimestamp(b.tipster_created_at) === null) {
+    return 'tipster_created_at must be a valid ISO timestamp if provided';
   }
   if (typeof b.market !== 'string' || !b.market) {
     return 'market is required and must be non-empty';
@@ -94,8 +106,8 @@ function validateSettleBody(body: unknown): string | null {
   if (b.settled_value !== undefined && typeof b.settled_value !== 'number') {
     return 'settled_value must be a number if provided';
   }
-  if (b.settled_at !== undefined && typeof b.settled_at !== 'string') {
-    return 'settled_at must be a string ISO timestamp if provided';
+  if (b.settled_at !== undefined && parseIsoTimestamp(b.settled_at) === null) {
+    return 'settled_at must be a valid ISO timestamp if provided';
   }
 
   return null;
@@ -104,7 +116,7 @@ function validateSettleBody(body: unknown): string | null {
 export async function tipsterRoutes(
   fastify: FastifyInstance
 ): Promise<void> {
-  // POST /tipster/tips - Ingest a new tip
+  // POST /tipster/tips - Ingest a new tip (atomic via ON CONFLICT)
   fastify.post<{ Body: TipsterTipBody }>(
     '/tipster/tips',
     { preHandler: tipsterAuthMiddleware },
@@ -115,14 +127,8 @@ export async function tipsterRoutes(
       }
 
       const body = request.body;
-
-      // Idempotency: check if tip already exists
-      const existing = await findByExternalId(body.external_id);
-      if (existing) {
-        return reply.status(200).send({ success: true, data: { tip: existing } });
-      }
-
       const client = await db.connect();
+
       try {
         await client.query('BEGIN');
 
@@ -131,18 +137,25 @@ export async function tipsterRoutes(
           sport: body.sport,
           league: body.league,
           event_name: body.event_name,
-          event_starts_at: new Date(body.event_starts_at),
+          event_starts_at: parseIsoTimestamp(body.event_starts_at)!,
           market: body.market,
           selection: body.selection,
           odds: body.odds,
           stake_units: body.stake_units,
           confidence: body.confidence,
           house_slug: body.house_slug,
-          tipster_created_at: body.tipster_created_at ? new Date(body.tipster_created_at) : null,
+          tipster_created_at: body.tipster_created_at ? parseIsoTimestamp(body.tipster_created_at) : null,
           metadata: body.metadata ?? {},
         };
 
         const tip = await insertWithClient(client, input);
+
+        if (!tip) {
+          // Conflict: another request inserted first. Rollback + re-fetch idempotent.
+          await client.query('ROLLBACK');
+          const existing = await findByExternalId(body.external_id);
+          return reply.status(200).send({ success: true, data: { tip: existing } });
+        }
 
         await insertEventInTransaction(
           client,
@@ -183,7 +196,7 @@ export async function tipsterRoutes(
     }
   );
 
-  // POST /tipster/tips/:external_id/settle - Settle a tip
+  // POST /tipster/tips/:external_id/settle - Settle a tip (atomic via WHERE status='pending')
   fastify.post<{ Params: { external_id: string }; Body: SettleBody }>(
     '/tipster/tips/:external_id/settle',
     { preHandler: tipsterAuthMiddleware },
@@ -192,30 +205,23 @@ export async function tipsterRoutes(
       reply: FastifyReply
     ) => {
       const { external_id } = request.params;
-
       const validationError = validateSettleBody(request.body);
-      if (validationError) {
-        return reply.status(400).send({ error: validationError });
-      }
+      if (validationError) return reply.status(400).send({ error: validationError });
 
       const body = request.body;
-      const tip = await findByExternalId(external_id);
 
-      if (!tip) {
-        return reply.status(404).send({ error: 'Tip not found' });
+      // Pre-check for 404 (doesn't block race)
+      const existing = await findByExternalId(external_id);
+      if (!existing) return reply.status(404).send({ error: 'Tip not found' });
+
+      // Idempotent: already settled with same status
+      if (existing.status === body.status) {
+        return reply.status(200).send({ success: true, data: { tip: existing } });
       }
 
-      // Idempotent: same status returns 200
-      if (tip.status === body.status) {
-        return reply.status(200).send({ success: true, data: { tip } });
-      }
-
-      // Conflict: already settled with different status
-      if (tip.status !== 'pending') {
-        return reply.status(409).send({
-          error: 'already_settled',
-          current_status: tip.status,
-        });
+      // Already settled with different status (without race)
+      if (existing.status !== 'pending') {
+        return reply.status(409).send({ error: 'already_settled', current_status: existing.status });
       }
 
       const client = await db.connect();
@@ -227,8 +233,19 @@ export async function tipsterRoutes(
           external_id,
           body.status,
           body.settled_value,
-          body.settled_at ? new Date(body.settled_at) : undefined
+          body.settled_at ? parseIsoTimestamp(body.settled_at)! : undefined
         );
+
+        if (!settledTip) {
+          // Race lost to another request: re-fetch and decide
+          await client.query('ROLLBACK');
+          const current = await findByExternalId(external_id);
+          if (!current) return reply.status(404).send({ error: 'Tip not found' });
+          if (current.status === body.status) {
+            return reply.status(200).send({ success: true, data: { tip: current } });
+          }
+          return reply.status(409).send({ error: 'already_settled', current_status: current.status });
+        }
 
         await insertEventInTransaction(
           client,

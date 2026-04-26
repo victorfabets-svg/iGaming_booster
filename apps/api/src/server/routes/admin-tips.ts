@@ -70,7 +70,7 @@ export async function adminTipsRoutes(
         filters.until = untilDate;
       }
 
-      const tips = await listAll(filters);
+      const tips = await listAll(filters, limit);
       return reply.send({
         success: true,
         data: {
