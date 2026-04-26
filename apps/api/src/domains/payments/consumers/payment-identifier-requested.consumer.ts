@@ -13,6 +13,8 @@ import { extractIdentifiers } from '../services/identifier.service';
 import { validateIdentifier, validateIdentifiers } from '../services/identifier-validation.service';
 import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
+import { normalizeIdentifier } from '../services/identifier-normalizer.service';
+import { insertPaymentIdentifierWithClient, countOtherProofsByNormalizedValue } from '../repositories/payment-identifier.repository';
 
 const EVENT_TYPE = 'payment_identifier_requested';
 const POLL_INTERVAL_MS = 5000;
@@ -93,9 +95,9 @@ async function processEvent(event: Event): Promise<void> {
 }
 
 async function handlePaymentIdentifierRequested(payload: PaymentIdentifierRequestedPayload, client: any): Promise<void> {
-  const { proof_id, ocr_result } = payload;
+  const { proof_id } = payload;
 
-  const ocrData = ocr_result || { amount: 0, date: '', institution: '', identifier: null };
+  const ocrData = payload.ocr_result || { amount: 0, date: '', institution: '', identifier: null };
   const extractedIdentifiers = extractIdentifiers(ocrData);
   
   const identifierValidationResult = validateIdentifiers(extractedIdentifiers);
@@ -127,14 +129,39 @@ async function handlePaymentIdentifierRequested(payload: PaymentIdentifierReques
     });
   }
 
-  // Emit payment_identifier_extracted event
+  // Persist each identifier to payment_identifiers table with normalized_value and dup_count
+  // Count OTHER proofs BEFORE insert so this row doesn't count itself
+  const enrichedIdentifiers = await Promise.all(
+    extractedIdentifiers.map(async (identifier) => {
+      const normalizedValue = normalizeIdentifier(identifier.value);
+      const dupCountOtherProofs = await countOtherProofsByNormalizedValue(client, proof_id, normalizedValue);
+
+      await insertPaymentIdentifierWithClient(client, {
+        proof_id,
+        type: identifier.type,
+        raw_value: identifier.value,
+        normalized_value: normalizedValue,
+        confidence: identifier.confidence,
+      });
+
+      return {
+        type: identifier.type,
+        value: identifier.value,
+        confidence: identifier.confidence,
+        normalized_value: normalizedValue,
+        dup_count_other_proofs: dupCountOtherProofs,
+      };
+    })
+  );
+
+  // Emit payment_identifier_extracted event with enriched payload
   await insertEventInTransaction(
     client,
     'payment_identifier_extracted',
     {
       proof_id,
       user_id: payload.user_id,
-      identifiers: extractedIdentifiers.map(i => ({ type: i.type, value: i.value, confidence: i.confidence })),
+      identifiers: enrichedIdentifiers,
       validation: identifierValidationResult,
     },
     'payments'
@@ -143,7 +170,7 @@ async function handlePaymentIdentifierRequested(payload: PaymentIdentifierReques
   logger.info({ 
     event: 'payment_identifier_extracted_emitted', 
     context: 'payments', 
-    data: { proof_id, count: extractedIdentifiers.length } 
+    data: { proof_id, count: enrichedIdentifiers.length } 
   });
 }
 
