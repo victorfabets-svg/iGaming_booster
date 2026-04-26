@@ -11,6 +11,7 @@ import {
 } from '../../domains/tipster/tips.repository';
 import {
   listActive,
+  findById as findSubscriberById,
 } from '../../domains/whatsapp/subscribers.repository';
 import {
   upsertWithClient,
@@ -19,14 +20,18 @@ import {
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { db } from '@shared/database/connection';
 
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 500;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface QueueQuery {
   since: string;
-  limit?: number;
+  limit?: string;
 }
 
 interface SubscribersQuery {
   since?: string;
-  limit?: number;
+  limit?: string;
 }
 
 interface DeliveryStatusBody {
@@ -67,11 +72,15 @@ function validateQueueQuery(query: unknown): string | null {
   }
 
   if (q.limit !== undefined) {
-    if (typeof q.limit !== 'number' || !Number.isInteger(q.limit)) {
-      return 'limit must be an integer';
+    if (typeof q.limit !== 'string') {
+      return 'limit must be a string';
     }
-    if (q.limit < 1 || q.limit > 500) {
-      return 'limit must be between 1 and 500';
+    const parsed = parseInt(q.limit, 10);
+    if (isNaN(parsed) || parsed < 1) {
+      return 'limit must be a positive integer';
+    }
+    if (parsed > MAX_LIMIT) {
+      return `limit must be at most ${MAX_LIMIT}`;
     }
   }
 
@@ -92,6 +101,18 @@ function validateDeliveryBody(body: unknown): string | null {
     return 'subscriber_id is required and must be a non-empty string';
   }
 
+  // FIX-28: UUID validation for subscriber_id
+  if (!UUID_REGEX.test(b.subscriber_id)) {
+    return 'subscriber_id must be a valid UUID';
+  }
+
+  // tip_id is optional, but if provided must be a valid UUID
+  if (b.tip_id !== undefined) {
+    if (typeof b.tip_id !== 'string' || !UUID_REGEX.test(b.tip_id)) {
+      return 'tip_id must be a valid UUID if provided';
+    }
+  }
+
   const validMessageTypes = ['tip_alert', 'settlement_alert'];
   if (!validMessageTypes.includes(b.message_type as string)) {
     return `message_type must be one of: ${validMessageTypes.join(', ')}`;
@@ -106,8 +127,9 @@ function validateDeliveryBody(body: unknown): string | null {
     return 'sent_at is required and must be a valid ISO timestamp';
   }
 
-  if (b.status === 'failed' && (!b.error_code || typeof b.error_code !== 'string')) {
-    return 'error_code is recommended when status is failed';
+  // FIX-26: error_code is now required, not recommended
+  if (b.status === 'failed' && (!b.error_code || typeof b.error_code !== 'string' || !b.error_code.trim())) {
+    return 'error_code is required when status is failed';
   }
 
   return null;
@@ -130,7 +152,9 @@ export async function whatsappRoutes(
         return reply.status(400).send({ error: validationError });
       }
 
-      const { since, limit = 100 } = request.query;
+      const { since } = request.query;
+      const limitStr = request.query.limit;
+      const limit = limitStr ? parseInt(limitStr, 10) : DEFAULT_LIMIT;
       const sinceDate = parseIsoTimestamp(since)!;
 
       const tips = await listPendingForDelivery(sinceDate, limit);
@@ -152,7 +176,9 @@ export async function whatsappRoutes(
         return reply.status(400).send({ error: validationError });
       }
 
-      const { since, limit = 100 } = request.query;
+      const { since } = request.query;
+      const limitStr = request.query.limit;
+      const limit = limitStr ? parseInt(limitStr, 10) : DEFAULT_LIMIT;
       const sinceDate = parseIsoTimestamp(since)!;
 
       const tips = await listSettledForNotification(sinceDate, limit);
@@ -169,15 +195,19 @@ export async function whatsappRoutes(
       request: FastifyRequest<{ Querystring: SubscribersQuery }>,
       reply: FastifyReply
     ) => {
-      const { since, limit = 100 } = request.query;
+      const { since } = request.query;
+      const limitStr = request.query.limit;
 
-      if (limit !== undefined) {
-        if (typeof limit !== 'number' || !Number.isInteger(limit)) {
-          return reply.status(400).send({ error: 'limit must be an integer' });
+      let limit = DEFAULT_LIMIT;
+      if (limitStr) {
+        const parsed = parseInt(limitStr, 10);
+        if (isNaN(parsed) || parsed < 1) {
+          return reply.status(400).send({ error: 'limit must be a positive integer' });
         }
-        if (limit < 1 || limit > 500) {
-          return reply.status(400).send({ error: 'limit must be between 1 and 500' });
+        if (parsed > MAX_LIMIT) {
+          return reply.status(400).send({ error: `limit must be at most ${MAX_LIMIT}` });
         }
+        limit = parsed;
       }
 
       const sinceDate = since ? parseIsoTimestamp(since) : undefined;
@@ -205,6 +235,13 @@ export async function whatsappRoutes(
       }
 
       const body = request.body;
+
+      // FIX-27: Pre-check subscriber exists (avoids FK violation → 500)
+      const subscriber = await findSubscriberById(body.subscriber_id);
+      if (!subscriber) {
+        return reply.status(404).send({ error: 'subscriber not found' });
+      }
+
       const client = await db.connect();
 
       try {
