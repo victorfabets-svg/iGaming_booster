@@ -24,6 +24,12 @@ const STRICT_MODE = process.env.MIGRATIONS_STRICT === 'true';
 // 42710: duplicate_object (constraints, types), 42701: duplicate_column.
 const ALREADY_EXISTS_CODES = new Set(['42P06', '42P07', '42710', '42701']);
 
+// Schemas expected by migration files (defined in 001_init.sql, 005_payments_layer.sql, etc.)
+const EXPECTED_SCHEMAS = [
+  'identity', 'validation', 'fraud', 'rewards', 'raffles',
+  'events', 'infra', 'audit', 'payments',
+];
+
 interface Migration {
   filename: string;
   executed_at: Date;
@@ -31,6 +37,12 @@ interface Migration {
 
 async function ensureUuidExtension(): Promise<void> {
   await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+}
+
+async function ensureExpectedSchemas(): Promise<void> {
+  for (const schema of EXPECTED_SCHEMAS) {
+    await db.query(`CREATE SCHEMA IF NOT EXISTS "${schema}";`);
+  }
 }
 
 async function ensureMigrationsTable(): Promise<void> {
@@ -71,6 +83,9 @@ async function runMigrations(): Promise<void> {
 
   await ensureUuidExtension();
   console.log('✅ uuid-ossp extension ensured');
+
+  await ensureExpectedSchemas();
+  console.log('✅ Expected schemas ensured');
 
   // Ensure migrations table exists
   await ensureMigrationsTable();
