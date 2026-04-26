@@ -7,7 +7,10 @@
  * Versioned by commit (const in code).
  */
 
+import { getFlag } from '@shared/config/feature-flags';
+
 export const RULES_VERSION = 'rules-v1.0.0';
+export const RULES_VERSION_STRICT = 'rules-v1.0.0-strict';
 
 /**
  * Decision types
@@ -33,47 +36,20 @@ export interface RuleResult {
   rule_version: string;
 }
 
-/**
- * Single rule definition
- */
-interface Rule {
-  id: string;                   // identifier (becomes reason)
-  match: (i: RuleInput) => boolean;
-  decision: Decision;
+interface Thresholds {
+  high: number;     // >= → rejected
+  medium: number;   // >= → manual_review
 }
 
-/**
- * Validation rules — first-match-wins.
- * 
- * Score effective = fraud_score + payment_modifier (same as before, now explicit).
- * payment_modifier comes from aggregator (already computed); rule just consumes.
- */
-const RULES: Rule[] = [
-  // Reject if no valid payment identifier
-  {
-    id: 'no_valid_payment_identifier',
-    match: (i) => !i.has_valid_payment_identifier,
-    decision: 'rejected'
-  },
-  // Reject if score >= 0.7
-  {
-    id: 'fraud_score_high',
-    match: (i) => (i.fraud_score + i.payment_modifier) >= 0.7,
-    decision: 'rejected'
-  },
-  // Manual review if score >= 0.3
-  {
-    id: 'fraud_score_medium',
-    match: (i) => (i.fraud_score + i.payment_modifier) >= 0.3,
-    decision: 'manual_review'
-  },
-  // Approved — catchall
-  {
-    id: 'fraud_score_low',
-    match: () => true,
-    decision: 'approved'
-  },
-];
+const NORMAL_THRESHOLDS: Thresholds = { high: 0.7, medium: 0.3 };
+const STRICT_THRESHOLDS: Thresholds = { high: 0.5, medium: 0.2 };
+
+function getActiveProfile(): { thresholds: Thresholds; version: string } {
+  if (getFlag('STRICT_MODE')) {
+    return { thresholds: STRICT_THRESHOLDS, version: RULES_VERSION_STRICT };
+  }
+  return { thresholds: NORMAL_THRESHOLDS, version: RULES_VERSION };
+}
 
 /**
  * Evaluate rules and return first match.
@@ -84,20 +60,17 @@ const RULES: Rule[] = [
  * Pure function — deterministic for same input.
  */
 export function evaluate(input: RuleInput): RuleResult {
-  for (const rule of RULES) {
-    if (rule.match(input)) {
-      return {
-        decision: rule.decision,
-        reason: rule.id,
-        rule_version: RULES_VERSION,
-      };
-    }
+  const { thresholds, version } = getActiveProfile();
+  const score = input.fraud_score + input.payment_modifier;
+
+  if (!input.has_valid_payment_identifier) {
+    return { decision: 'rejected', reason: 'no_valid_payment_identifier', rule_version: version };
   }
-  
-  // Defense: never reached due to catchall, but type-safe fallback
-  return {
-    decision: 'manual_review',
-    reason: 'no_rule_matched',
-    rule_version: RULES_VERSION,
-  };
+  if (score >= thresholds.high) {
+    return { decision: 'rejected', reason: 'fraud_score_high', rule_version: version };
+  }
+  if (score >= thresholds.medium) {
+    return { decision: 'manual_review', reason: 'fraud_score_medium', rule_version: version };
+  }
+  return { decision: 'approved', reason: 'fraud_score_low', rule_version: version };
 }
