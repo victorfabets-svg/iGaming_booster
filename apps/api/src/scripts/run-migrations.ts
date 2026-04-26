@@ -2,10 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { db, connectWithRetry } from '@shared/database/connection';
 
-// Prefer the migration-owner direct connection for DDL. Falls back to NEON_DB_URL
-// for local/dev where only one secret is configured. The runtime app and worker
-// continue to use NEON_DB_URL (app_user, pooled) for least-privilege operation.
-const migrationUrl = process.env.NEON_DB_MIGRATIONS_DIRECT || process.env.NEON_DB_URL;
+// Prefer NEON_DB_URL_DIRECT (neondb_owner, direct/non-pooled) for DDL. Falls
+// back to NEON_DB_URL when only one secret is configured (local/dev). See
+// secret mapping note in .github/workflows/migrate.yml — secret names in this
+// repo map to ROLE identity, not workload.
+const migrationUrl = process.env.NEON_DB_URL_DIRECT || process.env.NEON_DB_URL;
 if (migrationUrl) {
   process.env.NEON_DB_URL = migrationUrl;
 }
