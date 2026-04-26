@@ -17,6 +17,8 @@ import { devRoutes } from './routes/dev';
 import { adminPartnerHousesRoutes } from './routes/admin-partner-houses';
 import { tipsterRoutes } from './routes/tipster';
 import { adminTipsRoutes } from './routes/admin-tips';
+import { whatsappRoutes } from './routes/whatsapp';
+import { adminWhatsappRoutes } from './routes/admin-whatsapp';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -126,6 +128,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(tipsterRoutes);
   // Admin tips routes (JWT auth)
   app.register(adminTipsRoutes);
+  // WhatsApp platform routes (API key auth)
+  app.register(whatsappRoutes);
+  // Admin WhatsApp routes (JWT auth)
+  app.register(adminWhatsappRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
