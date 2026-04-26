@@ -21,13 +21,16 @@ export interface FunnelTotals {
 
 export interface FunnelRow extends FunnelTotals {
   avg_processing_time_ms: number;
+  total_cost_centavos: number;
+  total_value_centavos: number;
 }
 
 export async function fetchFunnelTotals(window: WindowKey): Promise<FunnelRow> {
   const interval = WINDOW_TO_INTERVAL[window];
   const result = await db.query<FunnelRow>(
     `WITH window_proofs AS (
-       SELECT p.id AS proof_id, p.submitted_at, v.status, v.validated_at
+       SELECT p.id AS proof_id, p.submitted_at, v.status, v.validated_at,
+              v.cost_centavos, v.value_centavos
          FROM validation.proofs p
          LEFT JOIN validation.proof_validations v ON v.proof_id = p.id
         WHERE p.submitted_at >= NOW() - $1::interval
@@ -43,7 +46,9 @@ export async function fetchFunnelTotals(window: WindowKey): Promise<FunnelRow> {
          AVG(EXTRACT(EPOCH FROM (validated_at - submitted_at)) * 1000)
            FILTER (WHERE status IN ('approved','rejected','manual_review') AND validated_at IS NOT NULL),
          0
-       )::int AS avg_processing_time_ms
+       )::int AS avg_processing_time_ms,
+       COALESCE(SUM(cost_centavos), 0)::int AS total_cost_centavos,
+       COALESCE(SUM(value_centavos), 0)::int AS total_value_centavos
        FROM window_proofs`,
     [interval]
   );
