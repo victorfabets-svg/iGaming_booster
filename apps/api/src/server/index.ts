@@ -27,6 +27,7 @@ if (removedKeys.length > 0) {
 import { buildApp } from './app';
 import { config, NEON_DB_URL } from '@shared/config/env';
 import { connectWithRetry, getDb, closePool } from '@shared/database/connection';
+import { startFlagSync } from '@shared/config/flag-sync';
 import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 import { setDbHealth } from './state';
 
@@ -120,6 +121,10 @@ async function start() {
     await connectWithRetry();
     console.log('[DB] ✅ Connection successful');
     setDbHealth(true);
+
+    // Start feature flag sync (Sprint 8 T9)
+    await startFlagSync();
+    console.log('[CONFIG] ✅ Flag sync started');
   } catch (error) {
     console.error('[DB] ❌ DB failed, continuing in degraded mode');
     setDbHealth(false);

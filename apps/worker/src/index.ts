@@ -30,6 +30,7 @@ if (removedKeys.length > 0) {
 // ============================================================
 
 import { connectWithRetry, closePool } from '@shared/database/connection';
+import { startFlagSync } from '@shared/config/flag-sync';
 import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 
 // Import all consumers
@@ -99,6 +100,10 @@ async function start() {
     await connectWithRetry();
     dbConnected = true;
     console.log('✅ Database connected');
+
+    // Start feature flag sync (Sprint 8 T9)
+    await startFlagSync();
+    console.log('[CONFIG] ✅ Flag sync started');
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error('⚠️ DB connection failed - continuing in degraded mode:', errorMessage);
