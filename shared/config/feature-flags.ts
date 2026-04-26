@@ -1,165 +1,55 @@
 /**
- * Feature Flags System
- * Runtime-togglable features for safe deployment control
+ * Runtime feature flags. Read from environment each call — no cache, no
+ * deploy needed to flip. Kept simple on purpose: dev-side toggle, not a
+ * full LaunchDarkly. For production rollouts use the same convention,
+ * just set env at the orchestrator layer.
+ *
+ * Boolean parse: 'true' / '1' / 'on' / 'yes' (case-insensitive) → true.
+ * Anything else (incl. unset / empty) → false.
  */
 
-import { configManager, AppConfig } from './env';
+export type FlagName =
+  | 'FRAUD_V1_ENABLED'
+  | 'STRICT_MODE';
 
-export type FeatureFlag = keyof AppConfig['featureFlags'];
+const TRUE_VALUES = new Set(['true', '1', 'on', 'yes']);
 
-export interface FeatureFlagState {
-  flag: FeatureFlag;
-  enabled: boolean;
-  canToggle: boolean;
+interface FlagSpec {
+  envVar: string;
+  defaultValue: boolean;
 }
 
-// Feature flag definitions with metadata
-// SAFE DEFAULTS: All production features disabled until explicitly enabled
-// NOTE: ENABLE_AUTOMATIC_APPROVAL was removed - it caused non-deterministic behavior
-// Thresholds are now always from config, same behavior in all environments
-const FEATURE_FLAG_DEFINITIONS: Record<FeatureFlag, { 
-  description: string; 
-  defaultValue: boolean;
-  critical: boolean;
-}> = {
-  ENABLE_REWARDS: {
-    description: 'Enable reward generation for approved validations',
-    defaultValue: true,
-    critical: true, // Disabling stops reward generation
-  },
-  ENABLE_VALIDATION: {
-    description: 'Enable automatic validation processing',
-    defaultValue: true,
-    critical: true, // Disabling stops all validation
-  },
+const FLAGS: Record<FlagName, FlagSpec> = {
+  FRAUD_V1_ENABLED: { envVar: 'FRAUD_V1_ENABLED', defaultValue: true },
+  STRICT_MODE:      { envVar: 'STRICT_MODE',      defaultValue: false },
 };
 
-class FeatureFlagsService {
-  private static instance: FeatureFlagsService;
-  private listeners: Set<(flag: FeatureFlag, enabled: boolean) => void> = new Set();
-
-  private constructor() {}
-
-  static getInstance(): FeatureFlagsService {
-    if (!FeatureFlagsService.instance) {
-      FeatureFlagsService.instance = new FeatureFlagsService();
-    }
-    return FeatureFlagsService.instance;
-  }
-
-  isEnabled(flag: FeatureFlag): boolean {
-    return configManager.getFeatureFlag(flag);
-  }
-
-  isDisabled(flag: FeatureFlag): boolean {
-    return !configManager.getFeatureFlag(flag);
-  }
-
-  enable(flag: FeatureFlag): boolean {
-    if (!this.canToggle(flag)) {
-      console.warn(`Cannot enable ${flag}: feature is locked`);
-      return false;
-    }
-
-    configManager.updateFeatureFlag(flag, true);
-    this.notifyListeners(flag, true);
-    console.log(`✅ Feature flag enabled: ${flag}`);
-    return true;
-  }
-
-  disable(flag: FeatureFlag): boolean {
-    if (!this.canToggle(flag)) {
-      console.warn(`Cannot disable ${flag}: feature is locked`);
-      return false;
-    }
-
-    configManager.updateFeatureFlag(flag, false);
-    this.notifyListeners(flag, false);
-    console.log(`❌ Feature flag disabled: ${flag}`);
-    return true;
-  }
-
-  toggle(flag: FeatureFlag): boolean {
-    if (this.isEnabled(flag)) {
-      return this.disable(flag);
-    } else {
-      return this.enable(flag);
-    }
-  }
-
-  getState(flag: FeatureFlag): FeatureFlagState {
-    const def = FEATURE_FLAG_DEFINITIONS[flag];
-    return {
-      flag,
-      enabled: this.isEnabled(flag),
-      canToggle: true, // Could be enhanced with DB-backed locking
-    };
-  }
-
-  getAllStates(): FeatureFlagState[] {
-    return Object.keys(FEATURE_FLAG_DEFINITIONS).map(flag => 
-      this.getState(flag as FeatureFlag)
-    );
-  }
-
-  getDefinition(flag: FeatureFlag) {
-    return FEATURE_FLAG_DEFINITIONS[flag];
-  }
-
-  canToggle(flag: FeatureFlag): boolean {
-    // In production, critical features might require additional checks
-    return true;
-  }
-
-  // Subscribe to flag changes
-  onChange(listener: (flag: FeatureFlag, enabled: boolean) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notifyListeners(flag: FeatureFlag, enabled: boolean): void {
-    this.listeners.forEach(listener => {
-      try {
-        listener(flag, enabled);
-      } catch (err) {
-        console.error('Error in feature flag listener:', err);
-      }
-    });
-  }
-
-  // Check multiple flags at once
-  isEnabledAll(flags: FeatureFlag[]): boolean {
-    return flags.every(flag => this.isEnabled(flag));
-  }
-
-  isEnabledAny(flags: FeatureFlag[]): boolean {
-    return flags.some(flag => this.isEnabled(flag));
-  }
-
-  // Log all feature flags (useful for startup)
-  logAllFlags(): void {
-    console.log('📋 Feature Flags:');
-    for (const [flag, def] of Object.entries(FEATURE_FLAG_DEFINITIONS)) {
-      const state = this.getState(flag as FeatureFlag);
-      console.log(`   ${state.enabled ? '✅' : '❌'} ${flag}: ${def.description}`);
-    }
-  }
+export function getFlag(name: FlagName): boolean {
+  const spec = FLAGS[name];
+  const raw = process.env[spec.envVar];
+  if (raw === undefined || raw === '') return spec.defaultValue;
+  return TRUE_VALUES.has(raw.trim().toLowerCase());
 }
 
-export const featureFlags = FeatureFlagsService.getInstance();
-
-// Convenience functions
-// NOTE: isAutomaticApprovalEnabled removed - thresholds are now always from config
-export const isRewardsEnabled = () => featureFlags.isEnabled('ENABLE_REWARDS');
-export const isValidationEnabled = () => featureFlags.isEnabled('ENABLE_VALIDATION');
-
-// Guard functions that throw if disabled
-export function requireRewards(): void {
-  if (isRewardsEnabled()) return;
-  throw new Error('Rewards are currently disabled');
+// Legacy stubs — kept for consumers of the old featureFlags class API.
+// Rewards and validation use-cases (out of T6 scope) import these directly.
+export function isRewardsEnabled(): boolean {
+  return getFlag('FRAUD_V1_ENABLED'); // legacy: re-use fraud flag as rewards proxy
 }
 
-export function requireValidation(): void {
-  if (isValidationEnabled()) return;
-  throw new Error('Validation is currently disabled');
+export function isValidationEnabled(): boolean {
+  return getFlag('FRAUD_V1_ENABLED'); // legacy: re-use fraud flag as validation proxy
 }
+
+// Stub for old featureFlags.logAllFlags() consumer in index.ts
+// (no-op — hot-toggle means flags can change at runtime)
+export const featureFlags = {
+  logAllFlags: () => {
+    console.log('📋 Feature Flags (runtime):');
+    console.log(`   ${getFlag('FRAUD_V1_ENABLED') ? '✅' : '❌'} FRAUD_V1_ENABLED: ${getFlag('FRAUD_V1_ENABLED')}`);
+    console.log(`   ${getFlag('STRICT_MODE') ? '✅' : '❌'} STRICT_MODE: ${getFlag('STRICT_MODE')}`);
+    // legacy stubs for out-of-scope consumers
+    console.log(`   ${isRewardsEnabled() ? '✅' : '❌'} ENABLE_REWARDS: ${isRewardsEnabled()}`);
+    console.log(`   ${isValidationEnabled() ? '✅' : '❌'} ENABLE_VALIDATION: ${isValidationEnabled()}`);
+  }
+};

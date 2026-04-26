@@ -15,6 +15,7 @@
  */
 
 import { fetchBehavioralSignals, BehavioralSignals } from '../repositories/fraud-signals.repository';
+import { getFlag } from '@shared/config/feature-flags';
 
 export const RULE_VERSION = 'fraud-v1.0.0';
 
@@ -144,6 +145,27 @@ function extractContentSignals(input: FraudScoreInput): ContentSignals {
  * @returns FraudScoreResult with score in [0, 1] and signals breakdown
  */
 export async function calculateFraudScore(input: FraudScoreInput): Promise<FraudScoreResult> {
+  if (!getFlag('FRAUD_V1_ENABLED')) {
+    return {
+      fraud_score: 0,
+      rule_version: 'fraud-disabled',
+      signals: {
+        behavioral: {
+          duplicate_hash_other_users: 0,
+          user_velocity_1h: 0,
+          user_velocity_24h: 0,
+        },
+        content: {
+          ocr_heuristic_valid: true,
+          ocr_amount_anomaly: 'normal',
+          ocr_date_anomaly: 'normal',
+          institution_known: true,
+        },
+        weights_applied: [],
+      },
+    };
+  }
+
   // Fetch behavioral signals from DB
   const behavioral = await fetchBehavioralSignals(input.proof_id);
 
