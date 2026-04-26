@@ -8,6 +8,7 @@
     "build": "tsc && tsc-alias",
     "start": "node dist/apps/api/src/server/index.js",
     "migrate": "ts-node -r tsconfig-paths/register src/scripts/run-migrations.ts",
+    "replay:proof-validated": "ts-node -r tsconfig-paths/register src/scripts/replay-proof-validated.ts",
     "mint-dev-token": "ts-node -r tsconfig-paths/register scripts/mint-dev-token.ts",
     "seed:qa": "ts-node -r tsconfig-paths/register scripts/seed-qa.ts"
   },
