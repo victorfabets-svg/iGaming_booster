@@ -13,11 +13,10 @@ if (migrationUrl) {
 
 const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
 
-// RECONCILE mode: when a migration's SQL fails because objects already exist,
-// treat it as already-applied (mark in tracking table, continue). Used to
-// recover from drift where DDL was applied outside this runner. Other errors
-// still abort. Toggled by MIGRATIONS_RECONCILE=true (set by workflow input).
-const RECONCILE_MODE = process.env.MIGRATIONS_RECONCILE === 'true';
+// STRICT mode: abort on any divergence. When false (default), errors with
+// SQLSTATE in {42P06, 42P07, 42710, 42701} are treated as already-applied
+// (drift recovery). Toggled by MIGRATIONS_STRICT=true (set by workflow input).
+const STRICT_MODE = process.env.MIGRATIONS_STRICT === 'true';
 
 // Postgres SQLSTATE codes meaning "this object already exists".
 // 42P06: duplicate_schema, 42P07: duplicate_table/index/relation,
@@ -80,8 +79,8 @@ async function runMigrations(): Promise<void> {
     .sort();
 
   console.log(`📄 Found ${files.length} migration files`);
-  if (RECONCILE_MODE) {
-    console.log('⚙️  RECONCILE mode ON — already-exists errors will mark migrations as applied');
+  if (STRICT_MODE) {
+    console.log('⚙️  STRICT mode ON — any divergence will abort');
   }
 
   if (files.length === 0) {
@@ -113,8 +112,8 @@ async function runMigrations(): Promise<void> {
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
       const code = (error as { code?: string })?.code;
-      if (RECONCILE_MODE && code && ALREADY_EXISTS_CODES.has(code)) {
-        console.log(`♻️  RECONCILE: ${file} reports objects already exist (SQLSTATE ${code}). Marking as applied.`);
+      if (!STRICT_MODE && code && ALREADY_EXISTS_CODES.has(code)) {
+        console.log(`♻️ AUTO-RECONCILE: ${file} (SQLSTATE ${code}) — marking applied`);
         reconciled = true;
       } else {
         client.release();
@@ -155,9 +154,8 @@ async function runMigrations(): Promise<void> {
   console.log('===================================================');
   console.log('📈 Migration Summary:');
   console.log(`   Executed: ${executedCount}`);
-  if (RECONCILE_MODE) {
-    console.log(`   Reconciled (already applied externally): ${reconciledCount}`);
-  }
+  console.log(`   Auto-reconciled: ${reconciledCount}`);
+  console.log(`   Strict mode: ${STRICT_MODE ? 'on' : 'off'}`);
   console.log('===================================================');
   console.log('✨ Migration runner finished');
   console.log('===================================================');
