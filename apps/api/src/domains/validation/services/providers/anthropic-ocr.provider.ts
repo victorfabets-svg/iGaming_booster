@@ -120,6 +120,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       if (!toolUse || toolUse.type !== 'tool_use') {
         return await this.recordOcrCall({
+          proof_id: input.proof_id,
           startTime,
           inputTokens,
           outputTokens,
@@ -162,6 +163,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       // Record successful OCR call
       await this.recordOcrCall({
+        proof_id: input.proof_id,
         startTime,
         inputTokens,
         outputTokens,
@@ -198,6 +200,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       // Record failed OCR call
       await this.recordOcrCall({
+        proof_id: input.proof_id,
         startTime,
         inputTokens,
         outputTokens,
@@ -243,6 +246,7 @@ export class AnthropicOcrProvider implements OcrProvider {
   }
 
   private async recordOcrCall(params: {
+    proof_id?: string;
     startTime: number;
     inputTokens: number;
     outputTokens: number;
@@ -260,7 +264,7 @@ export class AnthropicOcrProvider implements OcrProvider {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           randomUUID(),
-          null, // proof_id not passed through
+          params.proof_id || null,
           params.fileHash,
           this.name,
           this.model,
