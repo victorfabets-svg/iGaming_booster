@@ -2,13 +2,14 @@
  * Validation Aggregator Consumer
  * Listens for fraud_scored + payment_identifier_extracted events
  * Correlates by proof_id using processed_events table
- * Makes validation decision and emits proof_validated or proof_rejected
- * 
+ * Makes validation decision and emits a single proof_validated event whose
+ * payload carries status (approved | rejected | manual_review).
+ *
  * EVENT FLOW:
  * proof_submitted → validation starts
  *   → fraud_check_requested → fraud_scored
  *   → payment_identifier_requested → payment_identifier_extracted
- * [this consumer] → correlation + decision → proof_validated / proof_rejected
+ * [this consumer] → correlation + decision → proof_validated
  */
 
 import { fetchAndLockEvents, isEventProcessed } from '@shared/events/event-consumer.repository';

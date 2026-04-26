@@ -113,16 +113,19 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload,
     if (validation) {
       await updateValidationStatusWithClient(client, validation.id, 'manual_review');
     }
-    
+
+    // Spec contract: terminal decisions emit proof_validated with status in payload.
+    // Failsafe routes to manual_review so an operator inspects the failure.
     await insertEventInTransaction(
       client,
-      'proof_rejected',
+      'proof_validated',
       {
         proof_id: payload.proof_id,
         user_id: proof?.user_id || payload.user_id,
         file_url: proof?.file_url || '',
         submitted_at: payload.submitted_at,
         validation_id: validation?.id,
+        status: 'manual_review',
         reason: 'validation_error',
         error: error instanceof Error ? error.message : 'Unknown error',
       },
