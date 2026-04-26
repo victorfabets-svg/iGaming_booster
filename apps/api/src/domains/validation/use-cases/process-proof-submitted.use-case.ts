@@ -2,6 +2,7 @@ import { createProofValidationWithClient, findValidationByProofId, updateValidat
 import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
+import { getFlag } from '@shared/config/feature-flags';
 
 export interface ProofSubmittedEventPayload {
   proof_id: string;
@@ -75,6 +76,8 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload,
 
     // EVENT CHAIN: proof_submitted → fraud_check_requested + payment_identifier_requested
     // Sprint 5.2 pipeline contract — both events fan out from validation_started.
+    // T3 short-circuit: when flag is ON, aggregator emits payment_identifier_requested
+    // conditionally after fraud score arrives. Skip it here to avoid parallel execution.
     await insertEventInTransaction(
       client,
       'fraud_check_requested',
@@ -86,18 +89,22 @@ export async function processProofSubmitted(payload: ProofSubmittedEventPayload,
       'validation'
     );
 
-
-    await insertEventInTransaction(
-      client,
-      'payment_identifier_requested',
-      {
-        proof_id: payload.proof_id,
-        user_id: payload.user_id,
-        validation_id: validation.id,
-        file_url: payload.file_url,
-      },
-      'validation'
-    );
+    if (!getFlag('T3_SHORT_CIRCUIT_ENABLED')) {
+      // Legacy parallel path: emit payment request alongside fraud.
+      // When T3 is on, the aggregator emits this conditionally after
+      // fraud score arrives.
+      await insertEventInTransaction(
+        client,
+        'payment_identifier_requested',
+        {
+          proof_id: payload.proof_id,
+          user_id: payload.user_id,
+          validation_id: validation.id,
+          file_url: payload.file_url,
+        },
+        'validation'
+      );
+    }
 
     logger.info({
       event: 'validation_pipeline_completed',

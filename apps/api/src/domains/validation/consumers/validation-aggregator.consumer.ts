@@ -21,6 +21,7 @@ import { recordValidationResult } from '@shared/observability/metrics.service';
 import { db, type PoolClient } from '@shared/database/connection';
 import { evaluate } from '../services/validation-rules.service';
 import { calculateEconomics } from '../services/economics.service';
+import { getFlag } from '@shared/config/feature-flags';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
@@ -29,6 +30,13 @@ const BATCH_SIZE = 20;
 
 const FRAUD_SCORED_CONSUMER = 'validation_fraud_scored_consumer';
 const PAYMENT_EXTRACTED_CONSUMER = 'validation_payment_extracted_consumer';
+
+// Sprint 8 T3: threshold for short-circuit on high fraud score.
+// When fraud_score >= threshold, rejection is guaranteed regardless of payment_modifier.
+// Threshold 0.85 ensures: score_total = 0.85 + 0.135 (max payment_modifier) = 0.985 > 0.7 (reject threshold)
+const SHORT_CIRCUIT_HIGH_THRESHOLD = parseFloat(
+  process.env.T3_SHORT_CIRCUIT_HIGH_THRESHOLD || '0.85'
+);
 
 interface FraudScoredPayload {
   proof_id: string;
@@ -120,6 +128,45 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [eventId, FRAUD_SCORED_CONSUMER]
     );
+
+    // T3 short-circuit: when flag is ON and fraud_score is high enough
+    // to guarantee rejection regardless of payment, emit decision now
+    // and skip the payment extraction path entirely.
+    if (
+      getFlag('T3_SHORT_CIRCUIT_ENABLED') &&
+      payload.score >= SHORT_CIRCUIT_HIGH_THRESHOLD
+    ) {
+      // Emit short-circuit rejection and mark event processed
+      await emitShortCircuitRejection(client, proofId, payload);
+      await client.query(
+        `UPDATE events.events SET processed = TRUE WHERE id = $1`,
+        [eventId]
+      );
+      await client.query('COMMIT');
+      logger.info({ event: 'event_processed_short_circuit', context: 'validation', data: { event_id: eventId, proof_id: proofId } });
+      return;
+    }
+
+    // T3 ambiguous path: when flag is ON and score doesn't trigger
+    // short-circuit, emit payment_identifier_requested NOW (was
+    // previously emitted by proof-submitted in the parallel path).
+    if (getFlag('T3_SHORT_CIRCUIT_ENABLED')) {
+      const proof = await findProofById(proofId);
+      await insertEventInTransaction(
+        client,
+        'payment_identifier_requested',
+        {
+          proof_id: proofId,
+          user_id: proof?.user_id || payload.user_id,
+          validation_id: (await client.query<{ id: string }>(
+            `SELECT id FROM validation.proof_validations WHERE proof_id = $1`,
+            [proofId]
+          )).rows[0]?.id || '',
+          file_url: proof?.file_url || '',
+        },
+        'validation'
+      );
+    }
 
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, payload);
@@ -363,6 +410,87 @@ async function tryMakeDecision(
     event: 'final_decision_emitted',
     context: 'validation',
     data: { proof_id: proofId, decision }
+  });
+}
+
+/**
+ * Sprint 8 T3: Emit short-circuit rejection when fraud_score is high enough to guarantee rejection.
+ * This skips the payment extraction step entirely, saving cost and processing time.
+ */
+async function emitShortCircuitRejection(
+  client: PoolClient,
+  proofId: string,
+  fraudPayload: FraudScoredPayload
+): Promise<void> {
+  // Idempotency guard: SELECT FOR UPDATE serializes concurrent paths
+  const validationLockResult = await client.query<{ id: string; status: string }>(
+    `SELECT id, status FROM validation.proof_validations
+     WHERE proof_id = $1 FOR UPDATE`,
+    [proofId]
+  );
+
+  const validation = validationLockResult.rows[0];
+  if (!validation) {
+    logger.error('validation_not_found', 'validation', `Validation not found for proof: ${proofId}`);
+    return;
+  }
+  if (TERMINAL_VALIDATION_STATUSES.has(validation.status)) {
+    // Race-safe: another path already decided
+    return;
+  }
+
+  const decision: 'rejected' = 'rejected';
+  const reason = 'fraud_score_high_short_circuit';
+  const finalScore = fraudPayload.score; // No payment modifier; pure fraud-only rejection
+  const economics = calculateEconomics(decision);
+  const proof = await findProofById(proofId);
+
+  // Domain write: Update validation status with rule version, reason, and economics
+  await updateValidationStatusWithClient(
+    client,
+    validation.id,
+    decision,
+    finalScore,
+    'rules-v1.0.0-short-circuit', // distinct rule_version for auditing
+    reason,
+    economics.cost_centavos,
+    economics.value_centavos,
+    economics.economics_version,
+  );
+
+  // Single canonical event: proof_validated carries terminal status in payload
+  await insertEventInTransaction(client, 'proof_validated', {
+    proof_id: proofId,
+    user_id: proof?.user_id || fraudPayload.user_id,
+    file_url: proof?.file_url || '',
+    submitted_at: proof?.submitted_at || '',
+    validation_id: validation.id,
+    status: decision,
+    confidence_score: finalScore,
+    fraud_score: fraudPayload.score,
+    payment_modifier: 0,
+    rule_version: 'rules-v1.0.0-short-circuit',
+    reason,
+    short_circuit: true,
+  }, 'validation');
+
+  // Audit: Insert audit log
+  await insertAuditInTransaction(client, 'validation_completed', 'validation',
+    validation.id,
+    proof?.user_id || fraudPayload.user_id,
+    { decision, confidence_score: finalScore, proof_id: proofId, short_circuit: true }
+  );
+
+  recordValidationResult(decision);
+
+  logger.info({
+    event: 'short_circuit_rejection_emitted',
+    context: 'validation',
+    data: {
+      proof_id: proofId,
+      fraud_score: fraudPayload.score,
+      threshold: SHORT_CIRCUIT_HIGH_THRESHOLD
+    }
   });
 }
 
