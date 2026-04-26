@@ -9,17 +9,34 @@ jobs:
   canary-db-check:
     runs-on: ubuntu-latest
 
+    env:
+      CANARY_URL: ${{ secrets.CANARY_URL }}
+      CANARY_TOKEN: ${{ secrets.CANARY_TOKEN }}
+      ALLOWED_NEON_HOSTS: ${{ secrets.ALLOWED_NEON_HOSTS }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check canary is configured
+        id: config
+        run: |
+          if [ -z "$CANARY_URL" ] || [ -z "$CANARY_TOKEN" ] || [ -z "$ALLOWED_NEON_HOSTS" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Canary not configured::Set CANARY_URL, CANARY_TOKEN, and ALLOWED_NEON_HOSTS secrets to enable canary validation. Skipping for now."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Ensure jq installed
+        if: steps.config.outputs.configured == 'true'
         run: |
           if ! command -v jq &> /dev/null; then
             sudo apt-get update && sudo apt-get install -y jq
           fi
 
       - name: Hit canary health endpoint (with retries)
+        if: steps.config.outputs.configured == 'true'
         run: |
           set -e
 
@@ -51,6 +68,7 @@ jobs:
           fi
 
       - name: Validate health status
+        if: steps.config.outputs.configured == 'true'
         run: |
           RESPONSE=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
           
@@ -70,6 +88,7 @@ jobs:
           echo "✅ Health status: $STATUS"
 
       - name: Validate DB host against allowlist
+        if: steps.config.outputs.configured == 'true'
         run: |
           BODY=$(cat canary_response.txt | sed -n '/^\r*$/,$p' | sed '1d')
           
@@ -107,8 +126,7 @@ jobs:
           echo "✅ Canary DB host validated: $HOST"
 
       - name: Verify signed response (anti-replay + integrity)
-        env:
-          CANARY_TOKEN: ${{ secrets.CANARY_TOKEN }}
+        if: steps.config.outputs.configured == 'true'
         run: |
           if [ -z "$CANARY_TOKEN" ]; then
             echo "skip: CANARY_TOKEN not configured"
