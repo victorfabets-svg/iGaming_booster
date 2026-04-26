@@ -8,6 +8,7 @@ import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { metricsRoutes } from './routes/metrics';
 import { metricsFunnelRoutes } from './routes/metrics-funnel';
+import { alertsRoutes } from './routes/alerts';
 import healthRoutes from './routes/health';
 import { devRoutes } from './routes/dev';
 import { cleanupIdempotency } from './utils/idempotency';
@@ -104,6 +105,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(proofRoutes);
   app.register(metricsRoutes);
   app.register(metricsFunnelRoutes);
+  app.register(alertsRoutes);
   app.register(healthRoutes);
   // Dev routes only registered in development mode (guards inside)
   app.register(devRoutes);
