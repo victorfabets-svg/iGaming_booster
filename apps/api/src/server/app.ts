@@ -15,6 +15,8 @@ import { alertsRoutes } from './routes/alerts';
 import healthRoutes from './routes/health';
 import { devRoutes } from './routes/dev';
 import { adminPartnerHousesRoutes } from './routes/admin-partner-houses';
+import { tipsterRoutes } from './routes/tipster';
+import { adminTipsRoutes } from './routes/admin-tips';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -120,6 +122,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(devRoutes);
   // Admin routes for partner houses management
   app.register(adminPartnerHousesRoutes);
+  // Tipster ingestion routes (webhook)
+  app.register(tipsterRoutes);
+  // Admin tips routes (JWT auth)
+  app.register(adminTipsRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
