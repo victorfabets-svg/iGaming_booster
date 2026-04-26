@@ -18,10 +18,11 @@
 import { randomUUID } from 'crypto';
 import { db, connectWithRetry, type PoolClient } from '@shared/database/connection';
 
-// Replay performs cross-schema writes (events.events INSERT + UPDATE). Prefer the
-// migration-owner direct connection. Falls back to NEON_DB_URL when only one
-// secret is configured (local/dev).
-const replayUrl = process.env.NEON_DB_MIGRATIONS_DIRECT || process.env.NEON_DB_URL;
+// Replay performs cross-schema writes (events.events INSERT + UPDATE). Prefer
+// NEON_DB_URL_DIRECT (neondb_owner, direct/non-pooled). Falls back to
+// NEON_DB_URL when only one secret is configured (local/dev). See secret
+// mapping note in .github/workflows/migrate.yml.
+const replayUrl = process.env.NEON_DB_URL_DIRECT || process.env.NEON_DB_URL;
 if (replayUrl) {
   process.env.NEON_DB_URL = replayUrl;
 }

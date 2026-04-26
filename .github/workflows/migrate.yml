@@ -11,6 +11,13 @@ on:
         required: false
         default: 'main'
 
+# Secret mapping note (intentional, see PR #50):
+#   NEON_DB_URL_DIRECT      -> neondb_owner, direct endpoint  (used here)
+#   NEON_DB_URL             -> neondb_owner, pooled
+#   NEON_DB_MIGRATIONS      -> app_user,    pooled            (reserved for future runtime)
+#   NEON_DB_MIGRATIONS_DIRECT -> app_user,  direct            (reserved for future runtime)
+# The secret names map to ROLE identity, not workload, in this repo.
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -36,20 +43,20 @@ jobs:
 
       - name: Validate migration secret is set
         env:
-          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
+          NEON_DB_URL_DIRECT: ${{ secrets.NEON_DB_URL_DIRECT }}
         run: |
-          test -n "$NEON_DB_MIGRATIONS_DIRECT" \
-            || (echo "NEON_DB_MIGRATIONS_DIRECT secret is not set" && exit 1)
+          test -n "$NEON_DB_URL_DIRECT" \
+            || (echo "NEON_DB_URL_DIRECT secret is not set" && exit 1)
 
       - name: Verify role has CREATE on database
         env:
-          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
+          NEON_DB_URL_DIRECT: ${{ secrets.NEON_DB_URL_DIRECT }}
         run: |
           set -euo pipefail
           node -e "
             const { Client } = require('pg');
             (async () => {
-              const c = new Client({ connectionString: process.env.NEON_DB_MIGRATIONS_DIRECT });
+              const c = new Client({ connectionString: process.env.NEON_DB_URL_DIRECT });
               await c.connect();
               const r = await c.query(\`
                 SELECT current_user AS role,
@@ -63,9 +70,10 @@ jobs:
               await c.end();
               if (!can_create) {
                 console.error('FAIL: role \"' + role + '\" lacks CREATE on database \"' + db + '\".');
-                console.error('Likely cause: NEON_DB_MIGRATIONS_DIRECT was set to the app_user');
-                console.error('connection string. Replace with the neondb_owner string from');
-                console.error('Neon Console -> Connect -> Role: neondb_owner.');
+                console.error('Likely cause: NEON_DB_URL_DIRECT was set to a non-owner role.');
+                console.error('Replace the secret value with the neondb_owner direct connection');
+                console.error('string from Neon Console -> Connect -> Role: neondb_owner ->');
+                console.error('Connection type: Direct.');
                 process.exit(1);
               }
             })().catch(e => { console.error('preflight error:', e.message); process.exit(1); });
@@ -76,7 +84,7 @@ jobs:
           # Owner role on the direct (non-pooled) endpoint — required for DDL
           # because the pooler in transaction mode does not support all session
           # features migrations rely on.
-          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
+          NEON_DB_URL_DIRECT: ${{ secrets.NEON_DB_URL_DIRECT }}
         run: |
           cd apps/api
           npm run migrate
