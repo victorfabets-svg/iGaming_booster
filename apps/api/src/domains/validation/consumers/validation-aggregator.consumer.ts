@@ -12,7 +12,7 @@
  */
 
 import { fetchAndLockEvents, isEventProcessed } from '@shared/events/event-consumer.repository';
-import { findValidationByProofId, updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
+import { updateValidationStatusWithClient } from '../repositories/proof-validation.repository';
 import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger, alertMonitor } from '@shared/observability/logger';
@@ -190,12 +190,39 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
   }
 }
 
+const TERMINAL_VALIDATION_STATUSES = new Set(['approved', 'rejected', 'manual_review']);
+
 async function tryMakeDecision(
   proofId: string,
   client: PoolClient,
   fraudPayload?: FraudScoredPayload,
   paymentPayload?: PaymentExtractedPayload
 ): Promise<void> {
+
+  // Idempotency guard: SELECT FOR UPDATE serializes concurrent fraud/payment paths.
+  // The second tx blocks until the first commits, then reads terminal status and exits.
+  // Without this lock, both events can race past `status='processing'` and double-emit.
+  const validationLockResult = await client.query<{ id: string; status: string }>(
+    `SELECT id, status FROM validation.proof_validations
+     WHERE proof_id = $1
+     FOR UPDATE`,
+    [proofId]
+  );
+
+  const validation = validationLockResult.rows[0];
+  if (!validation) {
+    logger.error('validation_not_found', 'validation', `Validation not found for proof: ${proofId}`);
+    return;
+  }
+
+  if (TERMINAL_VALIDATION_STATUSES.has(validation.status)) {
+    logger.info({
+      event: 'decision_already_emitted',
+      context: 'validation',
+      data: { proof_id: proofId, validation_id: validation.id, status: validation.status }
+    });
+    return;
+  }
 
   // Get fraud data if not provided (lookup in events.events by type + proof_id)
   let fraud = fraudPayload;
@@ -285,20 +312,13 @@ async function tryMakeDecision(
 
   recordValidationResult(decision);
 
-  // Get validation record
-  const validation = await findValidationByProofId(proofId);
-  if (!validation) {
-    logger.error('validation_not_found', 'validation', `Validation not found for proof: ${proofId}`);
-    return;
-  }
-
   const proof = await findProofById(proofId);
-  
+
   // Domain write: Update validation status with rule version, reason, and economics
   await updateValidationStatusWithClient(
-    client, 
-    validation.id, 
-    decision, 
+    client,
+    validation.id,
+    decision,
     finalScore,
     ruleVersion,
     decisionReason,
@@ -307,44 +327,26 @@ async function tryMakeDecision(
     economics.economics_version,
   );
 
-  // Event: Emit final decision with rule_version and reason
-  if (decision === 'approved') {
-    await insertEventInTransaction(
-      client,
-      'proof_validated',
-      {
-        proof_id: proofId,
-        user_id: proof?.user_id || fraud.user_id,
-        file_url: proof?.file_url || '',
-        submitted_at: proof?.submitted_at || '',
-        validation_id: validation.id,
-        status: decision,
-        confidence_score: finalScore,
-        fraud_score: fraud.score,
-        payment_modifier: paymentModifier,
-        rule_version: ruleVersion,
-        reason: decisionReason,
-      },
-      'validation'
-    );
-  } else {
-    await insertEventInTransaction(
-      client,
-      'proof_rejected',
-      {
-        proof_id: proofId,
-        user_id: proof?.user_id || fraud.user_id,
-        file_url: proof?.file_url || '',
-        submitted_at: proof?.submitted_at || '',
-        validation_id: validation.id,
-        status: decision,
-        confidence_score: finalScore,
-        rule_version: ruleVersion,
-        reason: decisionReason,
-      },
-      'validation'
-    );
-  }
+  // Single canonical event: proof_validated carries terminal status in payload.
+  // Downstream consumers filter by payload.status (e.g. rewards only acts on 'approved').
+  await insertEventInTransaction(
+    client,
+    'proof_validated',
+    {
+      proof_id: proofId,
+      user_id: proof?.user_id || fraud.user_id,
+      file_url: proof?.file_url || '',
+      submitted_at: proof?.submitted_at || '',
+      validation_id: validation.id,
+      status: decision,
+      confidence_score: finalScore,
+      fraud_score: fraud.score,
+      payment_modifier: paymentModifier,
+      rule_version: ruleVersion,
+      reason: decisionReason,
+    },
+    'validation'
+  );
 
   // Audit: Insert audit log
   await insertAuditInTransaction(
