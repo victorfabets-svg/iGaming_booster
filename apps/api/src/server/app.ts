@@ -1,12 +1,14 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
+import fastifyCookie from '@fastify/cookie';
 import crypto from 'crypto';
 import { getDb, db as dbConn } from '@shared/database/connection';
 import { getDbHealth } from './state';
 import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
 import { authRoutes } from './routes/auth';
+import { affiliateRoutes } from './routes/affiliate';
 import { metricsRoutes } from './routes/metrics';
 import { metricsFunnelRoutes } from './routes/metrics-funnel';
 import { alertsRoutes } from './routes/alerts';
@@ -92,6 +94,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     secret: jwtSecret,
   });
 
+  // Register cookie plugin for affiliate tracking
+  app.register(fastifyCookie);
+
   // Register multipart plugin for file uploads
   app.register(fastifyMultipart, {
     limits: {
@@ -105,6 +110,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Register routes
   app.register(proofRoutes);
   app.register(authRoutes);
+  app.register(affiliateRoutes);
   app.register(metricsRoutes);
   app.register(metricsFunnelRoutes);
   app.register(alertsRoutes);
