@@ -24,7 +24,7 @@ import { calculateEconomics } from '../services/economics.service';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 20;
 
 const FRAUD_SCORED_CONSUMER = 'validation_fraud_scored_consumer';

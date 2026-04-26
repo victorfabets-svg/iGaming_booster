@@ -17,7 +17,7 @@ import { normalizeIdentifier } from '../services/identifier-normalizer.service';
 import { insertPaymentIdentifierWithClient, countOtherProofsByNormalizedValue } from '../repositories/payment-identifier.repository';
 
 const EVENT_TYPE = 'payment_identifier_requested';
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 10;
 
 export const CONSUMER_NAME = 'payment_identifier_requested_consumer';

@@ -14,7 +14,7 @@ import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'raffle_draw_executed';
 const EVENT_VERSION = 'v1';
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 10;
 
 export const CONSUMER_NAME = 'raffle_draw_executed_consumer';
