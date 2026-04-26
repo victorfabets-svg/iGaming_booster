@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '@shared/database/connection';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
@@ -23,19 +23,26 @@ function hashRefreshToken(token: string): string {
 }
 
 /**
- * Generate a random refresh token (32 bytes, base64url encoded)
+ * Generate a random refresh token (32 bytes, base64url encoded) - per spec D2
  */
 function generateRefreshToken(): string {
-  return createHash('sha256').update(randomUUID() + Date.now().toString()).digest('base64url');
+  return randomBytes(32).toString('base64url');
 }
 
 function isValidEmail(email: unknown): email is string {
   return typeof email === 'string' && EMAIL_REGEX.test(email);
 }
 
-// Dummy hash for constant-time comparison when user doesn't exist
-// This ensures we don't leak whether an email exists via timing
-const DUMMY_HASH = '$argon2i$v=19$m=65536,t=3,p=4$000000000000000000000000000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000';
+// Valid argon2id dummy hash for constant-time comparison when user doesn't exist
+// Generated with: argon2.hash('constant-time-dummy', {type:argon2.argon2id,memoryCost:65536,timeCost:3,parallelism:4})
+const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$axjd+k8652X5zG7/ZZAK1w$YSkkQFQKv3yBYtj//ZVoq/r1rOwKAx/WNURTeWhiYRk';
+
+/**
+ * Truncated user ID hash for audit forensics (without exposing real user_id)
+ */
+function getUserIdHint(userId: string): string {
+  return createHash('sha256').update(userId).digest('hex').slice(0, 12);
+}
 
 /**
  * Auth routes - login, register, token refresh, logout
@@ -87,7 +94,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       const { email, password } = request.body;
 
-      if (!isValidEmail(email)) {
+      // Email normalization (case-insensitive)
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!isValidEmail(normalizedEmail)) {
         return fail(reply, 'Valid email required', 'VALIDATION_ERROR');
       }
 
@@ -109,18 +119,18 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         await db.query(
           `INSERT INTO identity.users (id, email, password_hash, password_updated_at, created_at) 
            VALUES ($1, $2, $3, NOW(), NOW())`,
-          [userId, email, passwordHash]
+          [userId, normalizedEmail, passwordHash]
         );
 
         // Audit log for successful registration and password set
-        await auditLog(userId, 'user_registered', { email }, requestId);
+        await auditLog(userId, 'user_registered', { email: normalizedEmail }, requestId);
         await auditLog(userId, 'password_set', { method: 'register' }, requestId);
 
         if (idemKey) {
-          await completeIdempotency(idemKey, { user_id: userId, email });
+          await completeIdempotency(idemKey, { user_id: userId, email: normalizedEmail });
         }
 
-        return ok(reply, { user_id: userId, email });
+        return ok(reply, { user_id: userId, email: normalizedEmail });
       } catch (err: any) {
         if (err.code === '23505') {
           return fail(reply, 'Email already registered', 'DUPLICATE_EMAIL');
@@ -151,10 +161,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       const { email, password } = request.body;
       const requestId = (request as any).requestId;
 
+      // Email normalization (case-insensitive)
+      const normalizedEmail = email.trim().toLowerCase();
+
       // Look up user by email
       const userResult = await db.query<{ id: string; password_hash: string | null }>(
         `SELECT id, password_hash FROM identity.users WHERE email = $1`,
-        [email]
+        [normalizedEmail]
       );
 
       const user = userResult.rows[0];
@@ -162,39 +175,50 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       // Constant-time verification regardless of whether user exists
       // This prevents timing attacks from revealing if email exists
       let isValid = false;
-      if (user) {
-        if (!user.password_hash) {
-          // User exists but has no password (legacy account)
-          // Still do dummy verify to maintain constant time
-          await argon2.verify(DUMMY_HASH, password);
+      try {
+        if (user) {
+          if (!user.password_hash) {
+            // User exists but has no password (legacy account)
+            // Still do dummy verify to maintain constant time
+            await argon2.verify(DUMMY_HASH, password);
+          } else {
+            isValid = await argon2.verify(user.password_hash, password);
+          }
         } else {
-          isValid = await argon2.verify(user.password_hash, password);
+          // User doesn't exist - verify against dummy hash (constant time)
+          await argon2.verify(DUMMY_HASH, password);
         }
-      } else {
-        // User doesn't exist - verify against dummy hash (constant time)
-        await argon2.verify(DUMMY_HASH, password);
+      } catch (err) {
+        // Corrupted hash or argon2 internal error - treat as invalid
+        if (user) {
+          await auditLog(null, 'auth_hash_verify_error', {
+            target_user_hint: getUserIdHint(user.id),
+            error: (err as Error).message
+          }, requestId);
+        }
+        isValid = false;
       }
 
       if (!user) {
-        // Audit failed login (don't expose that email doesn't exist)
-        await auditLog(null, 'user_login_failed', { ip: clientIp }, requestId);
+        // Audit failed login - never expose user_id to prevent email enumeration
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'unknown_email' }, requestId);
         return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
       }
 
       if (!user.password_hash) {
-        // Legacy account without password
-        await auditLog(user.id, 'user_login_failed', { reason: 'no_password_set' }, requestId);
+        // Legacy account without password - audit with hint, not real user_id
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'no_password_set', target_user_hint: getUserIdHint(user.id) }, requestId);
         return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
       }
 
       if (!isValid) {
-        // Invalid password
-        await auditLog(user.id, 'user_login_failed', { ip: clientIp }, requestId);
+        // Invalid password - audit with hint, not real user_id
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'invalid_password', target_user_hint: getUserIdHint(user.id) }, requestId);
         return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
       }
 
-      // Generate access token
-      const accessToken = await reply.jwtSign({ user_id: user.id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      // Generate access token with standard 'sub' claim + user_id for backward compat
+      const accessToken = await reply.jwtSign({ sub: user.id, user_id: user.id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
 
       // Generate refresh token
       const refreshTokenValue = generateRefreshToken();
@@ -266,6 +290,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           [token.family_id]
         );
 
+        // Mark the trigger token as the one that detected the compromise
+        await db.query(
+          `UPDATE identity.refresh_tokens 
+           SET revoked_reason = 'family_compromise_trigger' 
+           WHERE id = $1`,
+          [token.id]
+        );
+
         await auditLog(token.user_id, 'refresh_token_reuse_detected', { severity: 'high' }, requestId);
         return fail(reply, 'Token family revoked', 'FAMILY_REVOKED');
       }
@@ -289,8 +321,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         [token.user_id, token.family_id, newRefreshTokenHash, newExpiresAt]
       );
 
-      // Generate new access token
-      const accessToken = await reply.jwtSign({ user_id: token.user_id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      // Generate new access token with standard 'sub' claim
+      const accessToken = await reply.jwtSign({ sub: token.user_id, user_id: token.user_id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
 
       return ok(reply, { 
         access_token: accessToken, 
@@ -300,28 +332,48 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // Logout endpoint
+  // Logout endpoint - requires JWT authentication + ownership check
   fastify.post(
     '/logout',
-    async (request: FastifyRequest<{ Body: { refresh_token?: string } }>, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Body: { refresh_token: string } }>, reply: FastifyReply) => {
+      // Verify JWT to get authenticated user
+      try {
+        await request.jwtVerify();
+      } catch {
+        return fail(reply, 'Authentication required', 'UNAUTHORIZED');
+      }
+
+      const userId = (request as any).user?.user_id || (request as any).user?.sub;
+      if (!userId) {
+        return fail(reply, 'Authentication required', 'UNAUTHORIZED');
+      }
+
       const requestId = (request as any).requestId;
-      
-      // Check for refresh token in body or Authorization header
-      let refreshToken = request.body?.refresh_token;
-      
-      if (!refreshToken) {
-        const authHeader = request.headers['authorization'] as string;
-        if (authHeader?.startsWith('Bearer ')) {
-          refreshToken = authHeader.substring(7);
-        }
+
+      const fieldsError = requireFields(request.body, ['refresh_token']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
       }
 
-      if (!refreshToken) {
-        return fail(reply, 'Refresh token required', 'MISSING_REFRESH_TOKEN');
+      const { refresh_token } = request.body;
+      const refreshTokenHash = hashRefreshToken(refresh_token);
+
+      // Verify token ownership - only revoke if token belongs to authenticated user
+      const tokenOwnerResult = await db.query<{ user_id: string }>(
+        `SELECT user_id FROM identity.refresh_tokens WHERE token_hash = $1`,
+        [refreshTokenHash]
+      );
+
+      const tokenOwner = tokenOwnerResult.rows[0];
+      if (!tokenOwner) {
+        return fail(reply, 'Invalid refresh token', 'INVALID_REFRESH');
       }
 
-      const refreshTokenHash = hashRefreshToken(refreshToken);
-      const userId = (request as any).user?.user_id;
+      if (tokenOwner.user_id !== userId) {
+        // Token belongs to different user - forbidden
+        await auditLog(userId, 'user_logout_forbidden', { reason: 'token_owner_mismatch' }, requestId);
+        return fail(reply, 'Forbidden', 'FORBIDDEN');
+      }
 
       // Revoke the refresh token
       await db.query(
@@ -331,10 +383,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         [refreshTokenHash]
       );
 
-      // Audit logout
-      if (userId) {
-        await auditLog(userId, 'user_logout', {}, requestId);
-      }
+      // Audit logout (user_id is known since authenticated)
+      await auditLog(userId, 'user_logout', {}, requestId);
 
       return ok(reply, { ok: true });
     }
