@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { db, connectWithRetry } from '@shared/database/connection';
 
 // Prefer NEON_DB_URL_DIRECT (neondb_owner, direct/non-pooled) for DDL. Falls
@@ -49,8 +50,8 @@ async function getExecutedMigrations(): Promise<Migration[]> {
 
 async function markMigrationExecuted(filename: string): Promise<void> {
   await db.query(
-    `INSERT INTO events.migrations (filename, executed_at) VALUES ($1, NOW())`,
-    [filename]
+    `INSERT INTO events.migrations (id, filename, executed_at) VALUES ($1, $2, NOW())`,
+    [randomUUID(), filename]
   );
 }
 
