@@ -11,7 +11,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { OcrProvider, OcrInput, OcrResult } from './ocr-provider.interface';
+import { OcrProvider, OcrInput, OcrResult, OcrExtractor } from './ocr-provider.interface';
 import { db } from '@shared/database/connection';
 import { logger } from '@shared/observability/logger';
 import { randomUUID } from 'crypto';
@@ -52,7 +52,7 @@ const EXTRACT_RECEIPT_TOOL = {
   },
 } as const;
 
-export class AnthropicOcrProvider implements OcrProvider {
+export class AnthropicOcrProvider implements OcrProvider, OcrExtractor {
   readonly name = 'anthropic';
 
   private client: Anthropic;
@@ -69,17 +69,45 @@ export class AnthropicOcrProvider implements OcrProvider {
     });
   }
 
+  /**
+   * T4: extract now delegates to extractFromBytes after fetching bytes.
+   */
   async extract(input: OcrInput): Promise<OcrResult> {
+    try {
+      const { bytes, hash } = await this.fetchImage(input.file_url);
+      const mediaType = this.getMediaType(input.file_url);
+      return await this.extractFromBytes(bytes, mediaType, hash, input.proof_id);
+    } catch (error: unknown) {
+      const errorAny = error as { message?: string };
+      // Fetch errors: record with zero tokens (no Anthropic call made)
+      logger.error('ocr_fetch_error', 'validation', String(error));
+      return {
+        amount: null,
+        payment_identifier: null,
+        raw_text: '',
+        confidence: 0,
+        currency: null,
+        status: 'error',
+        reason: errorAny?.message || 'Image fetch failed',
+      };
+    }
+  }
+
+  /**
+   * T4: extract from pre-fetched bytes (used by CachedOcrProvider on cache miss).
+   */
+  async extractFromBytes(
+    bytes: Buffer,
+    mediaType: 'image/jpeg' | 'image/png',
+    fileHash: string,
+    proofId?: string
+  ): Promise<OcrResult> {
     const startTime = Date.now();
     let inputTokens = 0;
     let outputTokens = 0;
-    let fileHash = '';
 
     try {
-      // FIX-10: fetch and compute hash from content
-      const { base64, hash } = await this.fetchImageAsBase64(input.file_url);
-      fileHash = hash;
-      const mediaType = this.getMediaType(input.file_url);
+      const base64 = bytes.toString('base64');
 
       // Make the API call with message create
       const response = await this.client.messages.create({
@@ -120,7 +148,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       if (!toolUse || toolUse.type !== 'tool_use') {
         return await this.recordOcrCall({
-          proof_id: input.proof_id,
+          proof_id: proofId,
           startTime,
           inputTokens,
           outputTokens,
@@ -163,7 +191,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       // Record successful OCR call
       await this.recordOcrCall({
-        proof_id: input.proof_id,
+        proof_id: proofId,
         startTime,
         inputTokens,
         outputTokens,
@@ -200,7 +228,7 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       // Record failed OCR call
       await this.recordOcrCall({
-        proof_id: input.proof_id,
+        proof_id: proofId,
         startTime,
         inputTokens,
         outputTokens,
@@ -221,7 +249,7 @@ export class AnthropicOcrProvider implements OcrProvider {
     }
   }
 
-  private async fetchImageAsBase64(url: string): Promise<{ base64: string; hash: string }> {
+  private async fetchImage(url: string): Promise<{ bytes: Buffer; hash: string }> {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
@@ -231,10 +259,9 @@ export class AnthropicOcrProvider implements OcrProvider {
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    // FIX-10: hash from content
-    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-    return { base64: buffer.toString('base64'), hash };
+    const bytes = Buffer.from(arrayBuffer);
+    const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+    return { bytes, hash };
   }
 
   private getMediaType(url: string): 'image/jpeg' | 'image/png' {
