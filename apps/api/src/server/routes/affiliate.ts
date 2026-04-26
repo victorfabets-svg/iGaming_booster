@@ -26,11 +26,10 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
     '/r/:house_slug/:campaign_slug?',
     async (request: FastifyRequest<{ Params: ClickParams }>, reply: FastifyReply) => {
       const { house_slug, campaign_slug } = request.params;
-      const requestId = (request as any).requestId;
 
-      // Get client info
-      const ip = (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() 
-        || request.ip 
+      // Get client info - align with auth.ts pattern (request.ip first)
+      const ip = request.ip
+        || (request.headers['x-forwarded-for'] as string)
         || 'unknown';
       const userAgent = request.headers['user-agent'];
       const country = request.headers['cf-ipcountry'] as string
@@ -111,16 +110,23 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request: FastifyRequest<{ Querystring: FunnelQuery }>, reply: FastifyReply) => {
       const { house: houseSlug, from, to } = request.query;
-      const requestId = (request as any).requestId;
 
-      // Default date range: last 7 days
+      // Parse and validate date range
       const fromDate = from ? new Date(from) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const toDate = to ? new Date(to) : new Date();
+
+      // Validate dates
+      if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+        return fail(reply, 'Invalid date format. Use ISO 8601 (YYYY-MM-DD or full ISO).', 'VALIDATION_ERROR');
+      }
+      if (fromDate >= toDate) {
+        return fail(reply, '`from` must be earlier than `to`', 'VALIDATION_ERROR');
+      }
 
       const fromStr = fromDate.toISOString();
       const toStr = toDate.toISOString();
 
-      // Build funnel query
+      // Funnel query - window applied only to clicks; downstream counted at any time
       const funnelQuery = `
         WITH range AS (
           SELECT
@@ -150,14 +156,10 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
           ON a.click_id = c.click_id
         LEFT JOIN validation.proofs p
           ON p.user_id = a.user_id
-          AND p.created_at >= (SELECT from_ts FROM range)
-          AND p.created_at <  (SELECT to_ts FROM range)
         LEFT JOIN validation.proof_validations pv
           ON pv.proof_id = p.id
         LEFT JOIN rewards.rewards r
           ON r.proof_id = p.id
-          AND r.created_at >= (SELECT from_ts FROM range)
-          AND r.created_at <  (SELECT to_ts FROM range)
         GROUP BY h.slug, h.name
         ORDER BY h.slug
       `;
