@@ -12,7 +12,7 @@ import { processReward, ProofValidatedPayload } from '../../rewards/use-cases/pr
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'proof_validated';
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 10;
 
 export const CONSUMER_NAME = 'proof_validated_consumer';

@@ -14,7 +14,7 @@ import { logger } from '@shared/observability/logger';
 import { db, type PoolClient } from '@shared/database/connection';
 
 const EVENT_TYPE = 'reward_granted';
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 10;
 
 export const CONSUMER_NAME = 'reward_granted_consumer';

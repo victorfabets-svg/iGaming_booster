@@ -14,7 +14,7 @@ import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
 const EVENT_TYPE = 'fraud_check_requested';
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
 const BATCH_SIZE = 10;
 
 export const CONSUMER_NAME = 'fraud_check_requested_consumer';
