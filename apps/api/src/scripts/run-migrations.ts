@@ -27,7 +27,7 @@ const ALREADY_EXISTS_CODES = new Set(['42P06', '42P07', '42710', '42701']);
 // Schemas expected by migration files (defined in 001_init.sql, 005_payments_layer.sql, etc.)
 const EXPECTED_SCHEMAS = [
   'identity', 'validation', 'fraud', 'rewards', 'raffles',
-  'events', 'infra', 'audit', 'payments', 'affiliate',
+  'events', 'infra', 'audit', 'tipster', 'payments', 'affiliate',
 ];
 
 interface Migration {
