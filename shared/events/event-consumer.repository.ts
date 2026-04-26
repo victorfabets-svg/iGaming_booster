@@ -9,16 +9,40 @@ export { Event };
 /**
  * Fetch unprocessed events with row-level locking (FOR UPDATE SKIP LOCKED).
  * This prevents multiple consumers from processing the same event.
- * 
+ *
+ * When `eventTypes` is provided, only events of those types are returned.
+ * This stops the head of the global queue (e.g. informational/orphan events
+ * with no consumer) from blocking unrelated consumers — each consumer pulls
+ * only what it actually handles.
+ *
  * NOTE: Schema must exist via migration (009_hardening_layer.sql).
  * If tables/columns are missing, this will fail fast - which is correct behavior.
  */
-export async function fetchAndLockEvents(limit: number = 10): Promise<Event[]> {
+export async function fetchAndLockEvents(
+  limit: number = 10,
+  eventTypes?: string[],
+): Promise<Event[]> {
+  if (eventTypes && eventTypes.length > 0) {
+    const result = await db.query<Event>(
+      `SELECT id, event_type, version, producer, correlation_id, payload,
+              retry_count, processed, timestamp, locked_at
+         FROM events.events
+        WHERE processed = FALSE
+          AND retry_count < 3
+          AND event_type = ANY($2::text[])
+        ORDER BY timestamp ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED`,
+      [limit, eventTypes]
+    );
+    return result.rows;
+  }
+
   const result = await db.query<Event>(
-    `SELECT id, event_type, version, producer, correlation_id, payload, 
+    `SELECT id, event_type, version, producer, correlation_id, payload,
             retry_count, processed, timestamp, locked_at
      FROM events.events
-     WHERE processed = FALSE 
+     WHERE processed = FALSE
        AND retry_count < 3
      ORDER BY timestamp ASC
      LIMIT $1
@@ -113,8 +137,8 @@ export function stopStuckEventRecovery(): void {
  */
 export async function markEventProcessed(eventId: string): Promise<void> {
   await db.query(
-    `UPDATE events.events 
-     SET processed = TRUE, processed_at = NOW() 
+    `UPDATE events.events
+     SET processed = TRUE
      WHERE id = $1`,
     [eventId]
   );
@@ -378,20 +402,32 @@ export async function processEventExactlyOnce(
     // Step 2: Get retry count for logging
     retryCount = await getRetryCount(eventId);
 
-    // Step 3: Process event within transaction with idempotency record
+    // Step 3: Process event within transaction with idempotency record AND
+    // global ack (events.processed = TRUE). Without the ack, the FETCH query
+    // keeps returning the same already-handled events and the queue head
+    // stalls — consumers spin on 'already processed, skipping' forever and
+    // never see newer events.
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      
+
       // Execute the business logic with client
       await processFn(client);
-      
-      // Record successful processing (idempotency key)
+
+      // Record successful processing (per-consumer idempotency key)
       await client.query(
         `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)`,
         [eventId, consumerName]
       );
-      
+
+      // Ack at the queue level so fetchAndLockEvents stops returning this row.
+      // Atomic with the consumer's work and the idempotency record — either
+      // all commit or none of them do.
+      await client.query(
+        `UPDATE events.events SET processed = TRUE WHERE id = $1`,
+        [eventId]
+      );
+
       await client.query('COMMIT');
       console.log(`✅ Event ${eventId} processed exactly-once`);
       return { success: true, skipped: false };

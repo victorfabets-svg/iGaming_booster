@@ -70,7 +70,7 @@ export async function startValidationAggregatorConsumer(): Promise<void> {
 
 async function pollEvents(): Promise<void> {
   try {
-    const allEvents = await fetchAndLockEvents(BATCH_SIZE);
+    const allEvents = await fetchAndLockEvents(BATCH_SIZE, [FRAUD_SCORED_EVENT, PAYMENT_EXTRACTED_EVENT]);
     const fraudEvents = allEvents.filter(e => e.event_type === FRAUD_SCORED_EVENT);
     const paymentEvents = allEvents.filter(e => e.event_type === PAYMENT_EXTRACTED_EVENT);
 
@@ -122,6 +122,13 @@ async function processFraudScored(event: { event_id?: string; id?: string; paylo
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, payload);
 
+    // Ack at the queue level so subsequent fetchAndLockEvents skips this row
+    // and the queue head advances. Atomic with the consumer's work above.
+    await client.query(
+      `UPDATE events.events SET processed = TRUE WHERE id = $1`,
+      [eventId]
+    );
+
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
   } catch (error) {
@@ -165,6 +172,12 @@ async function processPaymentExtracted(event: { event_id?: string; id?: string; 
 
     // Try to make decision if both events received
     await tryMakeDecision(proofId, client, undefined, payload);
+
+    // Ack at the queue level so subsequent fetchAndLockEvents skips this row.
+    await client.query(
+      `UPDATE events.events SET processed = TRUE WHERE id = $1`,
+      [eventId]
+    );
 
     await client.query('COMMIT');
     logger.info({ event: 'event_processed', context: 'validation', data: { event_id: eventId } });
