@@ -122,6 +122,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           [userId, normalizedEmail, passwordHash]
         );
 
+        // Sprint 9 T2: best-effort first-touch attribution.
+        // Cookie tipster_cid set by /r/:house route; fallback body.cid for mobile/in-app.
+        const cookieCid = (request.cookies as Record<string, string> | undefined)?.tipster_cid;
+        const bodyCid = (request.body as { cid?: string })?.cid;
+        const clickId = cookieCid || bodyCid;
+
+        if (clickId) {
+          try {
+            await db.query(
+              `INSERT INTO affiliate.attributions (user_id, click_id, house_id)
+               SELECT $1, c.click_id, c.house_id
+                 FROM affiliate.clicks c
+                 WHERE c.click_id = $2
+               ON CONFLICT (user_id) DO NOTHING`,
+              [userId, clickId]
+            );
+          } catch (attrErr) {
+            // Attribution failure does NOT fail registration.
+            console.error('[affiliate] attribution failed for user', userId, attrErr);
+          }
+        }
+
         // Audit log for successful registration and password set
         await auditLog(userId, 'user_registered', { email: normalizedEmail }, requestId);
         await auditLog(userId, 'password_set', { method: 'register' }, requestId);
