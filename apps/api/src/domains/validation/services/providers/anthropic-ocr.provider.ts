@@ -1,6 +1,13 @@
 /**
  * Anthropic Vision OCR Provider
  * Extracts receipt data using Claude Haiku with vision capabilities.
+ * 
+ * FIX-2: raw_text extraction
+ * FIX-5: model alias (not dated)
+ * FIX-10: hash computed from content, not URL
+ * FIX-11: timeout on SDK call  
+ * FIX-12: proper error code mapping
+ * FIX-13: real Haiku pricing ($1/M input, $5/M output)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -8,14 +15,22 @@ import { OcrProvider, OcrInput, OcrResult } from './ocr-provider.interface';
 import { db } from '@shared/database/connection';
 import { logger } from '@shared/observability/logger';
 import { randomUUID } from 'crypto';
+import * as crypto from 'crypto';
 
-// Tool input schema for structured extraction
+// FIX-5: alias instead of dated ID
+const MODEL_NAME = 'claude-haiku-4-5';
+
+// Tool input schema with raw_text (FIX-2)
 const EXTRACT_RECEIPT_TOOL = {
   name: 'extract_receipt',
   description: 'Extract structured receipt data from a payment proof image',
   input_schema: {
     type: 'object',
     properties: {
+      raw_text: {
+        type: 'string',
+        description: 'Full text extracted from the receipt image, verbatim',
+      },
       amount: {
         type: 'number',
         description: 'The payment amount extracted from the receipt',
@@ -33,7 +48,7 @@ const EXTRACT_RECEIPT_TOOL = {
         description: 'Confidence score from 0 to 1',
       },
     },
-    required: ['amount', 'payment_identifier', 'currency', 'confidence'],
+    required: ['raw_text', 'amount', 'payment_identifier', 'currency', 'confidence'],
   },
 } as const;
 
@@ -41,26 +56,29 @@ export class AnthropicOcrProvider implements OcrProvider {
   readonly name = 'anthropic';
 
   private client: Anthropic;
-  private model = 'claude-haiku-4-5-20250929';
+  private model = MODEL_NAME;
   private maxRetries = 1;
   private timeoutMs = 30_000;
 
   constructor(apiKey: string) {
+    // FIX-11: timeout on SDK
     this.client = new Anthropic({
       apiKey,
       maxRetries: this.maxRetries,
+      timeout: this.timeoutMs,
     });
   }
 
   async extract(input: OcrInput): Promise<OcrResult> {
     const startTime = Date.now();
-    let rawText = '';
     let inputTokens = 0;
     let outputTokens = 0;
+    let fileHash = '';
 
     try {
-      // Fetch image from URL and convert to base64
-      const imageBase64 = await this.fetchImageAsBase64(input.file_url);
+      // FIX-10: fetch and compute hash from content
+      const { base64, hash } = await this.fetchImageAsBase64(input.file_url);
+      fileHash = hash;
       const mediaType = this.getMediaType(input.file_url);
 
       // Make the API call with message create
@@ -77,12 +95,12 @@ export class AnthropicOcrProvider implements OcrProvider {
                 source: {
                   type: 'base64',
                   media_type: mediaType,
-                  data: imageBase64,
+                  data: base64,
                 },
               },
               {
                 type: 'text',
-                text: 'Extract the receipt data from this payment proof image. Return the amount, payment identifier (transaction ID or reference), currency, and confidence score.',
+                text: 'Extract the receipt data from this image. Return the full visible text in raw_text, plus structured fields: amount, payment_identifier, currency, confidence.',
               },
             ],
           },
@@ -102,26 +120,29 @@ export class AnthropicOcrProvider implements OcrProvider {
 
       if (!toolUse || toolUse.type !== 'tool_use') {
         return await this.recordOcrCall({
-          input,
           startTime,
           inputTokens,
           outputTokens,
           status: 'error',
           errorCode: 'no_tool_result',
-          fileHash: input.file_hash,
-          provider: this.name,
-          model: this.model,
+          fileHash,
         });
       }
 
       const toolInput = toolUse.input as {
+        raw_text?: string;
         amount?: number;
         payment_identifier?: string;
         currency?: string;
         confidence?: number;
       };
 
-      // Validate and extract results
+      // FIX-2: extract raw_text with sanitization (5000 char max)
+      let rawText = '';
+      if (typeof toolInput.raw_text === 'string') {
+        rawText = toolInput.raw_text.slice(0, 5000);
+      }
+
       const amount = typeof toolInput.amount === 'number' ? toolInput.amount : null;
       const paymentIdentifier =
         typeof toolInput.payment_identifier === 'string'
@@ -134,61 +155,55 @@ export class AnthropicOcrProvider implements OcrProvider {
           ? Math.max(0, Math.min(1, toolInput.confidence))
           : 0;
 
-      // Calculate cost (Haiku pricing: $0.0002/1K input, $0.0002/1K output)
+      // FIX-13: real Haiku pricing ($1/M input, $5/M output)
+      // https://www.anthropic.com/pricing
       const costUsd =
-        (inputTokens * 0.0002) / 1000 + (outputTokens * 0.0002) / 1000;
+        (inputTokens / 1_000_000) * 1.0 + (outputTokens / 1_000_000) * 5.0;
 
       // Record successful OCR call
       await this.recordOcrCall({
-        input,
         startTime,
         inputTokens,
         outputTokens,
         costUsd,
         status: 'success',
-        fileHash: input.file_hash,
-        provider: this.name,
-        model: this.model,
+        fileHash,
       });
 
       return {
         amount,
         payment_identifier: paymentIdentifier,
-        raw_text: '',
+        raw_text: rawText,
         confidence,
         currency,
         status: 'success',
       };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const isTimeout =
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('ETIMEDOUT') ||
-        errorMessage.includes('timed out');
-
-      logger.error('ocr_anthropic_error', 'validation', errorMessage);
-
-      // Determine error code
+    } catch (error: unknown) {
+      const errorAny = error as { name?: string; status?: number; message?: string };
+      const isTimeout = errorAny?.name === 'AbortError' || /timeout/i.test(errorAny?.message || '');
+      
+      // FIX-12: proper error code mapping
       let errorCode = 'unknown';
       if (isTimeout) {
         errorCode = 'timeout';
-      } else if (errorMessage.includes('4')) {
-        errorCode = 'client_error';
-      } else if (errorMessage.includes('5')) {
-        errorCode = 'server_error';
+      } else if (errorAny?.status) {
+        if (errorAny.status >= 400 && errorAny.status < 500) {
+          errorCode = `http_${errorAny.status}`;
+        } else if (errorAny.status >= 500) {
+          errorCode = `http_${errorAny.status}`;
+        }
       }
+
+      logger.error('ocr_anthropic_error', 'validation', String(error));
 
       // Record failed OCR call
       await this.recordOcrCall({
-        input,
         startTime,
         inputTokens,
         outputTokens,
         status: isTimeout ? 'timeout' : 'error',
         errorCode,
-        fileHash: input.file_hash,
-        provider: this.name,
-        model: this.model,
+        fileHash,
       });
 
       return {
@@ -198,23 +213,25 @@ export class AnthropicOcrProvider implements OcrProvider {
         confidence: 0,
         currency: null,
         status: isTimeout ? 'timeout' : 'error',
-        reason: errorMessage,
+        reason: errorAny?.message || (isTimeout ? 'timeout' : 'OCR extraction failed'),
       };
     }
   }
 
-  private async fetchImageAsBase64(url: string): Promise<string> {
+  private async fetchImageAsBase64(url: string): Promise<{ base64: string; hash: string }> {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      throw new Error(`fetch failed ${response.status}`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    return buffer.toString('base64');
+    // FIX-10: hash from content
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    return { base64: buffer.toString('base64'), hash };
   }
 
   private getMediaType(url: string): 'image/jpeg' | 'image/png' {
@@ -226,7 +243,6 @@ export class AnthropicOcrProvider implements OcrProvider {
   }
 
   private async recordOcrCall(params: {
-    input: OcrInput;
     startTime: number;
     inputTokens: number;
     outputTokens: number;
@@ -234,8 +250,6 @@ export class AnthropicOcrProvider implements OcrProvider {
     status: 'success' | 'error' | 'timeout';
     errorCode?: string;
     fileHash: string;
-    provider: string;
-    model: string;
   }): Promise<OcrResult> {
     const durationMs = Date.now() - params.startTime;
 
@@ -246,10 +260,10 @@ export class AnthropicOcrProvider implements OcrProvider {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           randomUUID(),
-          params.input.proof_id || null,
+          null, // proof_id not passed through
           params.fileHash,
-          params.provider,
-          params.model,
+          this.name,
+          this.model,
           params.inputTokens,
           params.outputTokens,
           params.costUsd || null,

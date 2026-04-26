@@ -1,8 +1,11 @@
 /**
  * Admin Routes for Partner Houses Management
+ * 
+ * FIX-8: Added authMiddleware
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { authMiddleware } from '../../infrastructure/auth/middleware';
 import {
   listAll,
   upsertBySlug,
@@ -119,6 +122,7 @@ export async function adminPartnerHousesRoutes(
   // GET /admin/partner-houses - List all partner houses
   fastify.get(
     '/admin/partner-houses',
+    { preHandler: authMiddleware },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const houses = await listAll();
       return ok(reply, { houses });
@@ -128,6 +132,7 @@ export async function adminPartnerHousesRoutes(
   // POST /admin/partner-houses - Create or update a partner house
   fastify.post(
     '/admin/partner-houses',
+    { preHandler: authMiddleware },
     async (
       request: FastifyRequest<{ Body: PartnerHouseInput }>,
       reply: FastifyReply

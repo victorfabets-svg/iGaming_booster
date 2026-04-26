@@ -16,7 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { upsertBySlug, PartnerHouseInput } from '../src/domains/validation/repositories/partner-houses.repository';
-import { db, connectWithRetry } from '../src/shared/database/connection';
+import { db, connectWithRetry } from '@shared/database/connection';
 
 interface CsvRow {
   slug: string;

@@ -6,7 +6,6 @@
 
 export interface OcrInput {
   file_url: string;
-  file_hash: string;
   proof_id?: string;
 }
 

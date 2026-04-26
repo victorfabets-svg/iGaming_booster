@@ -20,7 +20,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { runOcr, OcrInput } from '../../src/domains/validation/services/ocr.service';
 import { matchHouseFromOcr } from '../../src/domains/validation/services/payment-identifier-matcher.service';
-import { getFlag } from '../../src/shared/config/feature-flags';
+import { getFlag } from '@shared/config/feature-flags';
 
 interface ExpectedResult {
   amount: number;

@@ -126,6 +126,24 @@ export async function matchHouseFromOcr(
       }
     }
 
+    // FIX-16: Check regex patterns (configurable weight)
+    for (const pattern of (house.regex_patterns || [])) {
+      try {
+        const re = new RegExp(pattern.regex, pattern.flags || 'i');
+        if (re.test(ocr.raw_text)) {
+          confidence = Math.max(confidence, pattern.weight || 0.5);
+          break;
+        }
+      } catch (e) {
+        // Invalid regex - skip to avoid crash
+        logger.warn({
+          event: 'invalid_regex_pattern',
+          context: 'validation',
+          data: { house: house.slug, pattern: pattern.regex, error: String(e) },
+        });
+      }
+    }
+
     // Check amount range (if we have amount)
     if (ocr.amount !== null && isAmountInRange(ocr.amount, house.min_amount, house.max_amount)) {
       confidence = Math.max(confidence, 0.3);
