@@ -19,6 +19,7 @@ import { logger, alertMonitor } from '@shared/observability/logger';
 import { recordValidationResult } from '@shared/observability/metrics.service';
 import { db, type PoolClient } from '@shared/database/connection';
 import { evaluate } from '../services/validation-rules.service';
+import { calculateEconomics } from '../services/economics.service';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
@@ -261,7 +262,10 @@ async function tryMakeDecision(
   const finalScore = fraud.score + paymentModifier;
   const ruleVersion = ruleResult.rule_version;
   const decisionReason = ruleResult.reason;
-  
+
+  // Compute economics for the decision
+  const economics = calculateEconomics(decision);
+
   if (decision === 'approved') {
     alertMonitor.recordApproved();
   }
@@ -290,14 +294,17 @@ async function tryMakeDecision(
 
   const proof = await findProofById(proofId);
   
-  // Domain write: Update validation status with rule version and reason
+  // Domain write: Update validation status with rule version, reason, and economics
   await updateValidationStatusWithClient(
     client, 
     validation.id, 
     decision, 
     finalScore,
     ruleVersion,
-    decisionReason
+    decisionReason,
+    economics.cost_centavos,
+    economics.value_centavos,
+    economics.economics_version,
   );
 
   // Event: Emit final decision with rule_version and reason

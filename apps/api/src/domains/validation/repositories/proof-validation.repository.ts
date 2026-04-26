@@ -82,13 +82,18 @@ export async function updateValidationStatusWithClient(
   status: string,
   confidenceScore?: number,
   ruleVersion?: string | null,
-  decisionReason?: string | null
+  decisionReason?: string | null,
+  costCentavos?: number | null,
+  valueCentavos?: number | null,
+  economicsVersion?: string | null,
 ): Promise<void> {
   await client.query(
     `UPDATE validation.proof_validations
      SET status = $1, confidence_score = $2, validated_at = NOW(),
-         rule_version = $3, decision_reason = $4
-     WHERE id = $5`,
-    [status, confidenceScore ?? null, ruleVersion ?? null, decisionReason ?? null, id]
+         rule_version = $3, decision_reason = $4,
+         cost_centavos = $5, value_centavos = $6, economics_version = $7
+     WHERE id = $8`,
+    [status, confidenceScore ?? null, ruleVersion ?? null, decisionReason ?? null, 
+     costCentavos ?? null, valueCentavos ?? null, economicsVersion ?? null, id]
   );
 }
