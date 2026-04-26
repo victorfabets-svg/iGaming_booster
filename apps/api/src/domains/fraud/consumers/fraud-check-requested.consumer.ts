@@ -9,7 +9,7 @@
 
 import { fetchAndLockEvents, processEventExactlyOnce, Event } from '@shared/events/event-consumer.repository';
 import { createFraudScoreWithClient } from '../repositories/fraud-score.repository';
-import { calculateFraudScore } from '../services/fraud-score.service';
+import { calculateFraudScore, RULE_VERSION } from '../services/fraud-score.service';
 import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 
@@ -100,40 +100,48 @@ async function processEvent(event: Event): Promise<void> {
 async function handleFraudCheckRequested(payload: FraudCheckRequestedPayload, client: any): Promise<void> {
   const { proof_id, ocr_result, heuristic_result, risk_score_modifier = 0, payment_modifier = 0 } = payload;
 
-  const ocrData = ocr_result || { amount: 0, date: '', institution: '' };
-  const heuristicData = heuristic_result || { is_valid: true, issues: [] };
-  
-  const fraudScoreResult = calculateFraudScore(ocrData, heuristicData, risk_score_modifier, payment_modifier);
+  // Call the new async score calculator with proof_id
+  const fraudScoreResult = await calculateFraudScore({
+    proof_id,
+    ocr_result,
+    heuristic_result,
+  });
   
   logger.info({
     event: 'fraud_score_calculated',
     context: 'fraud',
-    data: { proof_id, score: fraudScoreResult.score, signals: fraudScoreResult.signals }
+    data: { 
+      proof_id, 
+      score: fraudScoreResult.fraud_score, 
+      rule_version: fraudScoreResult.rule_version,
+      signals: fraudScoreResult.signals 
+    }
   });
 
   // Persist fraud score
   await createFraudScoreWithClient(client, {
     proof_id,
-    score: fraudScoreResult.score,
+    score: fraudScoreResult.fraud_score,
     signals: fraudScoreResult.signals,
   });
 
-  // Emit fraud_scored event
+  // Emit fraud_scored event with rule_version
   await insertEventInTransaction(
     client,
     'fraud_scored',
     {
       proof_id,
       user_id: payload.user_id,
-      score: fraudScoreResult.score,
+      score: fraudScoreResult.fraud_score,
       signals: fraudScoreResult.signals,
+      rule_version: RULE_VERSION,  // NEW: include rule_version
       risk_modifier: risk_score_modifier,
       payment_modifier,
     },
     'fraud'
   );
 
-  logger.info({ event: 'fraud_scored_emitted', context: 'fraud', data: { proof_id, score: fraudScoreResult.score } });
+  logger.info({ event: 'fraud_scored_emitted', context: 'fraud', data: { proof_id, score: fraudScoreResult.fraud_score, rule_version: RULE_VERSION } });
 }
 
 // Standalone run
