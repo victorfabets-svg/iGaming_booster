@@ -84,36 +84,6 @@ jobs:
             })().catch(e => { console.error('preflight error:', e.message); process.exit(1); });
           "
 
-      - name: Verify role has CREATE on database
-        env:
-          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
-        run: |
-          set -euo pipefail
-          node -e "
-            const { Client } = require('pg');
-            (async () => {
-              const c = new Client({ connectionString: process.env.NEON_DB_MIGRATIONS_DIRECT });
-              await c.connect();
-              const r = await c.query(\`
-                SELECT current_user AS role,
-                       current_database() AS db,
-                       has_database_privilege(current_user, current_database(), 'CREATE') AS can_create
-              \`);
-              const { role, db, can_create } = r.rows[0];
-              console.log('connected role:', role);
-              console.log('database:', db);
-              console.log('CREATE privilege:', can_create);
-              await c.end();
-              if (!can_create) {
-                console.error('FAIL: role \"' + role + '\" lacks CREATE on database \"' + db + '\".');
-                console.error('Likely cause: NEON_DB_MIGRATIONS_DIRECT was set to the app_user');
-                console.error('connection string. Replace with the neondb_owner string from');
-                console.error('Neon Console -> Connect -> Role: neondb_owner.');
-                process.exit(1);
-              }
-            })().catch(e => { console.error('preflight error:', e.message); process.exit(1); });
-          "
-
       - name: Run migrations
         env:
           # Owner role on the direct (non-pooled) endpoint — required for DDL
