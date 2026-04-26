@@ -17,7 +17,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
+
 import { runOcr, OcrInput } from '../../src/domains/validation/services/ocr.service';
 import { matchHouseFromOcr } from '../../src/domains/validation/services/payment-identifier-matcher.service';
 import { getFlag } from '@shared/config/feature-flags';
@@ -60,14 +60,6 @@ function loadExpectedResults(fixturesDir: string, imageName: string): ExpectedRe
   }
 
   return JSON.parse(fs.readFileSync(expectedPath, 'utf-8'));
-}
-
-/**
- * Calculate SHA256 hash of file.
- */
-function calculateFileHash(filePath: string): string {
-  const content = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 /**
@@ -117,9 +109,6 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Calculate hash
-    const fileHash = calculateFileHash(imagePath);
-
     // Run OCR - use data URL for local files
     const imageData = fs.readFileSync(imagePath);
     const base64 = imageData.toString('base64');
@@ -127,9 +116,9 @@ async function main(): Promise<void> {
     const mediaType = ext === '.png' ? 'image/png' : 'image/jpeg';
     const dataUrl = `data:${mediaType};base64,${base64}`;
 
+    // FIX-10: file_hash is computed by provider from content, not passed in
     const ocrInput: OcrInput = {
       file_url: dataUrl,
-      file_hash: fileHash,
     };
 
     const ocrResult = await runOcr(ocrInput);
