@@ -2,6 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { db, connectWithRetry } from '@shared/database/connection';
 
+// Prefer the migration-owner direct connection for DDL. Falls back to NEON_DB_URL
+// for local/dev where only one secret is configured. The runtime app and worker
+// continue to use NEON_DB_URL (app_user, pooled) for least-privilege operation.
+const migrationUrl = process.env.NEON_DB_MIGRATIONS_DIRECT || process.env.NEON_DB_URL;
+if (migrationUrl) {
+  process.env.NEON_DB_URL = migrationUrl;
+}
+
 const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
 
 interface Migration {

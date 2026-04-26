@@ -18,6 +18,14 @@
 import { randomUUID } from 'crypto';
 import { db, connectWithRetry, type PoolClient } from '@shared/database/connection';
 
+// Replay performs cross-schema writes (events.events INSERT + UPDATE). Prefer the
+// migration-owner direct connection. Falls back to NEON_DB_URL when only one
+// secret is configured (local/dev).
+const replayUrl = process.env.NEON_DB_MIGRATIONS_DIRECT || process.env.NEON_DB_URL;
+if (replayUrl) {
+  process.env.NEON_DB_URL = replayUrl;
+}
+
 interface OrphanProof {
   validation_id: string;
   proof_id: string;
