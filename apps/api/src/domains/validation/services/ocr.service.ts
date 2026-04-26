@@ -1,36 +1,55 @@
-import * as crypto from 'crypto';
+/**
+ * OCR Service
+ * Uses configured OCR provider to extract receipt data from proof images.
+ * 
+ * When OCR is disabled or unavailable, returns a sentinel result that triggers
+ * manual_review in the validation pipeline.
+ */
 
-export interface OcrResult {
-  amount: number;
-  date: string;
-  institution: string;
-  identifier: string | null;
-}
+import { getOcrProvider } from './providers';
+import { OcrResult, OcrInput } from './providers/ocr-provider.interface';
 
 /**
- * Mock OCR Service
- * Returns deterministic mock data based on file_url hash
+ * Run OCR on a proof image.
+ * 
+ * @param input - The OCR input with file_url, file_hash, and optional proof_id
+ * @returns OcrResult with extracted data or sentinel if OCR is unavailable
  */
-export function extractTextFromImage(fileUrl: string): OcrResult {
-  // Generate deterministic data from file_url
-  const hash = crypto.createHash('sha256').update(fileUrl).digest();
-  
-  // Extract deterministic values from hash
-  const amountBase = hash.readUInt16BE(0) % 10000; // 0-9999
-  const day = (hash.readUInt8(2) % 28) + 1; // 1-28
-  const month = (hash.readUInt8(3) % 12) + 1; // 1-12
-  const year = 2024 + (hash.readUInt8(4) % 3); // 2024-2026
-  
-  const institutions = ['Bank of America', 'Chase', 'Wells Fargo', 'Citibank', 'Capital One'];
-  const institutionIndex = hash.readUInt8(5) % institutions.length;
-  
-  const hasIdentifier = hash.readUInt8(6) % 2 === 1;
-  const identifierBase = hash.readUInt32BE(7);
-  
-  return {
-    amount: amountBase > 0 ? amountBase / 100 : 10.00, // Convert to decimal, min 0.10
-    date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-    institution: institutions[institutionIndex],
-    identifier: hasIdentifier ? `TXN-${identifierBase.toString(16).slice(0, 8).toUpperCase()}` : null,
-  };
+export async function runOcr(input: OcrInput): Promise<OcrResult> {
+  const provider = getOcrProvider();
+
+  if (!provider) {
+    // OCR is not configured - return sentinel
+    const reason = !process.env.ANTHROPIC_API_KEY
+      ? 'ANTHROPIC_API_KEY not configured'
+      : 'T3_OCR_REAL_ENABLED is false';
+
+    return {
+      amount: null,
+      payment_identifier: null,
+      raw_text: '',
+      confidence: 0,
+      currency: null,
+      status: 'unavailable',
+      reason,
+    };
+  }
+
+  try {
+    return await provider.extract(input);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      amount: null,
+      payment_identifier: null,
+      raw_text: '',
+      confidence: 0,
+      currency: null,
+      status: 'error',
+      reason: errorMessage,
+    };
+  }
 }
+
+// Re-export types for consumers
+export type { OcrInput, OcrResult } from './providers/ocr-provider.interface';
