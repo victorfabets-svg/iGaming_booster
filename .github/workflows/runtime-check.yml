@@ -17,10 +17,13 @@ env:
   NODE_ENV: production
   JWT_SECRET: test-jwt-secret-ci
   CANARY_TOKEN: test-canary-token
-  # Force "approved" decision in CI so the full 8-event chain fires
-  # (synthetic test file produces a low fraud score; threshold=0 bypasses).
-  VALIDATION_APPROVAL_THRESHOLD: "0"
-  VALIDATION_MANUAL_REVIEW_THRESHOLD: "0"
+  # Force "approved" decision in CI so the full 8-event chain fires.
+  # Sprint 7 rule engine semantics: score >= reject_threshold → rejected,
+  # score >= review_threshold → manual_review, else approved. fraud_score is
+  # bounded by [0, 1] + small payment_modifier, so 1.1 is unreachable and
+  # every synthetic decision lands as approved.
+  VALIDATION_FRAUD_REJECT_THRESHOLD: "1.1"
+  VALIDATION_FRAUD_REVIEW_THRESHOLD: "1.1"
 
 jobs:
 
