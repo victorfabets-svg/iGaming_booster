@@ -6,6 +6,7 @@ import { getDb, db as dbConn } from '@shared/database/connection';
 import { getDbHealth } from './state';
 import { NEON_DB_URL } from '@shared/config/env';
 import { proofRoutes } from './routes/proofs';
+import { authRoutes } from './routes/auth';
 import { metricsRoutes } from './routes/metrics';
 import { metricsFunnelRoutes } from './routes/metrics-funnel';
 import { alertsRoutes } from './routes/alerts';
@@ -103,6 +104,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register routes
   app.register(proofRoutes);
+  app.register(authRoutes);
   app.register(metricsRoutes);
   app.register(metricsFunnelRoutes);
   app.register(alertsRoutes);

@@ -1,53 +1,72 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '@shared/database/connection';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, createHash } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { requireFields } from '../utils/validation';
 import { rateLimitDb } from '../utils/rate-limit-db';
 import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
 import { auditLog } from '@shared/events/audit-log';
-
-interface RegisterBody {
-  email: string;
-  password: string;
-}
+import argon2 from 'argon2';
 
 // Simple email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Constants
+const ACCESS_TOKEN_EXPIRY = '24h';
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+
+/**
+ * Hash a refresh token using SHA-256 (base64url encoded)
+ */
+function hashRefreshToken(token: string): string {
+  return createHash('sha256').update(token).digest('base64url');
+}
+
+/**
+ * Generate a random refresh token (32 bytes, base64url encoded) - per spec D2
+ */
+function generateRefreshToken(): string {
+  return randomBytes(32).toString('base64url');
+}
 
 function isValidEmail(email: unknown): email is string {
   return typeof email === 'string' && EMAIL_REGEX.test(email);
 }
 
+// Valid argon2id dummy hash for constant-time comparison when user doesn't exist
+// Generated with: argon2.hash('constant-time-dummy', {type:argon2.argon2id,memoryCost:65536,timeCost:3,parallelism:4})
+const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$axjd+k8652X5zG7/ZZAK1w$YSkkQFQKv3yBYtj//ZVoq/r1rOwKAx/WNURTeWhiYRk';
+
 /**
- * Auth routes - public registration endpoint
+ * Truncated user ID hash for audit forensics (without exposing real user_id)
+ */
+function getUserIdHint(userId: string): string {
+  return createHash('sha256').update(userId).digest('hex').slice(0, 12);
+}
+
+/**
+ * Auth routes - login, register, token refresh, logout
  */
 export async function authRoutes(fastify: FastifyInstance): Promise<void> {
-  // Registration - no auth required
-  fastify.post<{ Body: RegisterBody }>(
+  // Registration endpoint
+  fastify.post(
     '/register',
-    async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
-      // Idempotency - reserve key atomically to prevent race conditions
+    async (request: FastifyRequest<{ Body: { email: string; password: string } }>, reply: FastifyReply) => {
       const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
       if (idemKey) {
         const reserve = await reserveIdempotency(idemKey);
         
         if (!reserve.acquired) {
-          // Another request got the key - check its status
           const existing = await getIdempotency(idemKey);
           
           if (existing?.status === 'done') {
-            // Completed - return cached response
             return ok(reply, existing.response);
           }
           
-          // Check if pending is stale (crashed request)
           if (isIdempotencyStale(existing)) {
-            // Release stale key and try to re-acquire
             await releaseStaleIdempotency(idemKey);
             const retryReserve = await reserveIdempotency(idemKey);
             if (!retryReserve.acquired) {
-              // Another request got it - check again
               const retryExisting = await getIdempotency(idemKey);
               if (retryExisting?.status === 'done') {
                 return ok(reply, retryExisting.response);
@@ -55,21 +74,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
             }
           } else {
-            // Still in progress - tell client to retry
             return fail(reply, 'Request in progress, please retry', 'IDEMPOTENCY_IN_PROGRESS');
           }
         }
       }
 
-      // Rate limiting - 5 requests per minute per IP (stored in DB for persistence)
+      // Rate limiting - 5 requests per minute per IP (register-specific key)
       const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
-      const allowed = await rateLimitDb(clientIp, 5, 60000);
+      const allowed = await rateLimitDb(`register-ip:${clientIp}`, 5, 60000);
 
       if (!allowed) {
         return fail(reply, 'Too many requests', 'RATE_LIMIT');
       }
 
-      // Validate required fields
       const fieldsError = requireFields(request.body, ['email', 'password']);
       if (fieldsError) {
         return fail(reply, fieldsError, 'VALIDATION_ERROR');
@@ -77,36 +94,43 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       const { email, password } = request.body;
 
-      // Validate email format
-      if (!isValidEmail(email)) {
+      // Email normalization (case-insensitive)
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!isValidEmail(normalizedEmail)) {
         return fail(reply, 'Valid email required', 'VALIDATION_ERROR');
       }
 
-      // Validate password strength
       if (password.length < 8) {
         return fail(reply, 'Password must be at least 8 characters', 'VALIDATION_ERROR');
       }
 
       const userId = randomUUID();
-
-      // Get request ID for tracing
       const requestId = (request as any).requestId;
 
       try {
+        // Hash password with argon2
+        const passwordHash = await argon2.hash(password, {
+          type: argon2.argon2id,
+          memoryCost: 65536,
+          timeCost: 3,
+        });
+
         await db.query(
-          `INSERT INTO identity.users (id, email, created_at) VALUES ($1, $2, NOW())`,
-          [userId, email]
+          `INSERT INTO identity.users (id, email, password_hash, password_updated_at, created_at) 
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [userId, normalizedEmail, passwordHash]
         );
 
-        // Audit log for successful registration
-        await auditLog(userId, 'user_registered', { email }, requestId);
+        // Audit log for successful registration and password set
+        await auditLog(userId, 'user_registered', { email: normalizedEmail }, requestId);
+        await auditLog(userId, 'password_set', { method: 'register' }, requestId);
 
-        // Save idempotency key with response (only on success)
         if (idemKey) {
-          await completeIdempotency(idemKey, { user_id: userId, email });
+          await completeIdempotency(idemKey, { user_id: userId, email: normalizedEmail });
         }
 
-        return ok(reply, { user_id: userId, email });
+        return ok(reply, { user_id: userId, email: normalizedEmail });
       } catch (err: any) {
         if (err.code === '23505') {
           return fail(reply, 'Email already registered', 'DUPLICATE_EMAIL');
@@ -114,6 +138,255 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         console.error(err);
         return fail(reply, err.message);
       }
+    }
+  );
+
+  // Login endpoint
+  fastify.post(
+    '/login',
+    async (request: FastifyRequest<{ Body: { email: string; password: string } }>, reply: FastifyReply) => {
+      // Rate limiting - 5 requests per minute per IP
+      const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
+      const allowed = await rateLimitDb(`login-ip:${clientIp}`, 5, 60000);
+
+      if (!allowed) {
+        return fail(reply, 'Too many requests', 'RATE_LIMIT');
+      }
+
+      const fieldsError = requireFields(request.body, ['email', 'password']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
+
+      const { email, password } = request.body;
+      const requestId = (request as any).requestId;
+
+      // Email normalization (case-insensitive)
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Look up user by email
+      const userResult = await db.query<{ id: string; password_hash: string | null }>(
+        `SELECT id, password_hash FROM identity.users WHERE email = $1`,
+        [normalizedEmail]
+      );
+
+      const user = userResult.rows[0];
+
+      // Constant-time verification regardless of whether user exists
+      // This prevents timing attacks from revealing if email exists
+      let isValid = false;
+      try {
+        if (user) {
+          if (!user.password_hash) {
+            // User exists but has no password (legacy account)
+            // Still do dummy verify to maintain constant time
+            await argon2.verify(DUMMY_HASH, password);
+          } else {
+            isValid = await argon2.verify(user.password_hash, password);
+          }
+        } else {
+          // User doesn't exist - verify against dummy hash (constant time)
+          await argon2.verify(DUMMY_HASH, password);
+        }
+      } catch (err) {
+        // Corrupted hash or argon2 internal error - treat as invalid
+        if (user) {
+          await auditLog(null, 'auth_hash_verify_error', {
+            target_user_hint: getUserIdHint(user.id),
+            error: (err as Error).message
+          }, requestId);
+        }
+        isValid = false;
+      }
+
+      if (!user) {
+        // Audit failed login - never expose user_id to prevent email enumeration
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'unknown_email' }, requestId);
+        return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
+      }
+
+      if (!user.password_hash) {
+        // Legacy account without password - audit with hint, not real user_id
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'no_password_set', target_user_hint: getUserIdHint(user.id) }, requestId);
+        return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
+      }
+
+      if (!isValid) {
+        // Invalid password - audit with hint, not real user_id
+        await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'invalid_password', target_user_hint: getUserIdHint(user.id) }, requestId);
+        return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
+      }
+
+      // Generate access token with standard 'sub' claim + user_id for backward compat
+      const accessToken = await reply.jwtSign({ sub: user.id, user_id: user.id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+
+      // Generate refresh token
+      const refreshTokenValue = generateRefreshToken();
+      const refreshTokenHash = hashRefreshToken(refreshTokenValue);
+      const familyId = randomUUID();
+      const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+      // Store refresh token
+      await db.query(
+        `INSERT INTO identity.refresh_tokens (user_id, family_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [user.id, familyId, refreshTokenHash, expiresAt]
+      );
+
+      // Audit successful login
+      await auditLog(user.id, 'user_login_success', { method: 'password' }, requestId);
+
+      return ok(reply, { 
+        access_token: accessToken, 
+        refresh_token: refreshTokenValue, 
+        expires_in: 86400 
+      });
+    }
+  );
+
+  // Token refresh endpoint
+  fastify.post(
+    '/token/refresh',
+    async (request: FastifyRequest<{ Body: { refresh_token: string } }>, reply: FastifyReply) => {
+      const fieldsError = requireFields(request.body, ['refresh_token']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
+
+      const { refresh_token } = request.body;
+      const requestId = (request as any).requestId;
+      const refreshTokenHash = hashRefreshToken(refresh_token);
+
+      // Look up the refresh token
+      const tokenResult = await db.query<{
+        id: string;
+        user_id: string;
+        family_id: string;
+        expires_at: Date;
+        revoked_at: Date | null;
+      }>(
+        `SELECT id, user_id, family_id, expires_at, revoked_at 
+         FROM identity.refresh_tokens 
+         WHERE token_hash = $1`,
+        [refreshTokenHash]
+      );
+
+      const token = tokenResult.rows[0];
+
+      if (!token) {
+        return fail(reply, 'Invalid refresh token', 'INVALID_REFRESH');
+      }
+
+      if (new Date(token.expires_at) < new Date()) {
+        return fail(reply, 'Refresh token expired', 'EXPIRED_REFRESH');
+      }
+
+      if (token.revoked_at) {
+        // Reuse detected - revoke entire family
+        await db.query(
+          `UPDATE identity.refresh_tokens 
+           SET revoked_at = NOW(), revoked_reason = 'family_compromised' 
+           WHERE family_id = $1 AND revoked_at IS NULL`,
+          [token.family_id]
+        );
+
+        // Mark the trigger token as the one that detected the compromise
+        await db.query(
+          `UPDATE identity.refresh_tokens 
+           SET revoked_reason = 'family_compromise_trigger' 
+           WHERE id = $1`,
+          [token.id]
+        );
+
+        await auditLog(token.user_id, 'refresh_token_reuse_detected', { severity: 'high' }, requestId);
+        return fail(reply, 'Token family revoked', 'FAMILY_REVOKED');
+      }
+
+      // Revoke the old token and generate new one
+      await db.query(
+        `UPDATE identity.refresh_tokens 
+         SET revoked_at = NOW(), revoked_reason = 'rotated' 
+         WHERE id = $1`,
+        [token.id]
+      );
+
+      // Generate new refresh token with same family
+      const newRefreshTokenValue = generateRefreshToken();
+      const newRefreshTokenHash = hashRefreshToken(newRefreshTokenValue);
+      const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+      await db.query(
+        `INSERT INTO identity.refresh_tokens (user_id, family_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [token.user_id, token.family_id, newRefreshTokenHash, newExpiresAt]
+      );
+
+      // Generate new access token with standard 'sub' claim
+      const accessToken = await reply.jwtSign({ sub: token.user_id, user_id: token.user_id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+
+      return ok(reply, { 
+        access_token: accessToken, 
+        refresh_token: newRefreshTokenValue, 
+        expires_in: 86400 
+      });
+    }
+  );
+
+  // Logout endpoint - requires JWT authentication + ownership check
+  fastify.post(
+    '/logout',
+    async (request: FastifyRequest<{ Body: { refresh_token: string } }>, reply: FastifyReply) => {
+      // Verify JWT to get authenticated user
+      try {
+        await request.jwtVerify();
+      } catch {
+        return fail(reply, 'Authentication required', 'UNAUTHORIZED');
+      }
+
+      const userId = (request as any).user?.user_id || (request as any).user?.sub;
+      if (!userId) {
+        return fail(reply, 'Authentication required', 'UNAUTHORIZED');
+      }
+
+      const requestId = (request as any).requestId;
+
+      const fieldsError = requireFields(request.body, ['refresh_token']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
+
+      const { refresh_token } = request.body;
+      const refreshTokenHash = hashRefreshToken(refresh_token);
+
+      // Verify token ownership - only revoke if token belongs to authenticated user
+      const tokenOwnerResult = await db.query<{ user_id: string }>(
+        `SELECT user_id FROM identity.refresh_tokens WHERE token_hash = $1`,
+        [refreshTokenHash]
+      );
+
+      const tokenOwner = tokenOwnerResult.rows[0];
+      if (!tokenOwner) {
+        return fail(reply, 'Invalid refresh token', 'INVALID_REFRESH');
+      }
+
+      if (tokenOwner.user_id !== userId) {
+        // Token belongs to different user - forbidden
+        await auditLog(userId, 'user_logout_forbidden', { reason: 'token_owner_mismatch' }, requestId);
+        return fail(reply, 'Forbidden', 'FORBIDDEN');
+      }
+
+      // Revoke the refresh token
+      await db.query(
+        `UPDATE identity.refresh_tokens 
+         SET revoked_at = NOW(), revoked_reason = 'logout' 
+         WHERE token_hash = $1`,
+        [refreshTokenHash]
+      );
+
+      // Audit logout (user_id is known since authenticated)
+      await auditLog(userId, 'user_logout', {}, requestId);
+
+      return ok(reply, { ok: true });
     }
   );
 }
