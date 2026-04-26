@@ -17,8 +17,8 @@ import { findProofById } from '../repositories/proof.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
 import { logger, alertMonitor } from '@shared/observability/logger';
 import { recordValidationResult } from '@shared/observability/metrics.service';
-import { config } from '@shared/config/env';
 import { db, type PoolClient } from '@shared/database/connection';
+import { evaluate } from '../services/validation-rules.service';
 
 const FRAUD_SCORED_EVENT = 'fraud_scored';
 const PAYMENT_EXTRACTED_EVENT = 'payment_identifier_extracted';
@@ -245,31 +245,38 @@ async function tryMakeDecision(
     data: { proof_id: proofId, fraud_score: fraud.score }
   });
 
-  // Make validation decision
-  const approvalThreshold = config.validation.approvalThreshold;
-  const manualReviewThreshold = config.validation.manualReviewThreshold;
-
+  // Make validation decision using rule engine
   const paymentModifier = payment.validation.has_valid_identifiers
     ? payment.validation.total_confidence * 0.15
     : -0.1;
   
-  const finalScore = fraud.score + paymentModifier;
-
-  let decision: 'approved' | 'rejected' | 'manual_review';
+  // Use versioned rule engine
+  const ruleResult = evaluate({
+    fraud_score: fraud.score,
+    payment_modifier: paymentModifier,
+    has_valid_payment_identifier: payment.validation.has_valid_identifiers,
+  });
   
-  if (finalScore >= approvalThreshold) {
-    decision = 'approved';
+  const decision = ruleResult.decision;
+  const finalScore = fraud.score + paymentModifier;
+  const ruleVersion = ruleResult.rule_version;
+  const decisionReason = ruleResult.reason;
+  
+  if (decision === 'approved') {
     alertMonitor.recordApproved();
-  } else if (finalScore >= manualReviewThreshold) {
-    decision = 'manual_review';
-  } else {
-    decision = 'rejected';
   }
-
+  
   logger.info({
     event: 'validation_decision_made',
     context: 'validation',
-    data: { proof_id: proofId, decision, final_score: finalScore, payment_modifier: paymentModifier }
+    data: { 
+      proof_id: proofId, 
+      decision, 
+      final_score: finalScore, 
+      payment_modifier: paymentModifier,
+      rule_version: ruleVersion,
+      decision_reason: decisionReason
+    }
   });
 
   recordValidationResult(decision);
@@ -283,10 +290,17 @@ async function tryMakeDecision(
 
   const proof = await findProofById(proofId);
   
-  // Domain write: Update validation status
-  await updateValidationStatusWithClient(client, validation.id, decision, finalScore);
+  // Domain write: Update validation status with rule version and reason
+  await updateValidationStatusWithClient(
+    client, 
+    validation.id, 
+    decision, 
+    finalScore,
+    ruleVersion,
+    decisionReason
+  );
 
-  // Event: Emit final decision
+  // Event: Emit final decision with rule_version and reason
   if (decision === 'approved') {
     await insertEventInTransaction(
       client,
@@ -301,6 +315,8 @@ async function tryMakeDecision(
         confidence_score: finalScore,
         fraud_score: fraud.score,
         payment_modifier: paymentModifier,
+        rule_version: ruleVersion,
+        reason: decisionReason,
       },
       'validation'
     );
@@ -316,7 +332,8 @@ async function tryMakeDecision(
         validation_id: validation.id,
         status: decision,
         confidence_score: finalScore,
-        reason: decision === 'rejected' ? 'low_confidence' : 'manual_review_required',
+        rule_version: ruleVersion,
+        reason: decisionReason,
       },
       'validation'
     );

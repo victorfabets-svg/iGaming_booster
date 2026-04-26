@@ -7,6 +7,8 @@ export interface ProofValidation {
   confidence_score: number | null;
   validation_version: string;
   validated_at: Date | null;
+  rule_version: string | null;      // NEW: nullable
+  decision_reason: string | null;   // NEW: nullable
   created_at: Date;
 }
 
@@ -45,7 +47,8 @@ export async function createProofValidationWithClient(
 
 export async function findValidationByProofId(proofId: string): Promise<ProofValidation | null> {
   const result = await db.query<ProofValidation>(
-    `SELECT id, proof_id, status, confidence_score, validation_version, validated_at, created_at
+    `SELECT id, proof_id, status, confidence_score, validation_version, validated_at, 
+            rule_version, decision_reason, created_at
      FROM validation.proof_validations
      WHERE proof_id = $1`,
     [proofId]
@@ -56,13 +59,16 @@ export async function findValidationByProofId(proofId: string): Promise<ProofVal
 export async function updateValidationStatus(
   id: string,
   status: string,
-  confidenceScore?: number
+  confidenceScore?: number,
+  ruleVersion?: string | null,
+  decisionReason?: string | null
 ): Promise<void> {
   await getDb().query(
     `UPDATE validation.proof_validations
-     SET status = $1, confidence_score = $2, validated_at = NOW()
-     WHERE id = $3`,
-    [status, confidenceScore ?? null, id]
+     SET status = $1, confidence_score = $2, validated_at = NOW(),
+         rule_version = $3, decision_reason = $4
+     WHERE id = $5`,
+    [status, confidenceScore ?? null, ruleVersion ?? null, decisionReason ?? null, id]
   );
 }
 
@@ -74,12 +80,15 @@ export async function updateValidationStatusWithClient(
   client: any,
   id: string,
   status: string,
-  confidenceScore?: number
+  confidenceScore?: number,
+  ruleVersion?: string | null,
+  decisionReason?: string | null
 ): Promise<void> {
   await client.query(
     `UPDATE validation.proof_validations
-     SET status = $1, confidence_score = $2, validated_at = NOW()
-     WHERE id = $3`,
-    [status, confidenceScore ?? null, id]
+     SET status = $1, confidence_score = $2, validated_at = NOW(),
+         rule_version = $3, decision_reason = $4
+     WHERE id = $5`,
+    [status, confidenceScore ?? null, ruleVersion ?? null, decisionReason ?? null, id]
   );
 }
