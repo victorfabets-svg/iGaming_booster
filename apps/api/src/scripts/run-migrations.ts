@@ -13,6 +13,17 @@ if (migrationUrl) {
 
 const MIGRATIONS_DIR = path.join(__dirname, '../../../../shared/database/migrations');
 
+// RECONCILE mode: when a migration's SQL fails because objects already exist,
+// treat it as already-applied (mark in tracking table, continue). Used to
+// recover from drift where DDL was applied outside this runner. Other errors
+// still abort. Toggled by MIGRATIONS_RECONCILE=true (set by workflow input).
+const RECONCILE_MODE = process.env.MIGRATIONS_RECONCILE === 'true';
+
+// Postgres SQLSTATE codes meaning "this object already exists".
+// 42P06: duplicate_schema, 42P07: duplicate_table/index/relation,
+// 42710: duplicate_object (constraints, types), 42701: duplicate_column.
+const ALREADY_EXISTS_CODES = new Set(['42P06', '42P07', '42710', '42701']);
+
 interface Migration {
   filename: string;
   executed_at: Date;
@@ -69,6 +80,9 @@ async function runMigrations(): Promise<void> {
     .sort();
 
   console.log(`📄 Found ${files.length} migration files`);
+  if (RECONCILE_MODE) {
+    console.log('⚙️  RECONCILE mode ON — already-exists errors will mark migrations as applied');
+  }
 
   if (files.length === 0) {
     console.log('✨ No migrations to run');
@@ -76,6 +90,7 @@ async function runMigrations(): Promise<void> {
   }
 
   let executedCount = 0;
+  let reconciledCount = 0;
 
   for (const file of files) {
     const filePath = path.join(MIGRATIONS_DIR, file);
@@ -88,20 +103,35 @@ async function runMigrations(): Promise<void> {
 
     console.log(`🚀 EXECUTING: ${file}`);
 
-    // Execute migration - HARD FAIL on any error
+    // Execute migration inside a transaction so partial failures don't leak.
+    let reconciled = false;
+    const client = await db.connect();
     try {
-      await db.query(sql);
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('COMMIT');
     } catch (error) {
-      console.error('===================================================');
-      console.error('❌ MIGRATION FAILED');
-      console.error(`   File: ${file}`);
-      console.error(`   Error: ${error}`);
-      console.error('===================================================');
-      await db.end();
-      process.exit(1);
+      await client.query('ROLLBACK').catch(() => {});
+      const code = (error as { code?: string })?.code;
+      if (RECONCILE_MODE && code && ALREADY_EXISTS_CODES.has(code)) {
+        console.log(`♻️  RECONCILE: ${file} reports objects already exist (SQLSTATE ${code}). Marking as applied.`);
+        reconciled = true;
+      } else {
+        client.release();
+        console.error('===================================================');
+        console.error('❌ MIGRATION FAILED');
+        console.error(`   File: ${file}`);
+        console.error(`   Error: ${error}`);
+        if (code) console.error(`   SQLSTATE: ${code}`);
+        console.error('===================================================');
+        await db.end();
+        process.exit(1);
+      }
+    } finally {
+      client.release();
     }
 
-    // Mark as executed
+    // Mark as executed (whether actually run or reconciled).
     try {
       await markMigrationExecuted(file);
     } catch (error) {
@@ -114,13 +144,20 @@ async function runMigrations(): Promise<void> {
       process.exit(1);
     }
 
-    console.log(`✅ Migration executed: ${file}`);
-    executedCount++;
+    if (reconciled) {
+      reconciledCount++;
+    } else {
+      console.log(`✅ Migration executed: ${file}`);
+      executedCount++;
+    }
   }
 
   console.log('===================================================');
   console.log('📈 Migration Summary:');
   console.log(`   Executed: ${executedCount}`);
+  if (RECONCILE_MODE) {
+    console.log(`   Reconciled (already applied externally): ${reconciledCount}`);
+  }
   console.log('===================================================');
   console.log('✨ Migration runner finished');
   console.log('===================================================');

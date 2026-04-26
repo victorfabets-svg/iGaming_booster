@@ -10,6 +10,11 @@ on:
         description: 'Git ref to run migrations from (default: main)'
         required: false
         default: 'main'
+      reconcile:
+        description: 'Reconcile mode: treat "already exists" errors as already-applied (recover from drift)'
+        required: false
+        type: boolean
+        default: false
 
 # Secret mapping note (intentional, see PR #50):
 #   NEON_DB_URL_DIRECT      -> neondb_owner, direct endpoint  (used here)
@@ -85,6 +90,7 @@ jobs:
           # because the pooler in transaction mode does not support all session
           # features migrations rely on.
           NEON_DB_URL_DIRECT: ${{ secrets.NEON_DB_URL_DIRECT }}
+          MIGRATIONS_RECONCILE: ${{ inputs.reconcile }}
         run: |
           cd apps/api
           npm run migrate
