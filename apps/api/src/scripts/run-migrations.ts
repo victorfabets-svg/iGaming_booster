@@ -29,6 +29,10 @@ interface Migration {
   executed_at: Date;
 }
 
+async function ensureUuidExtension(): Promise<void> {
+  await db.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+}
+
 async function ensureMigrationsTable(): Promise<void> {
   // Schema must exist before creating the table inside it
   await db.query(`CREATE SCHEMA IF NOT EXISTS events;`);
@@ -64,6 +68,9 @@ async function runMigrations(): Promise<void> {
   // Connect to database first
   await connectWithRetry();
   console.log('✅ Database connected');
+
+  await ensureUuidExtension();
+  console.log('✅ uuid-ossp extension ensured');
 
   // Ensure migrations table exists
   await ensureMigrationsTable();
