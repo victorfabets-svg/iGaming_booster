@@ -1,0 +1,52 @@
+name: Migrate Database
+
+# Manual-only trigger. Required so DDL never runs as a side-effect of merging.
+# A repo admin (or anyone with workflow_dispatch permission) invokes it
+# explicitly after reviewing what migrations are pending on the target branch.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to run migrations from (default: main)'
+        required: false
+        default: 'main'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    # Single concurrent run — DDL on a shared DB is not parallel-safe.
+    concurrency:
+      group: migrate-db
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Validate migration secret is set
+        env:
+          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
+        run: |
+          test -n "$NEON_DB_MIGRATIONS_DIRECT" \
+            || (echo "NEON_DB_MIGRATIONS_DIRECT secret is not set" && exit 1)
+
+      - name: Run migrations
+        env:
+          # Owner role on the direct (non-pooled) endpoint — required for DDL
+          # because the pooler in transaction mode does not support all session
+          # features migrations rely on.
+          NEON_DB_MIGRATIONS_DIRECT: ${{ secrets.NEON_DB_MIGRATIONS_DIRECT }}
+        run: |
+          cd apps/api
+          npm run migrate
