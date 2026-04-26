@@ -7,7 +7,7 @@
  * - Tracks hit_count + cost_saved_usd per cache row
  */
 
-import { OcrProvider, OcrInput, OcrResult } from './ocr-provider.interface';
+import { OcrProvider, OcrInput, OcrResult, OcrExtractor } from './ocr-provider.interface';
 import * as cacheRepo from '../../repositories/ocr-cache.repository';
 import { logger } from '@shared/observability/logger';
 import * as crypto from 'crypto';
@@ -23,12 +23,14 @@ function estimateCostSavings(): number {
 
 export class CachedOcrProvider implements OcrProvider {
   readonly name: string;
+  readonly model: string;
 
   constructor(
-    private inner: OcrProvider,
+    private inner: OcrProvider & OcrExtractor,
     private ttlSeconds: number
   ) {
     this.name = `cached-${inner.name}`;
+    this.model = inner.model;
   }
 
   async extract(input: OcrInput): Promise<OcrResult> {
@@ -42,8 +44,21 @@ export class CachedOcrProvider implements OcrProvider {
       mediaType = this.getMediaType(input.file_url);
       fileHash = fetched.hash;
     } catch (err) {
-      // Fetch error: delegate to inner so its catch handles it consistently
-      return this.inner.extract(input);
+      // FIX-18: fetch errors don't delegate — inner would fail same way
+      logger.warn({
+        event: 'ocr_cache_fetch_failed',
+        context: 'validation',
+        data: { url: input.file_url, error: String(err) },
+      });
+      return {
+        amount: null,
+        payment_identifier: null,
+        raw_text: '',
+        confidence: 0,
+        currency: null,
+        status: 'error',
+        reason: String(err),
+      };
     }
 
     // 2. Cache lookup (fail-open: any error → treat as miss)
@@ -82,10 +97,8 @@ export class CachedOcrProvider implements OcrProvider {
       return cached.result;
     }
 
-    // 3. Cache miss — call inner with same file URL (inner handles fetch)
-    // Note: we call inner.extract which will fetch again, but this is acceptable
-    // because we need to keep the interface simple (inner owns the fetch logic)
-    const result = await this.inner.extract(input);
+    // 3. Cache miss — use already-fetched bytes to avoid double-fetch
+    const result = await this.inner.extractFromBytes(bytes, mediaType, fileHash, input.proof_id);
 
     // 4. Cache successful results only (fail-open)
     if (result.status === 'success') {
@@ -94,7 +107,7 @@ export class CachedOcrProvider implements OcrProvider {
           fileHash,
           result,
           this.inner.name,
-          'claude-haiku-4-5',
+          this.inner.model,
           this.ttlSeconds
         );
       } catch (err) {

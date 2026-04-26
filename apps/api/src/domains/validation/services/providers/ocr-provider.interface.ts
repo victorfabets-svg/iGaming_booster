@@ -21,6 +21,7 @@ export interface OcrResult {
 
 export interface OcrProvider {
   readonly name: string;
+  readonly model: string;
   extract(input: OcrInput): Promise<OcrResult>;
 }
 

@@ -54,9 +54,9 @@ const EXTRACT_RECEIPT_TOOL = {
 
 export class AnthropicOcrProvider implements OcrProvider, OcrExtractor {
   readonly name = 'anthropic';
+  readonly model = MODEL_NAME;
 
   private client: Anthropic;
-  private model = MODEL_NAME;
   private maxRetries = 1;
   private timeoutMs = 30_000;
 
@@ -73,14 +73,26 @@ export class AnthropicOcrProvider implements OcrProvider, OcrExtractor {
    * T4: extract now delegates to extractFromBytes after fetching bytes.
    */
   async extract(input: OcrInput): Promise<OcrResult> {
+    const startTime = Date.now();
     try {
       const { bytes, hash } = await this.fetchImage(input.file_url);
       const mediaType = this.getMediaType(input.file_url);
       return await this.extractFromBytes(bytes, mediaType, hash, input.proof_id);
     } catch (error: unknown) {
       const errorAny = error as { message?: string };
-      // Fetch errors: record with zero tokens (no Anthropic call made)
       logger.error('ocr_fetch_error', 'validation', String(error));
+
+      // FIX-19: audit fetch failure in ocr_calls
+      await this.recordOcrCall({
+        proof_id: input.proof_id,
+        startTime,
+        inputTokens: 0,
+        outputTokens: 0,
+        status: 'error',
+        errorCode: 'fetch_failed',
+        fileHash: '',
+      });
+
       return {
         amount: null,
         payment_identifier: null,
