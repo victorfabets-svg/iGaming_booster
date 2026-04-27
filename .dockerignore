@@ -3,8 +3,10 @@
 **/dist
 **/.tsbuildinfo
 
-# Frontend (deployed separately on Vercel)
-apps/web
+# Frontend source (deployed separately on Vercel)
+# But allow package.json for npm workspaces resolution
+apps/web/**
+!apps/web/package.json
 
 # Tests + dev
 tests
