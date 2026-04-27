@@ -31,6 +31,16 @@ import { startFlagSync } from '@shared/config/flag-sync';
 import { startStuckEventRecovery, stopStuckEventRecovery } from '@shared/events/event-consumer.repository';
 import { setDbHealth } from './state';
 
+// Combined-process consumers (run in same Node process as api server when
+// RUN_CONSUMERS != 'false'). Avoids needing a separate worker service.
+import { startProofSubmittedConsumer } from '../domains/validation/consumers/proof-submitted.consumer';
+import { startValidationAggregatorConsumer } from '../domains/validation/consumers/validation-aggregator.consumer';
+import { startProofValidatedConsumer } from '../domains/rewards/consumers/proof-validated.consumer';
+import { startRewardGrantedConsumer } from '../domains/raffles/consumers/reward-granted.consumer';
+import { startFraudCheckRequestedConsumer } from '../domains/fraud/consumers/fraud-check-requested.consumer';
+import { startPaymentIdentifierRequestedConsumer } from '../domains/payments/consumers/payment-identifier-requested.consumer';
+import { startSubscriptionExpiredConsumer } from '../domains/whatsapp/consumers/subscription-expired.consumer';
+
 // Global app reference for graceful shutdown
 let app: Awaited<ReturnType<typeof buildApp>> | null = null;
 
@@ -147,6 +157,33 @@ async function start() {
     console.error('❌ API FAILED TO START:', err);
     app.log.error(err);
     process.exit(1);
+  }
+
+  // Combined-process: start outbox consumers in same Node process.
+  // Default ON. Set RUN_CONSUMERS=false to disable (e.g. tests, multi-process deploy).
+  const runConsumers = process.env.RUN_CONSUMERS !== 'false';
+  if (runConsumers) {
+    console.log('📡 Starting outbox consumers (combined-process mode)...');
+    const consumers: Array<[string, () => Promise<void>]> = [
+      ['proof_submitted', startProofSubmittedConsumer],
+      ['validation_aggregator', startValidationAggregatorConsumer],
+      ['fraud_check_requested', startFraudCheckRequestedConsumer],
+      ['payment_identifier_requested', startPaymentIdentifierRequestedConsumer],
+      ['proof_validated', startProofValidatedConsumer],
+      ['reward_granted', startRewardGrantedConsumer],
+      ['subscription_expired', startSubscriptionExpiredConsumer],
+    ];
+    for (const [name, fn] of consumers) {
+      try {
+        await fn();
+        console.log(`  ✓ ${name} consumer started`);
+      } catch (err) {
+        console.error(`  ✗ ${name} consumer failed:`, err instanceof Error ? err.message : String(err));
+      }
+    }
+    console.log('📡 Outbox consumers polling');
+  } else {
+    console.log('📡 RUN_CONSUMERS=false — outbox consumers disabled');
   }
 }
 
