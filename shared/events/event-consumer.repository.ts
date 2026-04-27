@@ -1,4 +1,4 @@
-import { db } from '../database/connection';
+import { db, type PoolClient } from '../database/connection';
 import { Event } from './types';
 export { Event };
 
@@ -140,6 +140,20 @@ export async function markEventProcessed(eventId: string): Promise<void> {
     `UPDATE events.events
      SET processed = TRUE
      WHERE id = $1`,
+    [eventId]
+  );
+}
+
+/**
+ * Mark event as processed (success) — client-aware variant.
+ * Used by consumers that need atomicity with their own work in the same transaction.
+ */
+export async function markEventProcessedWithClient(
+  client: PoolClient,
+  eventId: string
+): Promise<void> {
+  await client.query(
+    `UPDATE events.events SET processed = TRUE WHERE id = $1`,
     [eventId]
   );
 }
@@ -371,6 +385,22 @@ export async function markEventAsProcessed(eventId: string, consumerName: string
   await db.query(
     `INSERT INTO events.processed_events (event_id, consumer_name) VALUES ($1, $2)
      ON CONFLICT (event_id, consumer_name) DO NOTHING`,
+    [eventId, consumerName]
+  );
+}
+
+/**
+ * Mark event as processed by a specific consumer (idempotency tracking) —
+ * client-aware variant. Should be called within consumer's own transaction.
+ */
+export async function markEventAsProcessedWithClient(
+  client: PoolClient,
+  eventId: string,
+  consumerName: string = 'default_consumer'
+): Promise<void> {
+  await client.query(
+    `INSERT INTO events.processed_events (event_id, consumer_name)
+     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [eventId, consumerName]
   );
 }

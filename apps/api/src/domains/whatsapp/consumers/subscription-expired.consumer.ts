@@ -11,7 +11,10 @@ import { db, type PoolClient } from '@shared/database/connection';
 import { logger } from '@shared/observability/logger';
 import { 
   fetchAndLockEvents, 
-  isEventProcessed
+  isEventProcessed,
+  markEventProcessedWithClient,
+  markEventAsProcessedWithClient,
+  type Event
 } from '@shared/events/event-consumer.repository';
 import { optOutByUserIdWithClient } from '../subscribers.repository';
 import { insertEventInTransaction, insertAuditInTransaction } from '@shared/events/transactional-outbox';
@@ -52,7 +55,7 @@ async function pollEvents(): Promise<void> {
   }
 }
 
-async function processEvent(event: any): Promise<void> {
+async function processEvent(event: Event): Promise<void> {
   const eventId = event.event_id || event.id;
   
   // Idempotency check
@@ -77,8 +80,11 @@ async function processEvent(event: any): Promise<void> {
   try {
     await client.query('BEGIN');
 
-    // Mark processed FIRST (locks the event row inside transaction)
-    await markEventProcessedWithClient(client, eventId, CONSUMER_NAME);
+    // Mark idempotency record FIRST. Lock on events.events came from
+    // fetchAndLockEvents (FOR UPDATE SKIP LOCKED) outside this transaction.
+    // processed_events PK (event_id, consumer_name) prevents duplicate processing
+    // across worker instances.
+    await markEventAsProcessedWithClient(client, eventId, CONSUMER_NAME);
 
     // Atomic opt-out
     const subscriber = await optOutByUserIdWithClient(
@@ -94,7 +100,7 @@ async function processEvent(event: any): Promise<void> {
         consumer: CONSUMER_NAME,
         user_id: payload.user_id,
       });
-      await markEventSettledWithClient(client, eventId);
+      await markEventProcessedWithClient(client, eventId);
       await client.query('COMMIT');
       return;
     }
@@ -124,7 +130,7 @@ async function processEvent(event: any): Promise<void> {
       }
     );
 
-    await markEventSettledWithClient(client, eventId);
+    await markEventProcessedWithClient(client, eventId);
     await client.query('COMMIT');
 
     logger.info({
@@ -143,27 +149,12 @@ async function processEvent(event: any): Promise<void> {
   }
 }
 
-async function markEventProcessedWithClient(client: PoolClient, eventId: string, consumerName: string): Promise<void> {
-  await client.query(
-    `INSERT INTO events.processed_events (event_id, consumer_name)
-     VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [eventId, consumerName]
-  );
-}
-
-async function markEventSettledWithClient(client: PoolClient, eventId: string): Promise<void> {
-  await client.query(
-    `UPDATE events.events SET processed = TRUE WHERE id = $1`,
-    [eventId]
-  );
-}
-
 async function markProcessedNoOp(eventId: string): Promise<void> {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    await markEventProcessedWithClient(client, eventId, CONSUMER_NAME);
-    await markEventSettledWithClient(client, eventId);
+    await markEventAsProcessedWithClient(client, eventId, CONSUMER_NAME);
+    await markEventProcessedWithClient(client, eventId);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
