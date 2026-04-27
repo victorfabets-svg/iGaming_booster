@@ -1,0 +1,27 @@
+# Build artifacts (rebuilt inside image)
+**/node_modules
+**/dist
+**/.tsbuildinfo
+
+# Frontend (deployed separately on Vercel)
+apps/web
+
+# Tests + dev
+tests
+**/__tests__
+**/*.test.ts
+
+# Git / editors / OS
+.git
+.github
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Docs / configs not needed at runtime
+docs
+README.md
+*.md
+.env*
+.gitignore
