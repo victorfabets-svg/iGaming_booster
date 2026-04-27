@@ -47,6 +47,9 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_slug
 CREATE INDEX IF NOT EXISTS idx_subscriptions_created_at 
   ON subscription.subscriptions(created_at);
 
+CREATE INDEX IF NOT EXISTS idx_subscriptions_external_id 
+  ON subscription.subscriptions(external_id);
+
 CREATE TABLE IF NOT EXISTS subscription.webhook_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   external_event_id TEXT UNIQUE NOT NULL,
