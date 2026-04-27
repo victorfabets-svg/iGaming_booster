@@ -186,9 +186,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       // Email normalization (case-insensitive)
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Look up user by email
-      const userResult = await db.query<{ id: string; password_hash: string | null }>(
-        `SELECT id, password_hash FROM identity.users WHERE email = $1`,
+      // Look up user by email (incl. role for JWT)
+      const userResult = await db.query<{ id: string; password_hash: string | null; role: string }>(
+        `SELECT id, password_hash, role FROM identity.users WHERE email = $1`,
         [normalizedEmail]
       );
 
@@ -239,8 +239,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
       }
 
-      // Generate access token with standard 'sub' claim + user_id for backward compat
-      const accessToken = await reply.jwtSign({ sub: user.id, user_id: user.id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      // Generate access token with standard 'sub' claim + user_id + role for RBAC
+      const userRole = user?.role || 'user';
+      const accessToken = await reply.jwtSign({ sub: user.id, user_id: user.id, role: userRole }, { expiresIn: ACCESS_TOKEN_EXPIRY });
 
       // Generate refresh token
       const refreshTokenValue = generateRefreshToken();
@@ -343,8 +344,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         [token.user_id, token.family_id, newRefreshTokenHash, newExpiresAt]
       );
 
-      // Generate new access token with standard 'sub' claim
-      const accessToken = await reply.jwtSign({ sub: token.user_id, user_id: token.user_id }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+      // Re-fetch role from DB for refreshed token (role changes should propagate)
+      const roleResult = await db.query<{ role: string }>(
+        `SELECT role FROM identity.users WHERE id = $1`,
+        [token.user_id]
+      );
+      const userRole = roleResult.rows[0]?.role || 'user';
+
+      // Generate new access token with role for RBAC
+      const accessToken = await reply.jwtSign({ sub: token.user_id, user_id: token.user_id, role: userRole }, { expiresIn: ACCESS_TOKEN_EXPIRY });
 
       return ok(reply, { 
         access_token: accessToken, 

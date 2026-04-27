@@ -45,6 +45,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-do-not-use-in-productio
 const args = process.argv.slice(2);
 let targetEmail: string | null = null;
 let targetUserId: string | null = null;
+let targetRole = 'user';
 let silent = false;
 
 for (const arg of args) {
@@ -52,14 +53,21 @@ for (const arg of args) {
     targetEmail = arg.slice('--email='.length);
   } else if (arg.startsWith('--user-id=')) {
     targetUserId = arg.slice('--user-id='.length);
+  } else if (arg.startsWith('--role=')) {
+    targetRole = arg.slice('--role='.length);
+    if (!['user', 'admin', 'affiliate'].includes(targetRole)) {
+      console.error('Role must be one of: user, admin, affiliate');
+      process.exit(1);
+    }
   } else if (arg === '--silent') {
     silent = true;
   }
 }
 
 if (!targetEmail && !targetUserId) {
-  console.error('Usage: ts-node scripts/mint-dev-token.ts --email=<email> [--silent]');
-  console.error('   or: ts-node scripts/mint-dev-token.ts --user-id=<uuid> [--silent]');
+  console.error('Usage: ts-node scripts/mint-dev-token.ts --email=<email> [--role=<role>] [--silent]');
+  console.error('   or: ts-node scripts/mint-dev-token.ts --user-id=<uuid> [--role=<role>] [--silent]');
+  console.error('Roles: user (default), admin, affiliate');
   process.exit(1);
 }
 
@@ -110,7 +118,7 @@ async function getOrCreateUser(email: string | null, userId: string | null): Pro
 async function main(): Promise<void> {
   const { user_id, email } = await getOrCreateUser(targetEmail, targetUserId);
 
-  const payload = { user_id, email };
+  const payload = { user_id, email, role: targetRole };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
 
   if (silent) {
@@ -119,6 +127,7 @@ async function main(): Promise<void> {
     console.log('✅ JWT token generated');
     console.log(`   user_id : ${user_id}`);
     console.log(`   email   : ${email}`);
+    console.log(`   role    : ${targetRole}`);
     console.log(`   token   : ${token}`);
     console.log('');
     console.log('Add to apps/web/.env:');

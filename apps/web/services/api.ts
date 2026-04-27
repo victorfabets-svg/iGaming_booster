@@ -95,9 +95,24 @@ export interface SystemEvent {
 }
 
 const DEV_JWT: string | undefined = (import.meta as any).env?.VITE_DEV_JWT;
+const ACCESS_KEY = 'igb_access';
 
-const authHeaders = (): Record<string, string> =>
-  DEV_JWT ? { Authorization: `Bearer ${DEV_JWT}` } : {};
+/**
+ * Get access token: localStorage first, then fallback to dev JWT
+ * Exported for admin-api.ts
+ */
+export function getAccessToken(): string | null {
+  const stored = localStorage.getItem(ACCESS_KEY);
+  if (stored) return stored;
+  // Fallback to dev JWT for local dev without login
+  if (DEV_JWT) return DEV_JWT;
+  return null;
+}
+
+const authHeaders = (): Record<string, string> => {
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 function httpErrorMessage(status: number, fallback: string): string {
   if (status === 401 || status === 403) return 'Sessão expirada. Faça login novamente.';

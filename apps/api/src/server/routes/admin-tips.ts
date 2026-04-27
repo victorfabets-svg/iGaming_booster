@@ -1,10 +1,11 @@
 /**
  * Admin Tips Routes
- * Admin endpoints for querying tips (JWT auth required)
+ * Admin endpoints for querying tips (admin role required)
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import { listAll, findByExternalId, TipFilters } from '../../domains/tipster/tips.repository';
 
 const DEFAULT_LIMIT = 100;
@@ -28,7 +29,7 @@ export async function adminTipsRoutes(
   // GET /admin/tips - List tips with filters
   fastify.get<{ Querystring: ListQuery }>(
     '/admin/tips',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (request: FastifyRequest<{ Querystring: ListQuery }>, reply: FastifyReply) => {
       const { status, house_slug, since, until, limit: limitStr } = request.query;
 
@@ -85,7 +86,7 @@ export async function adminTipsRoutes(
   // GET /admin/tips/:external_id - Get single tip by external_id
   fastify.get<{ Params: GetParams }>(
     '/admin/tips/:external_id',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (request: FastifyRequest<{ Params: GetParams }>, reply: FastifyReply) => {
       const { external_id } = request.params;
 

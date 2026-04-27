@@ -22,6 +22,7 @@ import { whatsappRoutes } from './routes/whatsapp';
 import { adminWhatsappRoutes } from './routes/admin-whatsapp';
 import { subscriptionRoutes } from './routes/subscription';
 import { adminSubscriptionRoutes } from './routes/admin-subscription';
+import { adminIntegrationsRoutes } from './routes/admin-integrations';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -167,6 +168,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(subscriptionRoutes);
   // Admin subscription routes (JWT auth)
   app.register(adminSubscriptionRoutes);
+  // Admin integrations routes (admin role required)
+  app.register(adminIntegrationsRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {

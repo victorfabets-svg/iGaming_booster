@@ -1,10 +1,11 @@
 /**
  * Admin Subscription Routes
- * Admin endpoints for managing subscription plans and subscriptions (JWT auth required)
+ * Admin endpoints for managing subscription plans and subscriptions (admin role required)
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import {
   insertWithClient as insertPlan,
   updateWithClient as updatePlan,
@@ -222,7 +223,7 @@ export async function adminSubscriptionRoutes(
   // POST /admin/subscriptions/plans - Create a new plan
   fastify.post<{ Body: PlanCreateBody }>(
     '/admin/subscriptions/plans',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Body: PlanCreateBody }>,
       reply: FastifyReply
@@ -298,7 +299,7 @@ export async function adminSubscriptionRoutes(
   // GET /admin/subscriptions/plans - List all plans with filters
   fastify.get<{ Querystring: PlanListQuery }>(
     '/admin/subscriptions/plans',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Querystring: PlanListQuery }>,
       reply: FastifyReply
@@ -337,7 +338,7 @@ export async function adminSubscriptionRoutes(
   // GET /admin/subscriptions/plans/:slug - Get a single plan
   fastify.get<{ Params: PlanSlugParams }>(
     '/admin/subscriptions/plans/:slug',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: PlanSlugParams }>,
       reply: FastifyReply
@@ -360,7 +361,7 @@ export async function adminSubscriptionRoutes(
   // PATCH /admin/subscriptions/plans/:slug - Update a plan
   fastify.patch<{ Params: PlanSlugParams; Body: PlanUpdateBody }>(
     '/admin/subscriptions/plans/:slug',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: PlanSlugParams; Body: PlanUpdateBody }>,
       reply: FastifyReply
@@ -430,7 +431,7 @@ export async function adminSubscriptionRoutes(
   // POST /admin/subscriptions/plans/:slug/deactivate - Deactivate a plan
   fastify.post<{ Params: PlanSlugParams }>(
     '/admin/subscriptions/plans/:slug/deactivate',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: PlanSlugParams }>,
       reply: FastifyReply
@@ -492,7 +493,7 @@ export async function adminSubscriptionRoutes(
   // POST /admin/subscriptions/plans/:slug/reactivate - Reactivate a plan
   fastify.post<{ Params: PlanSlugParams }>(
     '/admin/subscriptions/plans/:slug/reactivate',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: PlanSlugParams }>,
       reply: FastifyReply
@@ -557,7 +558,7 @@ export async function adminSubscriptionRoutes(
   // GET /admin/subscriptions - List all subscriptions with filters
   fastify.get<{ Querystring: SubscriptionListQuery }>(
     '/admin/subscriptions',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Querystring: SubscriptionListQuery }>,
       reply: FastifyReply
@@ -613,7 +614,7 @@ export async function adminSubscriptionRoutes(
   // GET /admin/subscriptions/:id - Get a single subscription
   fastify.get<{ Params: SubscriptionIdParams }>(
     '/admin/subscriptions/:id',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: SubscriptionIdParams }>,
       reply: FastifyReply
@@ -636,7 +637,7 @@ export async function adminSubscriptionRoutes(
   // POST /admin/subscriptions - Create a subscription manually
   fastify.post<{ Body: SubscriptionCreateBody }>(
     '/admin/subscriptions',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Body: SubscriptionCreateBody }>,
       reply: FastifyReply
@@ -724,7 +725,7 @@ export async function adminSubscriptionRoutes(
   // POST /admin/subscriptions/:id/cancel - Cancel a subscription
   fastify.post<{ Params: SubscriptionIdParams; Body: SubscriptionCancelBody }>(
     '/admin/subscriptions/:id/cancel',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: SubscriptionIdParams; Body: SubscriptionCancelBody }>,
       reply: FastifyReply
