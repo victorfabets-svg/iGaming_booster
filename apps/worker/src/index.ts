@@ -40,6 +40,7 @@ import { startProofValidatedConsumer } from '../../api/src/domains/rewards/consu
 import { startRewardGrantedConsumer, CONSUMER_NAME as REWARD_GRANTED_CONSUMER_NAME } from '../../api/src/domains/raffles/consumers/reward-granted.consumer';
 import { startFraudCheckRequestedConsumer } from '../../api/src/domains/fraud/consumers/fraud-check-requested.consumer';
 import { startPaymentIdentifierRequestedConsumer } from '../../api/src/domains/payments/consumers/payment-identifier-requested.consumer';
+import { startSubscriptionExpiredConsumer } from '../../api/src/domains/whatsapp/consumers/subscription-expired.consumer';
 
 // Track database connection state
 let dbConnected = false;
@@ -159,6 +160,14 @@ async function start() {
     console.log('    consumer_name:', REWARD_GRANTED_CONSUMER_NAME);
   } catch (err) {
     console.error('  ✗ reward_granted consumer failed:', err instanceof Error ? err.message : String(err));
+  }
+  
+  // WhatsApp domain
+  try {
+    await startSubscriptionExpiredConsumer();
+    console.log('  ✓ subscription_expired consumer started');
+  } catch (err) {
+    console.error('  ✗ subscription_expired consumer failed:', err instanceof Error ? err.message : String(err));
   }
   
   // Determine final state

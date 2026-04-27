@@ -109,6 +109,27 @@ export async function findByPhoneNumber(phone: string): Promise<Subscriber | nul
 }
 
 /**
+ * Atomic opt-out by user_id (used by subscription_expired consumer).
+ * Returns null if no active subscriber found for that user.
+ * Idempotent: already opted-out users return null (handled by caller as no-op).
+ */
+export async function optOutByUserIdWithClient(
+  client: PoolClient,
+  userId: string,
+  reason: string
+): Promise<Subscriber | null> {
+  const result = await client.query<Subscriber>(
+    `UPDATE whatsapp.subscribers 
+     SET opted_out_at = NOW(), opt_out_reason = $2, updated_at = NOW()
+     WHERE user_id = $1 AND opted_out_at IS NULL
+     RETURNING id, user_id, phone_number, tier, language, opted_in_at, 
+               opted_out_at, opt_out_reason, metadata, created_at, updated_at`,
+    [userId, reason]
+  );
+  return result.rows[0] || null;
+}
+
+/**
  * List active subscribers (not opted out)
  */
 export async function listActive(
