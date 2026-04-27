@@ -175,6 +175,32 @@ export async function updateStatusWithClient(
 }
 
 /**
+ * FIX-30: Atomic cancel by internal id (admin endpoint uses UUID id, not external_id)
+ * Uses WHERE id = $1 AND status = 'active' (atomic guard)
+ * Returns null if not found OR not in 'active' state
+ */
+export async function cancelByIdWithClient(
+  client: PoolClient,
+  id: string,
+  canceledAt: Date,
+  metadata: Record<string, unknown>
+): Promise<Subscription | null> {
+  const result = await client.query<Subscription>(
+    `UPDATE subscription.subscriptions 
+     SET status = 'canceled',
+         canceled_at = $2,
+         metadata = metadata || $3::jsonb,
+         updated_at = NOW()
+     WHERE id = $1 AND status = 'active'
+     RETURNING id, external_id, user_id, plan_slug, status, current_period_start, 
+              current_period_end, canceled_at, expired_at, amount_cents, currency,
+              provider, metadata, created_at, updated_at`,
+    [id, canceledAt, JSON.stringify(metadata)]
+  );
+  return result.rows[0] || null;
+}
+
+/**
  * Find a subscription by external_id
  */
 export async function findByExternalId(externalId: string): Promise<Subscription | null> {

@@ -18,6 +18,7 @@ import {
 import {
   insertWithClient as insertSubscription,
   updateStatusWithClient,
+  cancelByIdWithClient,
   findById as findSubscriptionById,
   listAll as listSubscriptions,
   SubscriptionFilters,
@@ -744,11 +745,11 @@ export async function adminSubscriptionRoutes(
       try {
         await client.query('BEGIN');
 
-        const subscription = await updateStatusWithClient(
+        const subscription = await cancelByIdWithClient(
           client,
           id,
-          'canceled',
-          { canceled_at: new Date(), metadata: { cancel_reason: reason.trim() } }
+          new Date(),
+          { cancel_reason: reason.trim() }
         );
 
         if (!subscription) {
