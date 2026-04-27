@@ -104,10 +104,19 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // CORS — must register BEFORE routes so OPTIONS preflight is handled.
   // CORS_ORIGIN env: comma-separated list of allowed origins.
+  // Entries containing `*` are treated as wildcards (e.g. https://*.vercel.app).
   // If unset, allows all origins (no credentials) — only safe for dev.
   const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
   if (corsOriginEnv) {
-    const allowed = corsOriginEnv.split(',').map(s => s.trim()).filter(Boolean);
+    const allowed: (string | RegExp)[] = corsOriginEnv
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(entry => {
+        if (!entry.includes('*')) return entry;
+        const escaped = entry.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        return new RegExp(`^${escaped}$`);
+      });
     app.register(fastifyCors, {
       origin: allowed,
       credentials: true,
