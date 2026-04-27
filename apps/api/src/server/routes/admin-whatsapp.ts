@@ -1,10 +1,11 @@
 /**
  * Admin WhatsApp Routes
- * Admin endpoints for managing WhatsApp subscribers (JWT auth required)
+ * Admin endpoints for managing WhatsApp subscribers (admin role required)
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import {
   findById,
   findByPhoneNumber,
@@ -91,7 +92,7 @@ export async function adminWhatsappRoutes(
   // POST /admin/whatsapp/subscribers - Create a new subscriber
   fastify.post<{ Body: CreateBody }>(
     '/admin/whatsapp/subscribers',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Body: CreateBody }>,
       reply: FastifyReply
@@ -163,7 +164,7 @@ export async function adminWhatsappRoutes(
   // GET /admin/whatsapp/subscribers - List subscribers with filters
   fastify.get<{ Querystring: ListQuery }>(
     '/admin/whatsapp/subscribers',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Querystring: ListQuery }>,
       reply: FastifyReply
@@ -207,7 +208,7 @@ export async function adminWhatsappRoutes(
   // GET /admin/whatsapp/subscribers/:id - Get a single subscriber
   fastify.get<{ Params: GetParams }>(
     '/admin/whatsapp/subscribers/:id',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: GetParams }>,
       reply: FastifyReply
@@ -232,7 +233,7 @@ export async function adminWhatsappRoutes(
   // POST /admin/whatsapp/subscribers/:id/opt-out - Opt-out a subscriber
   fastify.post<{ Params: GetParams; Body: OptOutBody }>(
     '/admin/whatsapp/subscribers/:id/opt-out',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Params: GetParams; Body: OptOutBody }>,
       reply: FastifyReply
@@ -303,7 +304,7 @@ export async function adminWhatsappRoutes(
   // GET /admin/whatsapp/deliveries - List deliveries with filters
   fastify.get<{ Querystring: DeliveryListQuery }>(
     '/admin/whatsapp/deliveries',
-    { preHandler: authMiddleware },
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (
       request: FastifyRequest<{ Querystring: DeliveryListQuery }>,
       reply: FastifyReply
