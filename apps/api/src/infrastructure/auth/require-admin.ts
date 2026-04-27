@@ -1,6 +1,6 @@
 /**
  * requireAdmin middleware - enforces admin role for protected routes.
- * Runs after authMiddleware. Reads role from request.jwt (or DB for backwards compat).
+ * Runs after authMiddleware. Reads role from request.user (populated by @fastify/jwt).
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -26,8 +26,8 @@ export function requireAdmin(fastify: FastifyInstance) {
     reply: FastifyReply
   ): Promise<void> {
     try {
-      // Get decoded JWT (throws if invalid/missing)
-      const decoded = (request as any).jwt as JwtPayload | undefined;
+      // Get decoded JWT - @fastify/jwt populates request.user, not request.jwt
+      const decoded = (request as any).user as JwtPayload | undefined;
       
       if (!decoded) {
         // Shouldn't happen if authMiddleware ran first, but being defensive
