@@ -108,8 +108,14 @@ function httpErrorMessage(status: number, fallback: string): string {
   return fallback;
 }
 
-const createApiClient = (baseUrl: string) => {
-  const url = (path: string) => `${baseUrl}${path}`;
+// VITE_API_URL takes precedence over the constructor argument.
+// In dev (localhost): both empty → relative URLs hit Vite proxy.
+// In prod (Vercel): VITE_API_URL=https://<api-host> → absolute URLs hit Render.
+const VITE_API_URL: string = (import.meta as any).env?.VITE_API_URL || '';
+
+const createApiClient = (baseUrl: string = '') => {
+  const effectiveBaseUrl = VITE_API_URL || baseUrl;
+  const url = (path: string) => `${effectiveBaseUrl}${path}`;
 
   return {
     async getHealth(): Promise<HealthResponse> {

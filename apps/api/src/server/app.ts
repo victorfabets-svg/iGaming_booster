@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyJwt from '@fastify/jwt';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
 import crypto from 'crypto';
 import { getDb, db as dbConn } from '@shared/database/connection';
 import { getDbHealth } from './state';
@@ -100,6 +101,25 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(fastifyJwt, {
     secret: jwtSecret,
   });
+
+  // CORS — must register BEFORE routes so OPTIONS preflight is handled.
+  // CORS_ORIGIN env: comma-separated list of allowed origins.
+  // If unset, allows all origins (no credentials) — only safe for dev.
+  const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
+  if (corsOriginEnv) {
+    const allowed = corsOriginEnv.split(',').map(s => s.trim()).filter(Boolean);
+    app.register(fastifyCors, {
+      origin: allowed,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    });
+  } else {
+    app.register(fastifyCors, {
+      origin: true,  // reflects request origin; no credentials
+      credentials: false,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    });
+  }
 
   // Register cookie plugin for affiliate tracking
   app.register(fastifyCookie);
