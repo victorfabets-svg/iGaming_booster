@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 
 type LoginError = 'none' | 'invalid' | 'network' | 'rate_limit' | 'email_not_verified';
@@ -19,17 +19,14 @@ export default function LoginPage() {
   const [status, setStatus] = useState<LoginStatus>('idle');
   const [error, setError] = useState<LoginError>('none');
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated. Use the declarative <Navigate>
+  // component instead of calling navigate() during render — calling it
+  // imperatively from the render path leaves a tick where the component
+  // returns null, painting a blank page until the route swaps in.
   if (isAuthenticated) {
     const next = searchParams.get('next');
-    if (next) {
-      navigate(next, { replace: true });
-    } else if (isAdmin) {
-      navigate('/admin', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-    return null;
+    const target = next ?? (isAdmin ? '/admin' : '/');
+    return <Navigate to={target} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
