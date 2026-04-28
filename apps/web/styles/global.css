@@ -1137,3 +1137,90 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 .card-clickable { cursor: pointer; }
 .list-vertical > * + * { margin-top: 16px; }
 
+/* Sidebar branding (admin/user layouts) */
+.brand-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.brand-subtitle {
+  margin: 4px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 0;
+  overflow-y: auto;
+}
+
+/* Email-not-verified banner used by UserLayout */
+.verify-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--color-warning-glow);
+  border-bottom: 1px solid var(--color-warning-primary);
+  color: var(--color-warning-primary);
+  font-size: 13px;
+}
+
+/* Page container for /admin and /me content area */
+.page-container { padding: 32px; }
+
+/* Auth screens (login, signup, verify-email, landing) — centered card on dark bg */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-background-primary);
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+}
+.auth-spinner { margin: 0 auto; }
+
+.landing-hero {
+  max-width: 560px;
+}
+.landing-title {
+  font-family: var(--font-display);
+  font-size: 56px;
+  font-weight: 700;
+  margin: 0 0 16px;
+  color: var(--text-primary);
+}
+.landing-subtitle {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 40px;
+}
+.landing-cta { gap: 12px; }
+
+/* Filter-bar select width auto-fit (replaces inline style={{ width: 'auto' }}) */
+.filter-select { width: auto; min-width: 180px; }
+
+/* Smaller card title (used in cards inside grids) */
+.card-title-sm {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 0;
+  color: var(--text-primary);
+}
+

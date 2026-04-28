@@ -23,11 +23,11 @@ export default function MyProfilePage() {
         <div className="card">
           <h1 className="card-title">Editar Perfil</h1>
           <form onSubmit={handleSubmit}>
-            <div className="filter-group" style={{ marginBottom: '1rem' }}>
+            <div className="field">
               <label className="filter-label">Email</label>
               <input className="input" value={user?.email || ''} disabled />
             </div>
-            <div className="filter-group" style={{ marginBottom: '1rem' }}>
+            <div className="field">
               <label className="filter-label">Nome</label>
               <input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} />
             </div>
@@ -41,11 +41,11 @@ export default function MyProfilePage() {
         <div className="card">
           <h1 className="card-title">Alterar Senha</h1>
           <form>
-            <div className="filter-group" style={{ marginBottom: '1rem' }}>
+            <div className="field">
               <label className="filter-label">Senha Atual</label>
               <input className="input" type="password" />
             </div>
-            <div className="filter-group" style={{ marginBottom: '1rem' }}>
+            <div className="field">
               <label className="filter-label">Nova Senha</label>
               <input className="input" type="password" />
             </div>

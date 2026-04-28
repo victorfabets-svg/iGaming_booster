@@ -11,9 +11,7 @@ export default function MySubscriptionPage() {
       <div className="g-col-12">
         <div className="card">
           <h1 className="card-title">Assinatura</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Em desenvolvimento...
-          </p>
+          <p className="text-secondary">Em desenvolvimento.</p>
         </div>
       </div>
     </div>

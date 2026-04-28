@@ -37,15 +37,15 @@ export default function SubscriptionsPage() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 1rem', fontSize: '1.5rem' }}>Assinaturas</h1>
+      <div className="page-header">
+        <h1 className="page-title">Assinaturas</h1>
+      </div>
 
-      {/* Filters */}
-      <div className="filter-bar" style={{ marginBottom: '1.5rem' }}>
+      <div className="filter-bar mb-6">
         <select
           value={filter.status || ''}
           onChange={(e) => setFilter({ ...filter, status: e.target.value as any || undefined })}
-          className="input"
-          style={{ width: 'auto' }}
+          className="input filter-select"
         >
           <option value="">Todos os status</option>
           <option value="pending">Pendente</option>
@@ -56,9 +56,7 @@ export default function SubscriptionsPage() {
       </div>
 
       {subscriptions.length === 0 ? (
-        <div className="card">
-          <p style={{ color: 'var(--text-secondary)' }}>Nenhuma assinatura encontrada.</p>
-        </div>
+        <div className="card empty-state">Nenhuma assinatura encontrada.</div>
       ) : (
         <div className="card">
           <table className="table-engine">

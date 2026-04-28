@@ -33,10 +33,12 @@ export default function TipsPage() {
 
   return (
     <div>
-      <h1 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Tips</h1>
-      
-      <div className="filter-bar" style={{ marginBottom: '1.5rem' }}>
-        <select className="input" style={{ width: 'auto' }} onChange={(e) => setFilter({ ...filter, status: (e.target.value as TipStatusFilter) || undefined })}>
+      <div className="page-header">
+        <h1 className="page-title">Tips</h1>
+      </div>
+
+      <div className="filter-bar mb-6">
+        <select className="input filter-select" onChange={(e) => setFilter({ ...filter, status: (e.target.value as TipStatusFilter) || undefined })}>
           <option value="">Todos</option>
           <option value="pending">Pending</option>
           <option value="won">Won</option>
@@ -46,7 +48,7 @@ export default function TipsPage() {
 
       <div className="card">
         {tips.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)' }}>Nenhuma tip encontrada.</p>
+          <p className="text-secondary">Nenhuma tip encontrada.</p>
         ) : (
           <table className="table-engine">
             <thead>

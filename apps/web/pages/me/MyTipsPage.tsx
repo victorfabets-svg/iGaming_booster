@@ -37,10 +37,10 @@ export default function MyTipsPage() {
 
   if (!hasAccess) {
     return (
-      <div className="card" style={{ maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
-        <h1 className="card-title">Tips Bloqueadas</h1>
+      <div className="card auth-card text-center">
+        <h1 className="card-title mb-3">Tips Bloqueadas</h1>
         <div className="alert-box alert-warning">
-          Subscribe to access tips.
+          Você precisa de uma assinatura ativa para ver os tips.
         </div>
       </div>
     );
@@ -48,9 +48,7 @@ export default function MyTipsPage() {
 
   if (tips.length === 0) {
     return (
-      <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-        <p style={{ color: 'var(--text-secondary)' }}>Nenhuma tip disponivel.</p>
-      </div>
+      <div className="card empty-state">Nenhuma tip disponível no momento.</div>
     );
   }
 

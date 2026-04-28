@@ -36,12 +36,10 @@ export default function MyTicketsPage() {
 
   if (tickets.length === 0) {
     return (
-      <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-        <h2 style={{ marginBottom: '1rem', fontFamily: 'var(--font-display)' }}>Voce ainda nao tem numeros</h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          Envie um comprovante para participar dos sorteios.
-        </p>
-        <button className="btn btn-primary" onClick={() => navigate('/me/upload')}>
+      <div className="card empty-state">
+        <h2 className="card-title mb-3">Você ainda não tem números</h2>
+        <p className="text-secondary mb-4">Envie um comprovante para participar dos sorteios.</p>
+        <button type="button" className="btn btn-primary" onClick={() => navigate('/me/upload')}>
           Enviar Comprovante
         </button>
       </div>

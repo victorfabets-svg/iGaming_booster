@@ -1,6 +1,5 @@
 /**
- * User Layout - Sidebar and header for authenticated user pages
- * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
+ * User Layout — sidebar shell for /me/*.
  */
 
 import React from 'react';
@@ -8,14 +7,14 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 
 const menuItems = [
-  { path: '/me', label: 'Início', icon: '🏠' },
-  { path: '/me/upload', label: 'Enviar Comprovante', icon: '📤' },
-  { path: '/me/historico', label: 'Histórico', icon: '📋' },
-  { path: '/me/tickets', label: 'Meus Números', icon: '🎱' },
-  { path: '/me/raffles', label: 'Sorteios', icon: '🎁' },
-  { path: '/me/subscription', label: 'Assinatura', icon: '⭐' },
-  { path: '/me/tips', label: 'Tips', icon: '📊' },
-  { path: '/me/profile', label: 'Perfil', icon: '👤' },
+  { path: '/me', label: 'Início' },
+  { path: '/me/upload', label: 'Enviar Comprovante' },
+  { path: '/me/historico', label: 'Histórico' },
+  { path: '/me/tickets', label: 'Meus Números' },
+  { path: '/me/raffles', label: 'Sorteios' },
+  { path: '/me/subscription', label: 'Assinatura' },
+  { path: '/me/tips', label: 'Tips' },
+  { path: '/me/profile', label: 'Perfil' },
 ];
 
 export default function UserLayout() {
@@ -28,14 +27,14 @@ export default function UserLayout() {
   };
 
   return (
-    <div className="app-shell">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <h2 style={{ color: 'var(--color-primary-primary)', fontSize: '1.25rem', marginBottom: '2rem' }}>
-          Tipster Engine
-        </h2>
+    <div className="app-shell expanded">
+      <aside className="sidebar expanded">
+        <div className="sidebar-header">
+          <h2 className="brand-title">Tipster Engine</h2>
+          <p className="brand-subtitle">Minha Conta</p>
+        </div>
 
-        <nav style={{ flex: 1 }}>
+        <nav className="sidebar-nav">
           {menuItems.map(item => (
             <NavLink
               key={item.path}
@@ -43,53 +42,35 @@ export default function UserLayout() {
               end={item.path === '/me'}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
-              <span>•</span>
-              {item.label}
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <button
-          onClick={handleLogout}
-          className="btn"
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--glass-border)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          Sair
-        </button>
+        <div className="sidebar-footer">
+          <p className="text-muted text-xs uppercase mb-1">Logado como</p>
+          <p className="text-sm mb-3">{user?.display_name || user?.email}</p>
+          <button type="button" className="btn btn-ghost full-width" onClick={handleLogout}>
+            Sair
+          </button>
+        </div>
       </aside>
 
-      {/* Main content */}
       <main className="main-content">
-        {/* Header */}
-        <header className="global-header">
-          <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-            {user?.display_name || user?.email}
-          </div>
-        </header>
-
-        {/* Email verification banner */}
         {!isEmailVerified && (
-          <div className="alert-box alert-warning" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <div className="verify-banner">
             <span>Confirme seu email para acessar todos os recursos.</span>
             <button
+              type="button"
+              className="btn-link"
               onClick={() => navigate('/me/verify')}
-              className="btn"
-              style={{
-                background: 'var(--color-primary-primary)',
-                color: '#fff',
-              }}
             >
-              Reenviar email
+              Reenviar email →
             </button>
           </div>
         )}
 
-        {/* Content */}
-        <div style={{ flex: 1, padding: '2rem', overflow: 'auto' }}>
+        <div className="page-container">
           <Outlet />
         </div>
       </main>

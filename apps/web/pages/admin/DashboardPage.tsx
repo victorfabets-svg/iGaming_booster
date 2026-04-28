@@ -35,7 +35,9 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem' }}>Dashboard</h1>
+      <div className="page-header">
+        <h1 className="page-title">Dashboard</h1>
+      </div>
 
       <div className="g-row">
         <div className="g-col-2-4">
@@ -58,9 +60,7 @@ export default function DashboardPage() {
 function KpiCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="card">
-      <p style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-        {label}
-      </p>
+      <p className="text-secondary text-xs uppercase mb-2">{label}</p>
       <p className="kpi-value">{value}</p>
     </div>
   );

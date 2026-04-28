@@ -30,10 +30,14 @@ export default function IntegrationsPage() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 0.5rem', fontSize: '1.5rem' }}>Integracoes</h1>
-      <p style={{ margin: '0 0 1.5rem', color: 'var(--text-secondary)' }}>
-        Credenciais de integracao sao gerenciadas pelo Render. Use os links abaixo para editar.
-      </p>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Integrações</h1>
+          <p className="page-subtitle">
+            Credenciais são gerenciadas pelo Render. Use os links abaixo para editar.
+          </p>
+        </div>
+      </div>
 
       <div className="g-row">
         {integrations.map(integration => (

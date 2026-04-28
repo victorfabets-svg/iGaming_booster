@@ -48,8 +48,8 @@ export default function PlansPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.5rem' }}>Planos</h1>
+      <div className="page-header">
+        <h1 className="page-title">Planos</h1>
         <button className="btn btn-primary" onClick={() => { setEditingPlan(null); setShowModal(true); }}>
           + Novo Plano
         </button>
@@ -57,7 +57,7 @@ export default function PlansPage() {
 
       <div className="card">
         {plans.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)' }}>Nenhum plano encontrado.</p>
+          <div className="empty-state">Nenhum plano encontrado.</div>
         ) : (
           <table className="table-engine">
             <thead>

@@ -1,6 +1,5 @@
 /**
- * Signup Page - Registration form
- * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
+ * Signup Page — registration form.
  */
 
 import React, { useState } from 'react';
@@ -21,38 +20,32 @@ export default function SignupPage() {
     setError('');
 
     if (!email || !password || !confirmPassword) {
-      setError('Preencha todos os campos');
+      setError('Preencha todos os campos.');
       return;
     }
-
     if (password.length < 8) {
-      setError('A senha deve ter pelo menos 8 caracteres');
+      setError('A senha deve ter pelo menos 8 caracteres.');
       return;
     }
-
     if (password !== confirmPassword) {
-      setError('As senhas nao coincidem');
+      setError('As senhas não coincidem.');
       return;
     }
 
     setIsLoading(true);
-
     try {
       const response = await authApi.register(email, password, displayName);
-      
       if (response.success) {
         setShowConfirmation(true);
+      } else if (response.error?.code === 'DUPLICATE_EMAIL') {
+        setError('Este email já está cadastrado.');
+      } else if (response.error?.code === 'RATE_LIMIT') {
+        setError('Muitas tentativas. Aguarde alguns minutos.');
       } else {
-        if (response.error?.code === 'DUPLICATE_EMAIL') {
-          setError('Este email ja esta cadastrado');
-        } else if (response.error?.code === 'RATE_LIMIT') {
-          setError('Muitas tentativas. Aguarde alguns minutos.');
-        } else {
-          setError(response.error?.message || 'Erro ao cadastrar');
-        }
+        setError(response.error?.message || 'Erro ao cadastrar.');
       }
-    } catch (err) {
-      setError('Erro ao conectar com o servidor');
+    } catch {
+      setError('Erro ao conectar com o servidor.');
     } finally {
       setIsLoading(false);
     }
@@ -60,104 +53,95 @@ export default function SignupPage() {
 
   if (showConfirmation) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--color-background-primary)',
-        color: 'var(--text-primary)',
-        padding: '2rem',
-      }}>
-        <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem', fontFamily: 'var(--font-display)' }}>
-            Confirme seu email
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
-            Enviamos um link de confirmacao para <strong>{email}</strong>. 
-            Clique no link para ativar sua conta.
+      <div className="auth-shell">
+        <div className="card auth-card text-center">
+          <h1 className="card-title mb-4">Confirme seu email</h1>
+          <p className="text-secondary mb-6">
+            Enviamos um link de confirmação para <strong>{email}</strong>. Clique no link para
+            ativar sua conta.
           </p>
-          
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.875rem' }}>
-            Nao recebeu?{' '}
+          <p className="text-secondary text-sm mb-4">
+            Não recebeu?{' '}
             <button
-              onClick={async () => {
-                await authApi.resendVerification(email);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--color-primary-primary)',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
+              type="button"
+              className="btn-link"
+              onClick={() => { authApi.resendVerification(email); }}
             >
               Reenviar
             </button>
           </p>
-
-          <Link to="/login" style={{ color: 'var(--color-primary-primary)', textDecoration: 'none' }}>
-            Voltar para login
-          </Link>
+          <Link to="/login" className="btn-link">Voltar para login</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--color-background-primary)',
-      color: 'var(--text-primary)',
-      padding: '2rem',
-    }}>
-      <div className="card" style={{ maxWidth: '400px', width: '100%' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', textAlign: 'center', fontFamily: 'var(--font-display)' }}>
-          Criar conta
-        </h1>
+    <div className="auth-shell">
+      <div className="card auth-card">
+        <h1 className="card-title text-center mb-6">Criar conta</h1>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Email *
-            </label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="input" />
+          <div className="field">
+            <label htmlFor="signup-email">Email *</label>
+            <input
+              id="signup-email"
+              className="input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Nome (opcional)
-            </label>
-            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="input" />
+          <div className="field">
+            <label htmlFor="signup-name">Nome (opcional)</label>
+            <input
+              id="signup-name"
+              className="input"
+              type="text"
+              value={displayName}
+              onChange={e => setDisplayName(e.target.value)}
+            />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Senha *
-            </label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="input" />
+          <div className="field">
+            <label htmlFor="signup-password">Senha *</label>
+            <input
+              id="signup-password"
+              className="input"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Confirmar Senha *
-            </label>
-            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="input" />
+          <div className="field">
+            <label htmlFor="signup-confirm">Confirmar Senha *</label>
+            <input
+              id="signup-confirm"
+              className="input"
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              required
+            />
           </div>
 
-          {error && <div className="alert-box alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
+          {error && <div className="alert-box alert-error">{error}</div>}
 
-          <button type="submit" disabled={isLoading} className="btn btn-primary" style={{ width: '100%' }}>
-            {isLoading ? 'Criando conta...' : 'Criar conta'}
+          <button
+            type="submit"
+            className="btn btn-primary full-width"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Criando conta…' : 'Criar conta'}
           </button>
         </form>
 
-        <p style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-          Ja tem conta?{' '}
-          <Link to="/login" style={{ color: 'var(--color-primary-primary)' }}>Entrar</Link>
+        <p className="text-center text-secondary text-sm mt-4">
+          Já tem conta? <Link to="/login" className="btn-link">Entrar</Link>
         </p>
       </div>
     </div>
