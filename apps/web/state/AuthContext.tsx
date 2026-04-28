@@ -25,6 +25,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  setSession: (tokens: { access_token: string; refresh_token: string | null }) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -186,6 +187,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setSession = useCallback((tokens: { access_token: string; refresh_token: string | null }) => {
+    const { access_token, refresh_token } = tokens;
+    const decoded = decodeJwt(access_token);
+
+    localStorage.setItem(ACCESS_KEY, access_token);
+    if (refresh_token) {
+      localStorage.setItem(REFRESH_KEY, refresh_token);
+    }
+
+    setUser({
+      id: decoded?.sub || decoded?.user_id || '',
+      email: decoded?.email || '',
+      role: decoded?.role || 'user',
+    });
+    setAccessToken(access_token);
+    setRefreshToken(refresh_token);
+  }, []);
+
   const value: AuthContextValue = {
     user,
     accessToken,
@@ -197,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     refresh,
+    setSession,
   };
 
   return (

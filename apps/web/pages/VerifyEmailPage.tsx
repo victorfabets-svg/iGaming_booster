@@ -10,7 +10,7 @@ import { useAuth } from '../state/AuthContext';
 export default function VerifyEmailPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { setSession } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -26,13 +26,14 @@ export default function VerifyEmailPage() {
         const response = await authApi.verifyEmail(token);
         
         if (response.success && response.data) {
-          // Auto-login after verification
-          await login('', ''); // This won't work - need to use the tokens from response
-          localStorage.setItem('igb_access', response.data.access_token);
-          if (response.data.refresh_token) {
-            localStorage.setItem('igb_refresh', response.data.refresh_token);
-          }
-          navigate('/me');
+          // Auto-login: set tokens + decode JWT into user state in one call.
+          setSession({
+            access_token: response.data.access_token,
+            refresh_token: response.data.refresh_token ?? null,
+          });
+          // Decode role from the new token to pick the right landing route.
+          const role = JSON.parse(atob(response.data.access_token.split('.')[1] + '=='.slice(0, (4 - response.data.access_token.split('.')[1].length % 4) % 4)))?.role;
+          navigate(role === 'admin' ? '/admin' : '/me', { replace: true });
         } else {
           setError(response.error?.message || 'Link inválido ou expirado');
         }
@@ -44,7 +45,7 @@ export default function VerifyEmailPage() {
     };
 
     verify();
-  }, [token, navigate, login]);
+  }, [token, navigate, setSession]);
 
   if (isLoading) {
     return (
