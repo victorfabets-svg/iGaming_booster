@@ -1,9 +1,10 @@
 /**
  * MyRafflesPage - User raffles
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { meApi } from '../../services/me-api';
 
 interface Raffle {
@@ -16,6 +17,7 @@ interface Raffle {
 }
 
 export default function MyRafflesPage() {
+  const navigate = useNavigate();
   const [raffles, setRaffles] = useState<Raffle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -29,47 +31,43 @@ export default function MyRafflesPage() {
   }, []);
 
   if (isLoading) {
-    return <div style={{ color: '#fff' }}>Carregando...</div>;
+    return <div className="loading-state">Carregando...</div>;
   }
 
   if (raffles.length === 0) {
     return (
-      <div style={{ color: '#fff', textAlign: 'center', padding: '3rem' }}>
-        <h2 style={{ marginBottom: '1rem' }}>Nenhum sorteio disponível</h2>
-        <p style={{ color: '#a0a0b0' }}>
+      <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+        <h2 style={{ marginBottom: '1rem', fontFamily: 'var(--font-display)' }}>Nenhum sorteio disponivel</h2>
+        <p style={{ color: 'var(--text-secondary)' }}>
           Aguarde novos sorteios em breve.
         </p>
       </div>
     );
   }
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('pt-BR');
-  };
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('pt-BR');
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', color: '#fff' }}>
-        Sorteios
-      </h1>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem' }}>Sorteios</h1>
+      <div className="g-row">
         {raffles.map(raffle => (
-          <div key={raffle.id} style={{
-            background: '#0f0f1a',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            border: '1px solid #333',
-          }}>
-            <h3 style={{ color: '#fff', marginBottom: '0.5rem' }}>{raffle.name}</h3>
-            <p style={{ color: '#FFD700', fontWeight: 600, marginBottom: '1rem' }}>
-              Prêmio: {raffle.prize}
-            </p>
-            <div style={{ color: '#a0a0b0', fontSize: '0.875rem' }}>
-              <p>Data do sorteio: {formatDate(raffle.draw_date)}</p>
-              <p>Seus números: {raffle.my_ticket_count}</p>
-              <p>Status: {raffle.status}</p>
+          <div key={raffle.id} className={`g-col-4 ${raffle.status === 'completed' ? 'card card-highlight-success' : 'card'}`}>
+            <div className="flex justify-between items-center mb-2">
+              <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{raffle.name}</h3>
+              <span className={`badge ${raffle.status === 'active' ? 'badge-success' : 'badge-gray'}`}>
+                {raffle.status}
+              </span>
             </div>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+              Premio: <span style={{ color: 'var(--color-success-primary)', fontWeight: 600 }}>{raffle.prize}</span>
+            </p>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+             Data: {formatDate(raffle.draw_date)}
+            </p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Seus numeros: {raffle.my_ticket_count}
+            </p>
           </div>
         ))}
       </div>

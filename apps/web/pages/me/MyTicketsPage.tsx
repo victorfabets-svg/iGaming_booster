@@ -1,9 +1,10 @@
 /**
  * MyTicketsPage - User tickets
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { meApi } from '../../services/me-api';
 
 interface Ticket {
@@ -16,6 +17,7 @@ interface Ticket {
 }
 
 export default function MyTicketsPage() {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -29,16 +31,19 @@ export default function MyTicketsPage() {
   }, []);
 
   if (isLoading) {
-    return <div style={{ color: '#fff' }}>Carregando...</div>;
+    return <div className="loading-state">Carregando...</div>;
   }
 
   if (tickets.length === 0) {
     return (
-      <div style={{ color: '#fff', textAlign: 'center', padding: '3rem' }}>
-        <h2 style={{ marginBottom: '1rem' }}>Você ainda não tem números</h2>
-        <p style={{ color: '#a0a0b0' }}>
+      <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+        <h2 style={{ marginBottom: '1rem', fontFamily: 'var(--font-display)' }}>Voce ainda nao tem numeros</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           Envie um comprovante para participar dos sorteios.
         </p>
+        <button className="btn btn-primary" onClick={() => navigate('/me/upload')}>
+          Enviar Comprovante
+        </button>
       </div>
     );
   }
@@ -54,38 +59,36 @@ export default function MyTicketsPage() {
   }, {} as Record<string, { name: string; tickets: Ticket[] }>);
 
   return (
-    <div>
-      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', color: '#fff' }}>
-        Meus Números
-      </h1>
-
-      {Object.entries(byRaffle).map(([raffleId, { name, tickets }]) => (
-        <div key={raffleId} style={{
-          background: '#0f0f1a',
-          padding: '1.5rem',
-          borderRadius: '12px',
-          border: '1px solid #333',
-          marginBottom: '1.5rem',
-        }}>
-          <h3 style={{ color: '#FFD700', marginBottom: '1rem' }}>{name}</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {tickets.map(t => (
-              <span
-                key={t.id}
-                style={{
-                  background: t.status === 'winner' ? '#FFD700' : '#1a1a2e',
-                  color: t.status === 'winner' ? '#1a1a2e' : '#fff',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: '4px',
-                  fontWeight: 600,
-                }}
-              >
-                #{t.ticket_number}
-              </span>
-            ))}
-          </div>
+    <div className="g-row">
+      <div className="g-col-12">
+        <div className="card">
+          <h1 className="card-title">Meus Numeros</h1>
+          <table className="table-engine">
+            <thead>
+              <tr>
+                <th>Sorteio</th>
+                <th>Numero</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(byRaffle).map(([raffleId, { name, tickets: raffleTickets }]) =>
+                raffleTickets.map(ticket => (
+                  <tr key={ticket.id}>
+                    <td>{name}</td>
+                    <td className="mono">{String(ticket.ticket_number).padStart(4, '0')}</td>
+                    <td>
+                      <span className={`badge ${ticket.status === 'won' ? 'badge-success' : ticket.status === 'pending' ? 'badge-warning' : 'badge-gray'}`}>
+                        {ticket.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      ))}
+      </div>
     </div>
   );
 }

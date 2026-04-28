@@ -1,5 +1,6 @@
 /**
  * Verify Email Page - Verify email with token
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState, useEffect } from 'react';
@@ -26,12 +27,10 @@ export default function VerifyEmailPage() {
         const response = await authApi.verifyEmail(token);
         
         if (response.success && response.data) {
-          // Auto-login: set tokens + decode JWT into user state in one call.
           setSession({
             access_token: response.data.access_token,
             refresh_token: response.data.refresh_token ?? null,
           });
-          // Decode role from the new token to pick the right landing route.
           const role = JSON.parse(atob(response.data.access_token.split('.')[1] + '=='.slice(0, (4 - response.data.access_token.split('.')[1].length % 4) % 4)))?.role;
           navigate(role === 'admin' ? '/admin' : '/me', { replace: true });
         } else {
@@ -54,20 +53,11 @@ export default function VerifyEmailPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#1a1a2e',
-        color: '#fff',
+        background: 'var(--color-background-primary)',
+        color: 'var(--text-primary)',
       }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '3px solid #333',
-            borderTopColor: '#FFD700',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem',
-          }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div className="spinner-lg" style={{ margin: '0 auto 1rem' }} />
           <p>Verificando...</p>
         </div>
       </div>
@@ -80,25 +70,25 @@ export default function VerifyEmailPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#1a1a2e',
-      color: '#fff',
+      background: 'var(--color-background-primary)',
+      color: 'var(--text-primary)',
       padding: '2rem',
     }}>
-      <div style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#ff6b6b' }}>
+      <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem', fontFamily: 'var(--font-display)', color: 'var(--color-error-primary)' }}>
           Erro na verificação
         </h1>
-        <p style={{ color: '#a0a0b0', marginBottom: '2rem' }}>
+        <div className="alert-box alert-error" style={{ marginBottom: '2rem', textAlign: 'left' }}>
           {error || 'Link inválido ou expirado'}
-        </p>
-        <p style={{ color: '#a0a0b0', fontSize: '0.875rem' }}>
+        </div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
           Solicitar novo link de verificação?{' '}
           <button
             onClick={() => navigate('/login')}
             style={{
               background: 'none',
               border: 'none',
-              color: '#FFD700',
+              color: 'var(--color-primary-primary)',
               cursor: 'pointer',
               textDecoration: 'underline',
             }}
