@@ -1,5 +1,6 @@
 /**
  * Admin Layout - sidebar navigation for admin pages
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React from 'react';
@@ -13,14 +14,14 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: '/admin', label: 'Dashboard', icon: '📊' },
-  { path: '/admin/houses', label: 'Casas Parceiras', icon: '🏠' },
-  { path: '/admin/plans', label: 'Planos', icon: '📋' },
-  { path: '/admin/subscriptions', label: 'Assinaturas', icon: '💳' },
-  { path: '/admin/tips', label: 'Tips', icon: '🎯' },
-  { path: '/admin/whatsapp', label: 'WhatsApp', icon: '💬' },
-  { path: '/admin/integrations', label: 'Integrações', icon: '🔗' },
-  { path: '/admin/email-templates', label: 'Templates de Email', icon: '📧' },
+  { path: '/admin', label: 'Dashboard', icon: 'dashboard' },
+  { path: '/admin/houses', label: 'Casas Parceiras', icon: 'layers' },
+  { path: '/admin/plans', label: 'Planos', icon: 'card' },
+  { path: '/admin/subscriptions', label: 'Assinaturas', icon: 'card' },
+  { path: '/admin/tips', label: 'Tips', icon: 'target' },
+  { path: '/admin/whatsapp', label: 'WhatsApp', icon: 'activity' },
+  { path: '/admin/integrations', label: 'Integrações', icon: 'link' },
+  { path: '/admin/email-templates', label: 'Templates de Email', icon: 'file' },
 ];
 
 export default function AdminLayout() {
@@ -37,22 +38,13 @@ export default function AdminLayout() {
   const currentPath = location.pathname;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="app-shell">
       {/* Sidebar */}
-      <aside
-        style={{
-          width: '240px',
-          background: '#1a1a2e',
-          color: '#fff',
-          padding: '1rem',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
+      <aside className="sidebar">
         {/* Logo */}
-        <div style={{ padding: '1rem', borderBottom: '1px solid #333' }}>
+        <div className="sidebar-header" style={{ padding: '1rem', borderBottom: '1px solid var(--glass-border)' }}>
           <h2 style={{ margin: 0, fontSize: '1.2rem' }}>iGaming Booster</h2>
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: '#888' }}>Admin</p>
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Admin</p>
         </div>
 
         {/* Navigation */}
@@ -66,18 +58,10 @@ export default function AdminLayout() {
               <NavLink
                 key={item.path}
                 to={item.path}
-                style={{
-                  display: 'block',
-                  padding: '0.75rem 1rem',
-                  margin: '0.25rem 0',
-                  color: isActive ? '#00d4ff' : '#bbb',
-                  background: isActive ? 'rgba(0, 212, 255, 0.1)' : 'transparent',
-                  borderRadius: '4px',
-                  textDecoration: 'none',
-                  transition: 'all 0.2s',
-                }}
+                className={`nav-item ${isActive ? 'active' : ''}`}
+                style={{ display: 'block', padding: '0.75rem 1rem', margin: '0.25rem 0', textDecoration: 'none' }}
               >
-                <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
+                <span style={{ marginRight: '0.5rem' }}>•</span>
                 {item.label}
               </NavLink>
             );
@@ -85,8 +69,8 @@ export default function AdminLayout() {
         </nav>
 
         {/* User info & logout */}
-        <div style={{ padding: '1rem', borderTop: '1px solid #333' }}>
-          <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: '#888' }}>
+        <div className="sidebar-footer">
+          <p style={{ margin: '0 0 0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             Logado como:
           </p>
           <p style={{ margin: '0 0 1rem', fontSize: '0.9rem' }}>
@@ -94,14 +78,11 @@ export default function AdminLayout() {
           </p>
           <button
             onClick={handleLogout}
+            className="btn"
             style={{
               width: '100%',
-              padding: '0.5rem',
-              background: '#333',
+              background: 'var(--color-primary-primary)',
               color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
             }}
           >
             Sair
@@ -110,7 +91,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, padding: '2rem', background: '#f5f5f5' }}>
+      <main className="main-content">
         {/* Render child route */}
         <Outlet />
       </main>

@@ -1,5 +1,6 @@
 /**
  * Landing Page - Simple landing page with CTAs
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React from 'react';
@@ -13,22 +14,22 @@ export default function LandingPage() {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#1a1a2e',
-      color: '#fff',
+      background: 'var(--color-background-primary)',
+      color: 'var(--text-primary)',
       padding: '2rem',
     }}>
       <h1 style={{
         fontSize: '3rem',
         fontWeight: 700,
         marginBottom: '1rem',
-        fontFamily: '"Plus Jakarta Sans", sans-serif',
+        fontFamily: 'var(--font-display)',
       }}>
         Tipster Engine
       </h1>
       
       <p style={{
         fontSize: '1.25rem',
-        color: '#a0a0b0',
+        color: 'var(--text-secondary)',
         marginBottom: '3rem',
         maxWidth: '500px',
         textAlign: 'center',
@@ -41,16 +42,10 @@ export default function LandingPage() {
       <div style={{ display: 'flex', gap: '1rem' }}>
         <Link
           to="/login"
+          className="btn"
           style={{
-            background: 'transparent',
-            border: '2px solid #FFD700',
-            color: '#FFD700',
-            padding: '1rem 2rem',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            fontWeight: 600,
-            fontSize: '1rem',
-            transition: 'all 0.2s',
+            border: '2px solid var(--color-primary-primary)',
+            color: 'var(--color-primary-primary)',
           }}
         >
           Entrar
@@ -58,16 +53,7 @@ export default function LandingPage() {
         
         <Link
           to="/signup"
-          style={{
-            background: '#FFD700',
-            color: '#1a1a2e',
-            padding: '1rem 2rem',
-            borderRadius: '8px',
-            textDecoration: 'none',
-            fontWeight: 600,
-            fontSize: '1rem',
-            transition: 'all 0.2s',
-          }}
+          className="btn btn-primary"
         >
           Cadastrar
         </Link>

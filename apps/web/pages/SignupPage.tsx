@@ -1,13 +1,13 @@
 /**
  * Signup Page - Registration form
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { authApi } from '../services/auth-api';
 
 export default function SignupPage() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,7 +20,6 @@ export default function SignupPage() {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (!email || !password || !confirmPassword) {
       setError('Preencha todos os campos');
       return;
@@ -32,7 +31,7 @@ export default function SignupPage() {
     }
 
     if (password !== confirmPassword) {
-      setError('As senhas não coincidem');
+      setError('As senhas nao coincidem');
       return;
     }
 
@@ -45,7 +44,7 @@ export default function SignupPage() {
         setShowConfirmation(true);
       } else {
         if (response.error?.code === 'DUPLICATE_EMAIL') {
-          setError('Este email já está cadastrado');
+          setError('Este email ja esta cadastrado');
         } else if (response.error?.code === 'RATE_LIMIT') {
           setError('Muitas tentativas. Aguarde alguns minutos.');
         } else {
@@ -66,21 +65,21 @@ export default function SignupPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#1a1a2e',
-        color: '#fff',
+        background: 'var(--color-background-primary)',
+        color: 'var(--text-primary)',
         padding: '2rem',
       }}>
-        <div style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem' }}>
+        <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem', fontFamily: 'var(--font-display)' }}>
             Confirme seu email
           </h1>
-          <p style={{ color: '#a0a0b0', marginBottom: '2rem', lineHeight: 1.6 }}>
-            Enviamos um link de confirmação para <strong>{email}</strong>. 
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
+            Enviamos um link de confirmacao para <strong>{email}</strong>. 
             Clique no link para ativar sua conta.
           </p>
           
-          <p style={{ color: '#a0a0b0', marginBottom: '2rem', fontSize: '0.875rem' }}>
-            Não received?{' '}
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.875rem' }}>
+            Nao recebeu?{' '}
             <button
               onClick={async () => {
                 await authApi.resendVerification(email);
@@ -88,7 +87,7 @@ export default function SignupPage() {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#FFD700',
+                color: 'var(--color-primary-primary)',
                 cursor: 'pointer',
                 textDecoration: 'underline',
               }}
@@ -97,10 +96,7 @@ export default function SignupPage() {
             </button>
           </p>
 
-          <Link
-            to="/login"
-            style={{ color: '#FFD700', textDecoration: 'none' }}
-          >
+          <Link to="/login" style={{ color: 'var(--color-primary-primary)', textDecoration: 'none' }}>
             Voltar para login
           </Link>
         </div>
@@ -114,12 +110,12 @@ export default function SignupPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#1a1a2e',
-      color: '#fff',
+      background: 'var(--color-background-primary)',
+      color: 'var(--text-primary)',
       padding: '2rem',
     }}>
-      <div style={{ maxWidth: '400px', width: '100%' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', textAlign: 'center' }}>
+      <div className="card" style={{ maxWidth: '400px', width: '100%' }}>
+        <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', textAlign: 'center', fontFamily: 'var(--font-display)' }}>
           Criar conta
         </h1>
 
@@ -128,121 +124,40 @@ export default function SignupPage() {
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
               Email *
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="input" />
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
               Nome (opcional)
             </label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
-            />
+            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="input" />
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
               Senha *
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="input" />
           </div>
 
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Confirmar senha *
+              Confirmar Senha *
             </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
-            />
+            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="input" />
           </div>
 
-          {error && (
-            <div style={{
-              color: '#ff6b6b',
-              marginBottom: '1rem',
-              fontSize: '0.875rem',
-            }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="alert-box alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            style={{
-              width: '100%',
-              padding: '1rem',
-              background: '#FFD700',
-              color: '#1a1a2e',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '1rem',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              opacity: isLoading ? 0.7 : 1,
-            }}
-          >
-            {isLoading ? 'Cadastrando...' : 'Cadastrar'}
+          <button type="submit" disabled={isLoading} className="btn btn-primary" style={{ width: '100%' }}>
+            {isLoading ? 'Criando conta...' : 'Criar conta'}
           </button>
         </form>
 
-        <p style={{ marginTop: '1.5rem', textAlign: 'center', color: '#a0a0b0' }}>
-          Já tem conta?{' '}
-          <Link to="/login" style={{ color: '#FFD700', textDecoration: 'none' }}>
-            Entrar
-          </Link>
+        <p style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+          Ja tem conta?{' '}
+          <Link to="/login" style={{ color: 'var(--color-primary-primary)' }}>Entrar</Link>
         </p>
       </div>
     </div>

@@ -1,5 +1,6 @@
 /**
  * User Layout - Sidebar and header for authenticated user pages
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React from 'react';
@@ -27,16 +28,10 @@ export default function UserLayout() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#1a1a2e' }}>
+    <div className="app-shell">
       {/* Sidebar */}
-      <aside style={{
-        width: '240px',
-        background: '#0f0f1a',
-        padding: '1.5rem',
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        <h2 style={{ color: '#FFD700', fontSize: '1.25rem', marginBottom: '2rem' }}>
+      <aside className="sidebar">
+        <h2 style={{ color: 'var(--color-primary-primary)', fontSize: '1.25rem', marginBottom: '2rem' }}>
           Tipster Engine
         </h2>
 
@@ -46,18 +41,9 @@ export default function UserLayout() {
               key={item.path}
               to={item.path}
               end={item.path === '/me'}
-              style={({ isActive }) => ({
-                display: 'block',
-                padding: '0.75rem',
-                marginBottom: '0.5rem',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                color: isActive ? '#FFD700' : '#a0a0b0',
-                background: isActive ? '#1a1a2e' : 'transparent',
-                transition: 'all 0.2s',
-              })}
+              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
             >
-              <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
+              <span>•</span>
               {item.label}
             </NavLink>
           ))}
@@ -65,14 +51,11 @@ export default function UserLayout() {
 
         <button
           onClick={handleLogout}
+          className="btn"
           style={{
-            padding: '0.75rem',
             background: 'transparent',
-            border: '1px solid #333',
-            color: '#a0a0b0',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            textAlign: 'center',
+            border: '1px solid var(--glass-border)',
+            color: 'var(--text-secondary)',
           }}
         >
           Sair
@@ -80,41 +63,24 @@ export default function UserLayout() {
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <main className="main-content">
         {/* Header */}
-        <header style={{
-          padding: '1rem 2rem',
-          background: '#0f0f1a',
-          borderBottom: '1px solid #333',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <div style={{ color: '#fff', fontWeight: 500 }}>
+        <header className="global-header">
+          <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
             {user?.display_name || user?.email}
           </div>
         </header>
 
         {/* Email verification banner */}
         {!isEmailVerified && (
-          <div style={{
-            padding: '0.75rem 2rem',
-            background: '#FFD700',
-            color: '#1a1a2e',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}>
+          <div className="alert-box alert-warning" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
             <span>Confirme seu email para acessar todos os recursos.</span>
             <button
               onClick={() => navigate('/me/verify')}
+              className="btn"
               style={{
-                background: '#1a1a2e',
-                color: '#FFD700',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '4px',
-                cursor: 'pointer',
+                background: 'var(--color-primary-primary)',
+                color: '#fff',
               }}
             >
               Reenviar email

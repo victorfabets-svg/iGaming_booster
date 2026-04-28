@@ -1,5 +1,6 @@
 /**
  * Dashboard Page - KPI overview
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,28 +26,33 @@ export default function DashboardPage() {
   }, []);
 
   if (status === 'loading') {
-    return <div>Carregando métricas...</div>;
+    return <div className="loading-state">Carregando métricas...</div>;
   }
 
   if (status === 'error' || !metrics) {
-    return <div>Erro ao carregar métricas</div>;
+    return <div className="alert-box alert-error">Erro ao carregar métricas</div>;
   }
 
   return (
     <div>
       <h1 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem' }}>Dashboard</h1>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '1rem',
-        }}
-      >
-        <KpiCard label="Casas Parceiras" value={metrics.houses_count} />
-        <KpiCard label="Planos Ativos" value={metrics.plans_count} />
-        <KpiCard label="Assinaturas Ativas" value={metrics.active_subscriptions_count} />
-        <KpiCard label="Assinantes" value={metrics.active_subscribers_count} />
+      <div className="g-row">
+        <div className="g-col-2-4">
+          <KpiCard label="Casas Parceiras" value={metrics.houses_count} />
+        </div>
+        <div className="g-col-2-4">
+          <KpiCard label="Planos Ativos" value={metrics.plans_count} />
+        </div>
+        <div className="g-col-2-4">
+          <KpiCard label="Assinaturas Ativas" value={metrics.active_subscriptions_count} />
+        </div>
+        <div className="g-col-2-4">
+          <KpiCard label="Assinantes" value={metrics.active_subscribers_count} />
+        </div>
+        <div className="g-col-2-4">
+          <KpiCard label="Tips Enviadas" value={metrics.tips_count} />
+        </div>
       </div>
     </div>
   );
@@ -54,18 +60,11 @@ export default function DashboardPage() {
 
 function KpiCard({ label, value }: { label: string; value: number }) {
   return (
-    <div
-      style={{
-        background: '#fff',
-        padding: '1.5rem',
-        borderRadius: '8px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-      }}
-    >
-      <p style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', color: '#666' }}>
+    <div className="card">
+      <p style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
         {label}
       </p>
-      <p style={{ margin: 0, fontSize: '2rem', fontWeight: 600 }}>{value}</p>
+      <p className="kpi-value">{value}</p>
     </div>
   );
 }

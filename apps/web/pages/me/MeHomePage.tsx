@@ -1,5 +1,6 @@
 /**
  * MeHomePage - User dashboard home
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React from 'react';
@@ -12,93 +13,60 @@ export default function MeHomePage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', color: '#fff' }}>
+      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem' }}>
         Olá, {user?.display_name || 'bem-vindo'}!
       </h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
-        <div style={{
-          background: '#0f0f1a',
-          padding: '1.5rem',
-          borderRadius: '12px',
-          border: '1px solid #333',
-        }}>
-          <h3 style={{ color: '#a0a0b0', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-            Enviar Comprovante
-          </h3>
-          <p style={{ color: '#fff', marginBottom: '1rem' }}>
-            Envie o comprovante do seu depósito para validar e receber tickets.
-          </p>
-          <button
-            onClick={() => navigate('/me/upload')}
-            style={{
-              background: '#FFD700',
-              color: '#1a1a2e',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Enviar
-          </button>
+      <div className="g-row">
+        <div className="g-col-4">
+          <div className="card">
+            <h3 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Enviar Comprovante
+            </h3>
+            <p style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>
+              Envie o comprovante do seu depósito para validar e receber tickets.
+            </p>
+            <button
+              onClick={() => navigate('/me/upload')}
+              className="btn btn-primary"
+            >
+              Enviar
+            </button>
+          </div>
         </div>
 
-        <div style={{
-          background: '#0f0f1a',
-          padding: '1.5rem',
-          borderRadius: '12px',
-          border: '1px solid #333',
-        }}>
-          <h3 style={{ color: '#a0a0b0', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-            Meus Números
-          </h3>
-          <p style={{ color: '#fff', marginBottom: '1rem' }}>
-            Veja seus números da sorte nos sorteios ativos.
-          </p>
-          <button
-            onClick={() => navigate('/me/tickets')}
-            style={{
-              background: '#FFD700',
-              color: '#1a1a2e',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Ver números
-          </button>
+        <div className="g-col-4">
+          <div className="card">
+            <h3 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Meus Números
+            </h3>
+            <p style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>
+              Veja seus números da sorte nos sorteios ativos.
+            </p>
+            <button
+              onClick={() => navigate('/me/tickets')}
+              className="btn btn-primary"
+            >
+              Ver números
+            </button>
+          </div>
         </div>
 
-        <div style={{
-          background: '#0f0f1a',
-          padding: '1.5rem',
-          borderRadius: '12px',
-          border: '1px solid #333',
-        }}>
-          <h3 style={{ color: '#a0a0b0', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-            Sorteios
-          </h3>
-          <p style={{ color: '#fff', marginBottom: '1rem' }}>
-            Acompanhe os sorteios e seus prêmios.
-          </p>
-          <button
-            onClick={() => navigate('/me/raffles')}
-            style={{
-              background: '#FFD700',
-              color: '#1a1a2e',
-              border: 'none',
-              padding: '0.75rem 1.5rem',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Ver sorteios
-          </button>
+        <div className="g-col-4">
+          <div className="card">
+            <h3 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Sorteios
+            </h3>
+            <p style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>
+              Acompanhe os sorteios e seus prêmios.
+            </p>
+            <button
+              onClick={() => navigate('/me/raffles')}
+              className="btn btn-primary"
+            >
+              Ver sorteios
+            </button>
+          </div>
         </div>
       </div>
     </div>

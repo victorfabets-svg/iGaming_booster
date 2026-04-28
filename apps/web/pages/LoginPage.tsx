@@ -1,5 +1,6 @@
 /**
  * Login Page
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState } from 'react';
@@ -71,20 +72,11 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#f5f5f5',
+        background: 'var(--color-background-primary)',
       }}
     >
-      <div
-        style={{
-          background: '#fff',
-          padding: '2rem',
-          borderRadius: '8px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          width: '100%',
-          maxWidth: '400px',
-        }}
-      >
-        <h1 style={{ margin: '0 0 1.5rem', textAlign: 'center', fontSize: '1.5rem' }}>
+      <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
+        <h1 className="card-title" style={{ textAlign: 'center', marginBottom: '24px' }}>
           Login
         </h1>
 
@@ -102,12 +94,11 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="input"
               style={{
                 width: '100%',
                 padding: '0.75rem',
                 fontSize: '1rem',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
                 boxSizing: 'border-box',
               }}
             />
@@ -126,12 +117,11 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              className="input"
               style={{
                 width: '100%',
                 padding: '0.75rem',
                 fontSize: '1rem',
-                border: '1px solid #ddd',
-                borderRadius: '4px',
                 boxSizing: 'border-box',
               }}
             />
@@ -139,32 +129,19 @@ export default function LoginPage() {
 
           {error !== 'none' && (
             <>
-              <div
-                style={{
-                  padding: '0.75rem',
-                  marginBottom: '1rem',
-                  background: error === 'email_not_verified' ? '#fff3cd' : '#fee',
-                  color: error === 'email_not_verified' ? '#856404' : '#c00',
-                  borderRadius: '4px',
-                  fontSize: '0.9rem',
-                }}
-              >
+              <div className={`alert-box ${error === 'email_not_verified' ? 'alert-warning' : 'alert-error'}`}>
                 {errorMessage}
               </div>
               {error === 'email_not_verified' && (
                 <button
                   type="button"
                   onClick={() => navigate('/signup')}
+                  className="btn"
                   style={{
                     width: '100%',
-                    padding: '0.75rem',
                     marginBottom: '1.5rem',
                     background: 'transparent',
-                    color: error === 'email_not_verified' ? '#856404' : '#0066cc',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '0.9rem',
+                    border: '1px solid var(--glass-border)',
                   }}
                 >
                   Reenviar email
@@ -176,15 +153,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={status === 'loading'}
+            className="btn btn-primary"
             style={{
               width: '100%',
-              padding: '0.75rem',
-              fontSize: '1rem',
-              fontWeight: 500,
-              background: status === 'loading' ? '#ccc' : '#0066cc',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '4px',
+              opacity: status === 'loading' ? 0.7 : 1,
               cursor: status === 'loading' ? 'not-allowed' : 'pointer',
             }}
           >
@@ -192,8 +164,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p style={{ margin: '1.5rem 0 0', textAlign: 'center', fontSize: '0.9rem' }}>
-          <a href="/" style={{ color: '#0066cc' }}>
+        <p style={{ margin: '1.5rem 0 0', textAlign: 'center' }}>
+          <a href="/" style={{ color: 'var(--color-primary-primary)' }}>
             Voltar para página inicial
           </a>
         </p>
