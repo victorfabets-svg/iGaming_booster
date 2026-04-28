@@ -65,6 +65,8 @@ export interface PartnerHouse {
   max_amount?: number;
   regex_patterns?: string[];
   active: boolean;
+  tickets_per_deposit: number;
+  min_amount_per_ticket_cents: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +82,8 @@ export interface PartnerHouseInput {
   max_amount?: number;
   regex_patterns?: string[];
   active?: boolean;
+  tickets_per_deposit?: number;
+  min_amount_per_ticket_cents?: number | null;
 }
 
 export interface Plan {
@@ -195,6 +199,15 @@ export interface AdminMetrics {
   plans_count: number;
   active_subscriptions_count: number;
   active_subscribers_count: number;
+}
+
+export interface EmailTemplate {
+  key: string;
+  subject: string;
+  html_body: string;
+  description: string | null;
+  supported_variables: string[];
+  updated_at: string;
 }
 
 // ============================================================================
@@ -342,5 +355,40 @@ export const adminApi = {
   // -------------------------------------------------------------------------
   async getMetrics() {
     return fetchJson<AdminMetrics>('/admin/metrics');
+  },
+
+  // -------------------------------------------------------------------------
+  // Email Templates
+  // -------------------------------------------------------------------------
+  async listEmailTemplates() {
+    return fetchJson<{ templates: EmailTemplate[] }>('/admin/email-templates');
+  },
+
+  async getEmailTemplate(key: string) {
+    return fetchJson<EmailTemplate>(`/admin/email-templates/${key}`);
+  },
+
+  async updateEmailTemplate(key: string, input: { subject: string; html_body: string; description?: string }) {
+    return fetchJson<{ message: string }>(`/admin/email-templates/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async previewEmailTemplate(key: string, vars?: Record<string, string>) {
+    return fetchJson<{ subject: string; html: string }>(`/admin/email-templates/${key}/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ vars: vars || {} }),
+    });
+  },
+
+  async testSendEmailTemplate(key: string, input: { to: string; vars?: Record<string, string> }) {
+    return fetchJson<{ ok: boolean; id?: string; error?: string }>(
+      `/admin/email-templates/${key}/test-send`,
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }
+    );
   },
 };

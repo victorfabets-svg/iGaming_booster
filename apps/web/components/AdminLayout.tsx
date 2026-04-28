@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { path: '/admin/tips', label: 'Tips', icon: '🎯' },
   { path: '/admin/whatsapp', label: 'WhatsApp', icon: '💬' },
   { path: '/admin/integrations', label: 'Integrações', icon: '🔗' },
+  { path: '/admin/email-templates', label: 'Templates de Email', icon: '📧' },
 ];
 
 export default function AdminLayout() {

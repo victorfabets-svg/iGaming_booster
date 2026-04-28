@@ -4,6 +4,7 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { ok } from '../utils/response';
 import { subscriptionAuthMiddleware } from '../middleware/subscription-auth';
 import {
   insertWithClient as insertWebhookEvent
@@ -424,6 +425,29 @@ export async function subscriptionRoutes(
       } finally {
         client.release();
       }
+    }
+  );
+
+  // GET /subscriptions/plans - public endpoint for available plans
+  fastify.get(
+    '/subscriptions/plans',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const result = await db.query<{
+        slug: string;
+        name: string;
+        description: string | null;
+        price_cents: number;
+        currency: string;
+        billing_cycle: string;
+      }>(
+        `SELECT slug, name, description, price_cents, currency, billing_cycle
+         FROM subscription.plans
+         WHERE is_active = TRUE
+         ORDER BY price_cents`,
+        []
+      );
+
+      return ok(reply, { plans: result.rows });
     }
   );
 }

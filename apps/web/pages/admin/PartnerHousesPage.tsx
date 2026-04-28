@@ -152,16 +152,28 @@ function HouseModal({
     country: house?.country || '',
     currency: house?.currency || '',
     active: house?.active ?? true,
+    tickets_per_deposit: house?.tickets_per_deposit ?? 1,
+    min_amount_per_ticket_brl:
+      house?.min_amount_per_ticket_cents != null
+        ? (house.min_amount_per_ticket_cents / 100).toFixed(2)
+        : '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const minBrlTrimmed = form.min_amount_per_ticket_brl.trim();
+    const minCents =
+      minBrlTrimmed === ''
+        ? null
+        : Math.round(Number(minBrlTrimmed.replace(',', '.')) * 100);
     onSave({
       slug: form.slug,
       name: form.name,
       country: form.country,
       currency: form.currency,
       active: form.active,
+      tickets_per_deposit: form.tickets_per_deposit,
+      min_amount_per_ticket_cents: minCents,
     });
   };
 
@@ -226,6 +238,40 @@ function HouseModal({
               maxLength={3}
               style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem' }}>
+              Tickets por depósito
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={form.tickets_per_deposit}
+              onChange={(e) =>
+                setForm({ ...form, tickets_per_deposit: Math.max(1, Number(e.target.value) || 1) })
+              }
+              required
+              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.25rem' }}>
+              Valor mínimo por ticket (R$)
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="(opcional — deixe vazio para 1 ticket por depósito)"
+              value={form.min_amount_per_ticket_brl}
+              onChange={(e) =>
+                setForm({ ...form, min_amount_per_ticket_brl: e.target.value })
+              }
+              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+            />
+            <small style={{ display: 'block', marginTop: '0.25rem', color: '#666' }}>
+              Se preenchido, gera <code>floor(valor / mínimo) × tickets por depósito</code> tickets (mínimo 1).
+            </small>
           </div>
           <div style={{ marginBottom: '1rem' }}>
             <label>

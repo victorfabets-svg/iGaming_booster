@@ -5,7 +5,7 @@ import SubmittedScreen from '../components/flow/SubmittedScreen';
 import ErrorScreen from '../components/flow/ErrorScreen';
 
 export interface ConversionFlowProps {
-  onOpenHistory: () => void;
+  onOpenHistory?: () => void;
 }
 
 const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
@@ -32,7 +32,7 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
           submittedAt={flow.submittedAt}
           status={flow.phase}
           confidenceScore={flow.confidenceScore}
-          onOpenHistory={onOpenHistory}
+          onOpenHistory={onOpenHistory ?? (() => {})}
           onSubmitAnother={flow.reset}
         />
       );

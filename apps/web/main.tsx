@@ -2,8 +2,19 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './state/AuthContext';
-import IndexPage from './pages/index';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import UserLayout from './components/UserLayout';
+import MeHomePage from './pages/me/MeHomePage';
+import MyTicketsPage from './pages/me/MyTicketsPage';
+import MyRafflesPage from './pages/me/MyRafflesPage';
+import MySubscriptionPage from './pages/me/MySubscriptionPage';
+import MyTipsPage from './pages/me/MyTipsPage';
+import MyProfilePage from './pages/me/MyProfilePage';
+import HistoricoSection from './pages/sections/HistoricoSection';
+import ConversionFlow from './pages/ConversionFlow';
 import AdminLayout from './components/AdminLayout';
 import DashboardPage from './pages/admin/DashboardPage';
 import PartnerHousesPage from './pages/admin/PartnerHousesPage';
@@ -12,6 +23,7 @@ import SubscriptionsPage from './pages/admin/SubscriptionsPage';
 import TipsPage from './pages/admin/TipsPage';
 import WhatsAppPage from './pages/admin/WhatsAppPage';
 import IntegrationsPage from './pages/admin/IntegrationsPage';
+import EmailTemplatesPage from './pages/admin/EmailTemplatesPage';
 import './styles/global.css';
 
 // Protected route wrapper
@@ -49,12 +61,31 @@ function ProtectedRoute({
 function App() {
   return (
     <Routes>
-      {/* User routes */}
-      <Route path="/" element={<IndexPage />} />
-      
-      {/* Auth routes */}
+      {/* Public routes */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
       
+      {/* User routes - authenticated */}
+      <Route
+        path="/me"
+        element={
+          <ProtectedRoute>
+            <UserLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<MeHomePage />} />
+        <Route path="upload" element={<ConversionFlow />} />
+        <Route path="historico" element={<HistoricoSection />} />
+        <Route path="tickets" element={<MyTicketsPage />} />
+        <Route path="raffles" element={<MyRafflesPage />} />
+        <Route path="subscription" element={<MySubscriptionPage />} />
+        <Route path="tips" element={<MyTipsPage />} />
+        <Route path="profile" element={<MyProfilePage />} />
+      </Route>
+
       {/* Admin routes */}
       <Route
         path="/admin"
@@ -71,6 +102,7 @@ function App() {
         <Route path="tips" element={<TipsPage />} />
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="email-templates" element={<EmailTemplatesPage />} />
       </Route>
 
       {/* Catch all - redirect to home */}

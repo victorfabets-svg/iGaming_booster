@@ -86,6 +86,22 @@ function validatePartnerHouseInput(input: unknown): string | null {
     }
   }
 
+  // Validate tickets_per_deposit
+  if (body.tickets_per_deposit !== undefined && body.tickets_per_deposit !== null) {
+    const n = Number(body.tickets_per_deposit);
+    if (!Number.isInteger(n) || n < 1) {
+      return 'tickets_per_deposit must be an integer >= 1';
+    }
+  }
+
+  // Validate min_amount_per_ticket_cents
+  if (body.min_amount_per_ticket_cents !== undefined && body.min_amount_per_ticket_cents !== null) {
+    const n = Number(body.min_amount_per_ticket_cents);
+    if (!Number.isInteger(n) || n < 1) {
+      return 'min_amount_per_ticket_cents must be a positive integer (cents)';
+    }
+  }
+
   return null;
 }
 
@@ -114,6 +130,14 @@ function toPartnerHouseInput(body: Record<string, unknown>): PartnerHouseInput {
         : undefined,
     regex_patterns: Array.isArray(body.regex_patterns) ? body.regex_patterns : undefined,
     active: typeof body.active === 'boolean' ? body.active : undefined,
+    tickets_per_deposit:
+      body.tickets_per_deposit !== undefined && body.tickets_per_deposit !== null
+        ? Number(body.tickets_per_deposit)
+        : undefined,
+    min_amount_per_ticket_cents:
+      body.min_amount_per_ticket_cents !== undefined && body.min_amount_per_ticket_cents !== null
+        ? Number(body.min_amount_per_ticket_cents)
+        : undefined,
   };
 }
 

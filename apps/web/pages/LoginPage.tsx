@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 
-type LoginError = 'none' | 'invalid' | 'network' | 'rate_limit';
+type LoginError = 'none' | 'invalid' | 'network' | 'rate_limit' | 'email_not_verified';
 type LoginStatus = 'idle' | 'loading' | 'error';
 
 export default function LoginPage() {
@@ -47,15 +47,17 @@ export default function LoginPage() {
       } else if (isAdmin) {
         navigate('/admin', { replace: true });
       } else {
-        navigate('/', { replace: true });
+        navigate('/me', { replace: true });
       }
     } catch (err) {
       setStatus('error');
       // Check error type
-      const apiError = err as { code?: string };
-      if (apiError.code === 'RATE_LIMIT') {
+      const errMsg = err instanceof Error ? err.message : '';
+      if (errMsg === 'EMAIL_NOT_VERIFIED') {
+        setError('email_not_verified');
+      } else if ((err as { code?: string }).code === 'RATE_LIMIT') {
         setError('rate_limit');
-      } else if (apiError.code === 'NETWORK_ERROR') {
+      } else if ((err as { code?: string }).code === 'NETWORK_ERROR') {
         setError('network');
       } else {
         setError('invalid');
@@ -68,6 +70,7 @@ export default function LoginPage() {
     invalid: 'Email ou senha incorretos',
     network: 'Falha de conexão',
     rate_limit: 'Muitas tentativas, aguarde.',
+    email_not_verified: 'Confirme seu email antes de entrar.',
   }[error];
 
   return (
@@ -144,18 +147,39 @@ export default function LoginPage() {
           </div>
 
           {error !== 'none' && (
-            <div
-              style={{
-                padding: '0.75rem',
-                marginBottom: '1rem',
-                background: '#fee',
-                color: '#c00',
-                borderRadius: '4px',
-                fontSize: '0.9rem',
-              }}
-            >
-              {errorMessage}
-            </div>
+            <>
+              <div
+                style={{
+                  padding: '0.75rem',
+                  marginBottom: '1rem',
+                  background: error === 'email_not_verified' ? '#fff3cd' : '#fee',
+                  color: error === 'email_not_verified' ? '#856404' : '#c00',
+                  borderRadius: '4px',
+                  fontSize: '0.9rem',
+                }}
+              >
+                {errorMessage}
+              </div>
+              {error === 'email_not_verified' && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/signup')}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    marginBottom: '1.5rem',
+                    background: 'transparent',
+                    color: error === 'email_not_verified' ? '#856404' : '#0066cc',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  Reenviar email
+                </button>
+              )}
+            </>
           )}
 
           <button
