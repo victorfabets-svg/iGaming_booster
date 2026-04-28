@@ -204,3 +204,29 @@ BEGIN
   END IF;
 END
 $$;
+
+-- ============================================
+-- Add amount_cents to rewards.rewards for ticket calculation
+-- ============================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'rewards' AND table_name = 'rewards' AND column_name = 'amount_cents'
+  ) THEN
+    ALTER TABLE rewards.rewards ADD COLUMN amount_cents INT NULL;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'rewards' AND table_name = 'rewards' AND column_name = 'partner_house_slug'
+  ) THEN
+    ALTER TABLE rewards.rewards ADD COLUMN partner_house_slug TEXT NULL;
+  END IF;
+END
+$$;

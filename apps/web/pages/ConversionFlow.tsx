@@ -5,7 +5,7 @@ import SubmittedScreen from '../components/flow/SubmittedScreen';
 import ErrorScreen from '../components/flow/ErrorScreen';
 
 export interface ConversionFlowProps {
-  onOpenHistory: () => void;
+  onOpenHistory?: () => void;
 }
 
 const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {

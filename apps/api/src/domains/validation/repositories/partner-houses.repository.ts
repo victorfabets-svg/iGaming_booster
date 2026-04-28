@@ -20,6 +20,8 @@ export interface PartnerHouse {
   active: boolean;
   created_at: Date;
   updated_at: Date;
+  tickets_per_deposit: number;
+  min_amount_per_ticket_cents: number | null;
 }
 
 export interface PartnerHouseInput {

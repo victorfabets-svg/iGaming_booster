@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 
-type LoginError = 'none' | 'invalid' | 'network' | 'rate_limit';
+type LoginError = 'none' | 'invalid' | 'network' | 'rate_limit' | 'email_not_verified';
 type LoginStatus = 'idle' | 'loading' | 'error';
 
 export default function LoginPage() {
@@ -147,18 +147,39 @@ export default function LoginPage() {
           </div>
 
           {error !== 'none' && (
-            <div
-              style={{
-                padding: '0.75rem',
-                marginBottom: '1rem',
-                background: '#fee',
-                color: '#c00',
-                borderRadius: '4px',
-                fontSize: '0.9rem',
-              }}
-            >
-              {errorMessage}
-            </div>
+            <>
+              <div
+                style={{
+                  padding: '0.75rem',
+                  marginBottom: '1rem',
+                  background: error === 'email_not_verified' ? '#fff3cd' : '#fee',
+                  color: error === 'email_not_verified' ? '#856404' : '#c00',
+                  borderRadius: '4px',
+                  fontSize: '0.9rem',
+                }}
+              >
+                {errorMessage}
+              </div>
+              {error === 'email_not_verified' && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/signup')}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    marginBottom: '1.5rem',
+                    background: 'transparent',
+                    color: error === 'email_not_verified' ? '#856404' : '#0066cc',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  Reenviar email
+                </button>
+              )}
+            </>
           )}
 
           <button

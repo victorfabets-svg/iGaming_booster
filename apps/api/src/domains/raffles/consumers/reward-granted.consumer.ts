@@ -12,6 +12,7 @@ import { findTicketByRewardId, createTicket, CreateTicketInput } from '../../rew
 import { insertEventInTransaction } from '@shared/events/transactional-outbox';
 import { logger } from '@shared/observability/logger';
 import { db, type PoolClient } from '@shared/database/connection';
+import { findBySlug } from '../../validation/repositories/partner-houses.repository';
 
 const EVENT_TYPE = 'reward_granted';
 const POLL_INTERVAL_MS = parseInt(process.env.CONSUMER_POLL_INTERVAL_MS || '1000', 10);
@@ -24,6 +25,8 @@ interface RewardGrantedPayload {
   reward_id: string;
   raffle_id: string;
   proof_id: string;
+  partner_house_slug?: string;
+  amount_cents?: number;
 }
 
 export async function startRewardGrantedConsumer(): Promise<void> {
@@ -103,7 +106,7 @@ async function processEvent(event: Event): Promise<void> {
 }
 
 async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): Promise<void> {
-  const { user_id, reward_id, raffle_id, proof_id } = payload;
+  const { user_id, reward_id, raffle_id, partner_house_slug, amount_cents } = payload;
 
   // Get reward with proof_id - required for ticket creation
   const rewardResult = await client.query<{ id: string; status: string; user_id: string; proof_id: string }>(
@@ -118,7 +121,7 @@ async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): P
     throw new Error(`Reward not found: ${reward_id}`);
   }
 
-  // Check if ticket already exists for this reward (idempotency)
+  // Check if tickets already exist for this reward (idempotency)
   const existingTicket = await findTicketByRewardId(reward_id);
   if (existingTicket) {
     logger.info({
@@ -129,44 +132,65 @@ async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): P
     return;
   }
 
-  // Create ticket - createTicket handles deterministic number internally
-  // Uses SELECT FOR UPDATE to ensure unique sequential numbers
-  const ticketInput: CreateTicketInput = {
-    user_id,
-    raffle_id,
-    reward_id,
-    proof_id: reward.proof_id,
-  };
+  // Determine ticket count based on partner_house configuration
+  let ticketCount = 1;
+  if (partner_house_slug) {
+    const house = await findBySlug(partner_house_slug);
+    if (house && house.tickets_per_deposit) {
+      ticketCount = house.tickets_per_deposit;
+      if (house.min_amount_per_ticket_cents && house.min_amount_per_ticket_cents > 0 && amount_cents && amount_cents > 0) {
+        ticketCount = Math.max(1, Math.floor(amount_cents / house.min_amount_per_ticket_cents) * house.tickets_per_deposit);
+      }
+    }
+  }
 
-  const ticket = await createTicket(ticketInput);
+  logger.info({
+    event: 'creating_tickets',
+    context: 'raffles',
+    data: { reward_id, ticket_count: ticketCount, partner_house_slug, amount_cents }
+  });
 
-  if (ticket) {
-    // Emit numbers_generated event via transactional outbox (same transaction)
-    await insertEventInTransaction(
-      client,
-      'numbers_generated',
-      {
-        ticket_id: ticket.id,
-        number: ticket.number,
-        reward_id,
-        raffle_id,
-        proof_id: reward.proof_id,
-        user_id,
-      },
-      'raffles'
-    );
+  // Create tickets - one at a time for deterministic sequential numbers
+  for (let i = 0; i < ticketCount; i++) {
+    const ticketInput: CreateTicketInput = {
+      user_id,
+      raffle_id,
+      reward_id,
+      proof_id: reward.proof_id,
+    };
 
-    logger.info({
-      event: 'numbers_generated',
-      context: 'raffles',
-      data: { ticket_id: ticket.id, number: ticket.number, reward_id }
-    });
-  } else {
-    logger.warn({
-      event: 'ticket_creation_failed',
-      context: 'raffles',
-      data: { reward_id, reason: 'insert_conflict' }
-    });
+    const ticket = await createTicket(ticketInput);
+
+    if (ticket) {
+      await insertEventInTransaction(
+        client,
+        'numbers_generated',
+        {
+          ticket_id: ticket.id,
+          number: ticket.number,
+          reward_id,
+          raffle_id,
+          proof_id: reward.proof_id,
+          user_id,
+          ticket_index: i,
+          total_tickets: ticketCount,
+        },
+        'raffles'
+      );
+
+      logger.info({
+        event: 'numbers_generated',
+        context: 'raffles',
+        data: { ticket_id: ticket.id, number: ticket.number, reward_id, ticket_index: i, total_tickets: ticketCount }
+      });
+    } else if (i === 0) {
+      // Only warn if first ticket fails
+      logger.warn({
+        event: 'ticket_creation_failed',
+        context: 'raffles',
+        data: { reward_id, reason: 'insert_conflict' }
+      });
+    }
   }
 }
 
