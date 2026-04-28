@@ -4,11 +4,14 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from '../services/auth-api';
+import { meApi } from '../services/me-api';
 
 interface User {
   id: string;
   email: string;
   role: string;
+  email_verified?: boolean;
+  display_name?: string | null;
 }
 
 interface AuthContextValue {
@@ -17,6 +20,7 @@ interface AuthContextValue {
   refreshToken: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isEmailVerified: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -76,9 +80,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
+  // Fetch user details from /me when authenticated
+  useEffect(() => {
+    if (!accessToken) return;
+
+    meApi.getMe().then(response => {
+      if (response.success && response.data) {
+        setUser(prev => prev ? { 
+          ...prev, 
+          email_verified: response.data!.email_verified,
+          display_name: response.data!.display_name,
+        } : null);
+      }
+    });
+  }, [accessToken]);
+
   const login = useCallback(async (email: string, password: string) => {
     const response = await authApi.login(email, password);
     if (!response.success || !response.data) {
+      // Check for EMAIL_NOT_VERIFIED error code
+      if (response.error?.code === 'EMAIL_NOT_VERIFIED') {
+        throw new Error('EMAIL_NOT_VERIFIED');
+      }
       throw new Error(response.error?.message || 'Login failed');
     }
 
@@ -169,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshToken,
     isAuthenticated: !!user && !!accessToken,
     isAdmin: user?.role === 'admin',
+    isEmailVerified: user?.email_verified ?? true,
     isLoading,
     login,
     logout,

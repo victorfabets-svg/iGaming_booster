@@ -81,11 +81,36 @@ export const authApi = {
    */
   async register(
     email: string,
-    password: string
+    password: string,
+    displayName?: string
   ): Promise<ApiResponse<{ user_id: string; email: string }>> {
     return fetchJson<{ user_id: string; email: string }>('/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, display_name: displayName }),
+    });
+  },
+
+  /**
+   * Verify email with token
+   */
+  async verifyEmail(
+    token: string
+  ): Promise<ApiResponse<LoginResponse>> {
+    return fetchJson<LoginResponse>('/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  /**
+   * Resend verification email
+   */
+  async resendVerification(
+    email: string
+  ): Promise<ApiResponse<{ message: string }>> {
+    return fetchJson<{ message: string }>('/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     });
   },
 

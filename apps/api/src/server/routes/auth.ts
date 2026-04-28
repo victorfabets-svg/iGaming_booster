@@ -7,6 +7,9 @@ import { rateLimitDb } from '../utils/rate-limit-db';
 import { checkIdempotency, saveIdempotency, getIdempotencyKey, reserveIdempotency, getIdempotency, completeIdempotency, releaseStaleIdempotency, isIdempotencyStale } from '../utils/idempotency';
 import { auditLog } from '@shared/events/audit-log';
 import argon2 from 'argon2';
+import { sendEmail } from '@shared/infrastructure/email/resend';
+import { loadAndRender } from '@shared/infrastructure/email/render-template';
+import { renderFallback } from '@shared/infrastructure/email/fallback-templates';
 
 // Simple email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,6 +17,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Constants
 const ACCESS_TOKEN_EXPIRY = '24h';
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const WEB_BASE_URL = process.env.WEB_BASE_URL || 'https://i-gaming-booster.vercel.app';
 
 /**
  * Hash a refresh token using SHA-256 (base64url encoded)
@@ -51,7 +56,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   // Registration endpoint
   fastify.post(
     '/register',
-    async (request: FastifyRequest<{ Body: { email: string; password: string } }>, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Body: { email: string; password: string; display_name?: string } }>, reply: FastifyReply) => {
       const idemKey = getIdempotencyKey(request.headers as Record<string, unknown>);
       if (idemKey) {
         const reserve = await reserveIdempotency(idemKey);
@@ -93,6 +98,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const { email, password } = request.body;
+      const displayName = (request.body as { display_name?: string }).display_name?.trim() || '';
 
       // Email normalization (case-insensitive)
       const normalizedEmail = email.trim().toLowerCase();
@@ -116,10 +122,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           timeCost: 3,
         });
 
+        // Generate verification token
+        const verificationToken = randomUUID();
+        const verificationExpiresAt = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
+
         await db.query(
-          `INSERT INTO identity.users (id, email, password_hash, password_updated_at, created_at) 
-           VALUES ($1, $2, $3, NOW(), NOW())`,
-          [userId, normalizedEmail, passwordHash]
+          `INSERT INTO identity.users (id, email, password_hash, password_updated_at, created_at, display_name, verification_token, verification_token_expires_at) 
+           VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6)`,
+          [userId, normalizedEmail, passwordHash, displayName || null, verificationToken, verificationExpiresAt]
         );
 
         // Sprint 9 T2: best-effort first-touch attribution.
@@ -147,6 +157,27 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         // Audit log for successful registration and password set
         await auditLog(userId, 'user_registered', { email: normalizedEmail }, requestId);
         await auditLog(userId, 'password_set', { method: 'register' }, requestId);
+
+        // Send verification email (fire-and-forget)
+        const verificationUrl = `${WEB_BASE_URL}/verify-email/${verificationToken}`;
+        const greetingName = displayName || 'olá';
+        
+        // Try to render template from DB, fallback if needed
+        const rendered = await loadAndRender('email_verification', {
+          verification_url: verificationUrl,
+          display_name: greetingName,
+          email: normalizedEmail,
+        }) ?? renderFallback('email_verification', {
+          verification_url: verificationUrl,
+          display_name: greetingName,
+          email: normalizedEmail,
+        });
+
+        sendEmail({
+          to: normalizedEmail,
+          subject: rendered.subject,
+          html: rendered.html,
+        }).catch(err => console.error('[email] verification send failed', err));
 
         if (idemKey) {
           await completeIdempotency(idemKey, { user_id: userId, email: normalizedEmail });
@@ -186,9 +217,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       // Email normalization (case-insensitive)
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Look up user by email (incl. role for JWT)
-      const userResult = await db.query<{ id: string; password_hash: string | null; role: string }>(
-        `SELECT id, password_hash, role FROM identity.users WHERE email = $1`,
+      // Look up user by email (incl. role for JWT, email_verified for auth)
+      const userResult = await db.query<{ id: string; password_hash: string | null; role: string; email_verified: boolean }>(
+        `SELECT id, password_hash, role, email_verified FROM identity.users WHERE email = $1`,
         [normalizedEmail]
       );
 
@@ -237,6 +268,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         // Invalid password - audit with hint, not real user_id
         await auditLog(null, 'user_login_failed', { ip: clientIp, reason: 'invalid_password', target_user_hint: getUserIdHint(user.id) }, requestId);
         return fail(reply, 'Invalid credentials', 'INVALID_CREDENTIALS');
+      }
+
+      // Check if email is verified
+      if (!user.email_verified) {
+        return fail(reply, 'Confirme seu email antes de entrar.', 'EMAIL_NOT_VERIFIED');
       }
 
       // Generate access token with standard 'sub' claim + user_id + role for RBAC
@@ -417,6 +453,140 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       await auditLog(userId, 'user_logout', {}, requestId);
 
       return ok(reply, { ok: true });
+    }
+  );
+
+  // Verify email endpoint
+  fastify.post(
+    '/verify-email',
+    async (request: FastifyRequest<{ Body: { token: string } }>, reply: FastifyReply) => {
+      const fieldsError = requireFields(request.body, ['token']);
+      if (fieldsError) {
+        return fail(reply, fieldsError, 'VALIDATION_ERROR');
+      }
+
+      const { token } = request.body;
+      const requestId = (request as any).requestId;
+
+      // Look up user by verification token
+      const userResult = await db.query<{ id: string; email: string }>(
+        `SELECT id, email FROM identity.users 
+         WHERE verification_token = $1 AND verification_token_expires_at > NOW()`,
+        [token]
+      );
+
+      const user = userResult.rows[0];
+      if (!user) {
+        return fail(reply, 'Link inválido ou expirado', 'INVALID_TOKEN');
+      }
+
+      // Mark email as verified and clear token
+      await db.query(
+        `UPDATE identity.users 
+         SET email_verified = TRUE, verification_token = NULL, verification_token_expires_at = NULL 
+         WHERE id = $1`,
+        [user.id]
+      );
+
+      // Audit email verification
+      await auditLog(user.id, 'email_verified', { email: user.email }, requestId);
+
+      // Now issue tokens (same as login)
+      const userRoleResult = await db.query<{ role: string }>(
+        `SELECT role FROM identity.users WHERE id = $1`,
+        [user.id]
+      );
+      const userRole = userRoleResult.rows[0]?.role || 'user';
+
+      const accessToken = await reply.jwtSign({ sub: user.id, user_id: user.id, role: userRole }, { expiresIn: ACCESS_TOKEN_EXPIRY });
+
+      const refreshTokenValue = generateRefreshToken();
+      const refreshTokenHash = hashRefreshToken(refreshTokenValue);
+      const familyId = randomUUID();
+      const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+      await db.query(
+        `INSERT INTO identity.refresh_tokens (user_id, family_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, $4)`,
+        [user.id, familyId, refreshTokenHash, expiresAt]
+      );
+
+      return ok(reply, { 
+        access_token: accessToken, 
+        refresh_token: refreshTokenValue, 
+        expires_in: 86400 
+      });
+    }
+  );
+
+  // Resend verification email endpoint
+  fastify.post(
+    '/resend-verification',
+    async (request: FastifyRequest<{ Body: { email: string } }>, reply: FastifyReply) => {
+      // Rate limiting - 1 request per minute per IP+email
+      const clientIp = request.ip || request.headers['x-forwarded-for'] as string || 'unknown';
+      const email = (request.body as { email?: string })?.email?.trim().toLowerCase() || '';
+      
+      if (email) {
+        const allowed = await rateLimitDb(`resend-ip:${clientIp}:${email}`, 1, 60000);
+        if (!allowed) {
+          return fail(reply, 'Too many requests', 'RATE_LIMIT');
+        }
+      }
+
+      // Always return 200 to prevent email enumeration
+      if (!email || !isValidEmail(email)) {
+        return ok(reply, { message: 'Se seu email estiver cadastrado, você receberá um novo link.' });
+      }
+
+      // Look up user
+      const userResult = await db.query<{ id: string; email_verified: boolean }>(
+        `SELECT id, email_verified FROM identity.users WHERE email = $1`,
+        [email]
+      );
+
+      const user = userResult.rows[0];
+      
+      // If user exists and not verified, resend token
+      if (user && !user.email_verified) {
+        const newToken = randomUUID();
+        const newExpiresAt = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
+
+        await db.query(
+          `UPDATE identity.users 
+           SET verification_token = $1, verification_token_expires_at = $2 
+           WHERE id = $3`,
+          [newToken, newExpiresAt, user.id]
+        );
+
+        const userDetailResult = await db.query<{ display_name: string | null }>(
+          `SELECT display_name FROM identity.users WHERE id = $1`,
+          [user.id]
+        );
+        const displayName = userDetailResult.rows[0]?.display_name || '';
+
+        const verificationUrl = `${WEB_BASE_URL}/verify-email/${newToken}`;
+        const greetingName = displayName || 'olá';
+
+        const rendered = await loadAndRender('email_verification', {
+          verification_url: verificationUrl,
+          display_name: greetingName,
+          email,
+        }) ?? renderFallback('email_verification', {
+          verification_url: verificationUrl,
+          display_name: greetingName,
+          email,
+        });
+
+        sendEmail({
+          to: email,
+          subject: rendered.subject,
+          html: rendered.html,
+        }).catch(err => console.error('[email] resend verification failed', err));
+      }
+      
+      // Always return success to prevent email enumeration
+      return ok(reply, { message: 'Se seu email estiver cadastrado, você receberá um novo link.' });
     }
   );
 }

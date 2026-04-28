@@ -47,15 +47,17 @@ export default function LoginPage() {
       } else if (isAdmin) {
         navigate('/admin', { replace: true });
       } else {
-        navigate('/', { replace: true });
+        navigate('/me', { replace: true });
       }
     } catch (err) {
       setStatus('error');
       // Check error type
-      const apiError = err as { code?: string };
-      if (apiError.code === 'RATE_LIMIT') {
+      const errMsg = err instanceof Error ? err.message : '';
+      if (errMsg === 'EMAIL_NOT_VERIFIED') {
+        setError('email_not_verified');
+      } else if ((err as { code?: string }).code === 'RATE_LIMIT') {
         setError('rate_limit');
-      } else if (apiError.code === 'NETWORK_ERROR') {
+      } else if ((err as { code?: string }).code === 'NETWORK_ERROR') {
         setError('network');
       } else {
         setError('invalid');
@@ -68,6 +70,7 @@ export default function LoginPage() {
     invalid: 'Email ou senha incorretos',
     network: 'Falha de conexão',
     rate_limit: 'Muitas tentativas, aguarde.',
+    email_not_verified: 'Confirme seu email antes de entrar.',
   }[error];
 
   return (

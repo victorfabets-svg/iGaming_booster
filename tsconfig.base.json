@@ -11,7 +11,8 @@
     "ignoreDeprecations": "5.0",
     "paths": {
       "@shared/*": ["shared/*"],
-      "@domains/*": ["apps/api/src/domains/*"]
+      "@domains/*": ["apps/api/src/domains/*"],
+      "@shared/infrastructure/*": ["apps/api/src/infrastructure/*"]
     }
   }
 }
