@@ -173,37 +173,24 @@ END
 $$;
 
 -- Updated_at trigger function
-DO $$
+-- CREATE OR REPLACE is itself idempotent — no DO wrapper needed (and a DO
+-- wrapper here would cause a dollar-quote nesting conflict between the outer
+-- DO $$ and the inner function body's $$).
+CREATE OR REPLACE FUNCTION notifications.update_updated_at_column()
+RETURNS TRIGGER AS $func$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.routines 
-    WHERE routine_schema = 'notifications' AND routine_name = 'update_updated_at_column'
-  ) THEN
-    CREATE OR REPLACE FUNCTION notifications.update_updated_at_column()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      NEW.updated_at = NOW();
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-  END IF;
-END
-$$;
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
 
--- Create trigger for updated_at
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.triggers 
-    WHERE event_object_schema = 'notifications' AND event_object_table = 'email_templates' AND trigger_name = 'update_email_templates_updated_at'
-  ) THEN
-    CREATE TRIGGER update_email_templates_updated_at
-    BEFORE UPDATE ON notifications.email_templates
-    FOR EACH ROW
-    EXECUTE FUNCTION notifications.update_updated_at_column();
-  END IF;
-END
-$$;
+-- Create trigger for updated_at (DROP + CREATE is the simplest idempotent pattern;
+-- CREATE TRIGGER IF NOT EXISTS only landed in PG14+).
+DROP TRIGGER IF EXISTS update_email_templates_updated_at ON notifications.email_templates;
+CREATE TRIGGER update_email_templates_updated_at
+BEFORE UPDATE ON notifications.email_templates
+FOR EACH ROW
+EXECUTE FUNCTION notifications.update_updated_at_column();
 
 -- ============================================
 -- Add amount_cents to rewards.rewards for ticket calculation
