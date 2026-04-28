@@ -62,19 +62,21 @@ export default function PlansPage() {
           <table className="table-engine">
             <thead>
               <tr>
+                <th>Slug</th>
                 <th>Nome</th>
-                <th>Preco</th>
-                <th>Periodo</th>
+                <th>Preço</th>
+                <th>Cobrança</th>
                 <th>Status</th>
-                <th>Acoes</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {plans.map(plan => (
                 <tr key={plan.id}>
+                  <td className="mono">{plan.slug}</td>
                   <td>{plan.name}</td>
-                  <td className="mono">{plan.price}</td>
-                  <td>{plan.period_days} dias</td>
+                  <td className="mono">{(plan.price_cents / 100).toFixed(2)} {plan.currency}</td>
+                  <td>{plan.billing_cycle === 'monthly' ? 'Mensal' : 'Anual'}</td>
                   <td>
                     <span className={`badge ${plan.active ? 'badge-success' : 'badge-gray'}`}>
                       {plan.active ? 'ativo' : 'inativo'}

@@ -8,11 +8,10 @@ import { meApi } from '../../services/me-api';
 
 interface Tip {
   id: string;
-  house_name: string;
+  house: string;
   market: string;
-  pick: string;
   odds: number;
-  result: string;
+  status: string;
   created_at: string;
 }
 
@@ -65,25 +64,23 @@ export default function MyTipsPage() {
               <tr>
                 <th>Casa</th>
                 <th>Mercado</th>
-                <th>Pick</th>
                 <th>Odds</th>
-                <th>Resultado</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {tips.map(tip => (
                 <tr key={tip.id}>
-                  <td>{tip.house_name}</td>
+                  <td>{tip.house}</td>
                   <td>{tip.market}</td>
-                  <td>{tip.pick}</td>
                   <td className="mono">{tip.odds}</td>
                   <td>
                     <span className={`badge ${
-                      tip.result === 'won' ? 'badge-success' : 
-                      tip.result === 'lost' ? 'badge-error' : 
-                      tip.result === 'pending' ? 'badge-warning' : 'badge-gray'
+                      tip.status === 'won' ? 'badge-success' :
+                      tip.status === 'lost' ? 'badge-error' :
+                      tip.status === 'pending' ? 'badge-warning' : 'badge-gray'
                     }`}>
-                      {tip.result}
+                      {tip.status}
                     </span>
                   </td>
                 </tr>

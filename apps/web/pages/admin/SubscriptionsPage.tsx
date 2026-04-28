@@ -64,19 +64,20 @@ export default function SubscriptionsPage() {
           <table className="table-engine">
             <thead>
               <tr>
-                <th>Usuario</th>
+                <th>External ID</th>
                 <th>Plano</th>
                 <th>Status</th>
-                <th>Inicio</th>
+                <th>Início</th>
                 <th>Fim</th>
-                <th>Acoes</th>
+                <th>Valor</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {subscriptions.map(sub => (
                 <tr key={sub.id}>
-                  <td>{sub.user_email}</td>
-                  <td>{sub.plan_name}</td>
+                  <td className="mono">{sub.external_id}</td>
+                  <td>{sub.plan_slug}</td>
                   <td>
                     <span className={`badge ${
                       sub.status === 'active' ? 'badge-success' :
@@ -86,8 +87,9 @@ export default function SubscriptionsPage() {
                       {sub.status}
                     </span>
                   </td>
-                  <td>{sub.start_date}</td>
-                  <td>{sub.end_date}</td>
+                  <td className="mono">{sub.current_period_start ? new Date(sub.current_period_start).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="mono">{sub.current_period_end ? new Date(sub.current_period_end).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="mono">{sub.amount_cents != null ? `${(sub.amount_cents / 100).toFixed(2)} ${sub.currency || ''}` : '—'}</td>
                   <td>
                     {sub.status === 'active' && (
                       <button className="action-btn" onClick={() => handleCancel(sub.id)}>

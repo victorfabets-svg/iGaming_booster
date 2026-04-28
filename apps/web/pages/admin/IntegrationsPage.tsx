@@ -50,17 +50,19 @@ function IntegrationCard({ integration }: { integration: IntegrationConfig }) {
   return (
     <div className="card">
       <div className="flex justify-between items-center mb-2">
-        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{integration.name}</h3>
-        <span className={`badge badge-${integration.active ? 'success' : 'gray'}`}>
-          {integration.active ? 'active' : 'inactive'}
+        <h3 className="card-title-sm">{integration.label}</h3>
+        <span className={`badge badge-${integration.configured ? 'success' : 'gray'}`}>
+          {integration.configured ? 'configurado' : 'não configurado'}
         </span>
       </div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-        {integration.description}
-      </p>
-      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }} className="mono">
-        {integration.key}
-      </p>
+      <p className="text-secondary text-sm mb-2">{integration.description}</p>
+      {integration.masked_value && (
+        <p className="mono text-muted text-xs mb-2">{integration.masked_value}</p>
+      )}
+      <p className="text-muted text-xs mono">{integration.key}</p>
+      <a href={integration.edit_url} target="_blank" rel="noopener noreferrer" className="btn-link">
+        Editar no Render →
+      </a>
     </div>
   );
 }

@@ -50,9 +50,6 @@ export default function DashboardPage() {
         <div className="g-col-2-4">
           <KpiCard label="Assinantes" value={metrics.active_subscribers_count} />
         </div>
-        <div className="g-col-2-4">
-          <KpiCard label="Tips Enviadas" value={metrics.tips_count} />
-        </div>
       </div>
     </div>
   );

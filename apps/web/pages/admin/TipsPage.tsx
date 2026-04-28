@@ -4,12 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { adminApi, Tip, TipFilters } from '../../services/admin-api';
+import { adminApi, Tip } from '../../services/admin-api';
+
+type TipStatusFilter = 'pending' | 'won' | 'lost' | 'void' | '';
 
 export default function TipsPage() {
   const [tips, setTips] = useState<Tip[]>([]);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [filter, setFilter] = useState<TipFilters>({});
+  const [filter, setFilter] = useState<{ status?: TipStatusFilter }>({});
 
   useEffect(() => {
     loadTips();
@@ -34,7 +36,7 @@ export default function TipsPage() {
       <h1 style={{ marginBottom: '1.5rem', fontSize: '1.5rem' }}>Tips</h1>
       
       <div className="filter-bar" style={{ marginBottom: '1.5rem' }}>
-        <select className="input" style={{ width: 'auto' }} onChange={(e) => setFilter({ ...filter, status: e.target.value || undefined })}>
+        <select className="input" style={{ width: 'auto' }} onChange={(e) => setFilter({ ...filter, status: (e.target.value as TipStatusFilter) || undefined })}>
           <option value="">Todos</option>
           <option value="pending">Pending</option>
           <option value="won">Won</option>
@@ -49,28 +51,29 @@ export default function TipsPage() {
           <table className="table-engine">
             <thead>
               <tr>
+                <th>External ID</th>
                 <th>Casa</th>
-                <th>Mercado</th>
-                <th>Pick</th>
                 <th>Odds</th>
                 <th>Status</th>
+                <th>Criada em</th>
               </tr>
             </thead>
             <tbody>
               {tips.map(tip => (
                 <tr key={tip.id}>
-                  <td>{tip.house_name}</td>
-                  <td>{tip.market}</td>
-                  <td>{tip.pick}</td>
-                  <td className="mono">{tip.odds}</td>
+                  <td className="mono">{tip.external_id}</td>
+                  <td>{tip.house_slug}</td>
+                  <td className="mono">{tip.odds ?? '—'}</td>
                   <td>
                     <span className={`badge ${
-                      tip.result === 'won' ? 'badge-success' :
-                      tip.result === 'lost' ? 'badge-error' : 'badge-warning'
+                      tip.status === 'won' ? 'badge-success' :
+                      tip.status === 'lost' ? 'badge-error' :
+                      tip.status === 'pending' ? 'badge-warning' : 'badge-gray'
                     }`}>
-                      {tip.result}
+                      {tip.status}
                     </span>
                   </td>
+                  <td className="mono">{new Date(tip.created_at).toLocaleString('pt-BR')}</td>
                 </tr>
               ))}
             </tbody>
