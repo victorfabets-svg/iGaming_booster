@@ -65,6 +65,8 @@ export interface PartnerHouse {
   max_amount?: number;
   regex_patterns?: string[];
   active: boolean;
+  tickets_per_deposit: number;
+  min_amount_per_ticket_cents: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +82,8 @@ export interface PartnerHouseInput {
   max_amount?: number;
   regex_patterns?: string[];
   active?: boolean;
+  tickets_per_deposit?: number;
+  min_amount_per_ticket_cents?: number | null;
 }
 
 export interface Plan {

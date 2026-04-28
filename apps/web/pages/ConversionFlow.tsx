@@ -32,7 +32,7 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
           submittedAt={flow.submittedAt}
           status={flow.phase}
           confidenceScore={flow.confidenceScore}
-          onOpenHistory={onOpenHistory}
+          onOpenHistory={onOpenHistory ?? (() => {})}
           onSubmitAnother={flow.reset}
         />
       );

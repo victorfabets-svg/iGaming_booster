@@ -35,6 +35,8 @@ export interface PartnerHouseInput {
   max_amount?: number | null;
   regex_patterns?: any[];
   active?: boolean;
+  tickets_per_deposit?: number;
+  min_amount_per_ticket_cents?: number | null;
 }
 
 /**
@@ -107,12 +109,15 @@ export async function upsertBySlug(input: PartnerHouseInput): Promise<PartnerHou
   const maxAmount = input.max_amount ?? null;
   const regexPatterns = input.regex_patterns || [];
   const active = input.active !== undefined ? input.active : true;
+  const ticketsPerDeposit = input.tickets_per_deposit ?? 1;
+  const minAmountPerTicketCents = input.min_amount_per_ticket_cents;
 
   const result = await db.query<PartnerHouse>(
     `INSERT INTO validation.partner_houses 
      (id, slug, name, country, currency, ocr_aliases, deposit_keywords, 
-      min_amount, max_amount, regex_patterns, active, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      min_amount, max_amount, regex_patterns, active, created_at, updated_at,
+      tickets_per_deposit, min_amount_per_ticket_cents)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT (slug) DO UPDATE SET
        name = EXCLUDED.name,
        country = EXCLUDED.country,
@@ -123,9 +128,12 @@ export async function upsertBySlug(input: PartnerHouseInput): Promise<PartnerHou
        max_amount = EXCLUDED.max_amount,
        regex_patterns = EXCLUDED.regex_patterns,
        active = EXCLUDED.active,
-       updated_at = EXCLUDED.updated_at
+       updated_at = EXCLUDED.updated_at,
+       tickets_per_deposit = COALESCE(EXCLUDED.tickets_per_deposit, 1),
+       min_amount_per_ticket_cents = EXCLUDED.min_amount_per_ticket_cents
      RETURNING id, slug, name, country, currency, ocr_aliases, deposit_keywords, 
-              min_amount, max_amount, regex_patterns, active, created_at, updated_at`,
+              min_amount, max_amount, regex_patterns, active, created_at, updated_at,
+              tickets_per_deposit, min_amount_per_ticket_cents`,
     [
       randomUUID(),
       slug,
@@ -140,6 +148,8 @@ export async function upsertBySlug(input: PartnerHouseInput): Promise<PartnerHou
       active,
       now,
       now,
+      ticketsPerDeposit,
+      minAmountPerTicketCents,
     ]
   );
 
