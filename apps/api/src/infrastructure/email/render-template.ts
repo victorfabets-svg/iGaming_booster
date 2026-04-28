@@ -63,7 +63,7 @@ export async function loadAndRender(
 
   for (const [varName, varValue] of Object.entries(vars)) {
     const escapedValue = escapeHtml(varValue);
-    const placeholder = `{{${varName}}`;
+    const placeholder = `{{${varName}}}`;
     html = html.split(placeholder).join(escapedValue);
     subject = subject.split(placeholder).join(escapedValue);
   }
