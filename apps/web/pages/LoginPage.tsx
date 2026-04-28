@@ -25,7 +25,7 @@ export default function LoginPage() {
   // returns null, painting a blank page until the route swaps in.
   if (isAuthenticated) {
     const next = searchParams.get('next');
-    const target = next ?? (isAdmin ? '/admin' : '/');
+    const target = next ?? (isAdmin ? '/admin' : '/me');
     return <Navigate to={target} replace />;
   }
 
@@ -36,16 +36,10 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      
-      // On success, navigate
-      const next = searchParams.get('next');
-      if (next) {
-        navigate(next, { replace: true });
-      } else if (isAdmin) {
-        navigate('/admin', { replace: true });
-      } else {
-        navigate('/me', { replace: true });
-      }
+      // Don't navigate here — `isAdmin` would still hold its stale closure
+      // value because React state updates are asynchronous, sending every
+      // user (even admins) to /me. The early `if (isAuthenticated)` return
+      // above re-runs once the new state propagates and routes by fresh role.
     } catch (err) {
       setStatus('error');
       // Check error type
