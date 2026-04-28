@@ -1,5 +1,5 @@
 /**
- * Partner Houses Admin Page
+ * Partner Houses Admin Page — list, create/edit casas parceiras + ticket-ratio config.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -13,9 +13,7 @@ export default function PartnerHousesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingHouse, setEditingHouse] = useState<PartnerHouse | null>(null);
 
-  useEffect(() => {
-    loadHouses();
-  }, []);
+  useEffect(() => { loadHouses(); }, []);
 
   async function loadHouses() {
     setStatus('loading');
@@ -29,10 +27,7 @@ export default function PartnerHousesPage() {
   }
 
   async function handleSave(input: PartnerHouseInput) {
-    const response = editingHouse
-      ? await adminApi.createPartnerHouse(input)
-      : await adminApi.createPartnerHouse(input);
-
+    const response = await adminApi.createPartnerHouse(input);
     if (response.success) {
       setShowModal(false);
       setEditingHouse(null);
@@ -45,92 +40,77 @@ export default function PartnerHousesPage() {
     setShowModal(true);
   };
 
-  const handleDelete = async (slug: string) => {
-    if (!confirm(`Excluir casa ${slug}?`)) return;
-    // Toggle active for now
-    await adminApi.createPartnerHouse({
-      slug,
-      name: '',
-      country: 'XX',
-      currency: 'XXX',
-      active: false,
-    });
-    loadHouses();
-  };
-
-  if (status === 'loading') return <div>Carregando...</div>;
-  if (status === 'error') return <div>Erro ao carregar</div>;
+  if (status === 'loading') return <div className="empty-state">Carregando…</div>;
+  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar casas parceiras.</div>;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Casas Parceiras</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Casas Parceiras</h1>
+          <p className="page-subtitle">Configure casas, regras de OCR e taxa de tickets por depósito.</p>
+        </div>
         <button
-          onClick={() => {
-            setEditingHouse(null);
-            setShowModal(true);
-          }}
-          style={{
-            padding: '0.5rem 1rem',
-            background: 'var(--color-primary-primary)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
+          type="button"
+          className="btn btn-primary"
+          onClick={() => { setEditingHouse(null); setShowModal(true); }}
         >
           + Nova Casa
         </button>
       </div>
 
-      {houses.length === 0 ? (
-        <p>Nenhuma casa encontrada.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--bg-surface)' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Slug</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Nome</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>País</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Moeda</th>
-              <th style={{ padding: '0.75rem', textAlign: 'center' }}>Ativa</th>
-              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {houses.map((house) => (
-              <tr key={house.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.75rem' }}>
-                  <code>{house.slug}</code>
-                </td>
-                <td style={{ padding: '0.75rem' }}>{house.name}</td>
-                <td style={{ padding: '0.75rem' }}>{house.country}</td>
-                <td style={{ padding: '0.75rem' }}>{house.currency}</td>
-                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                  {house.active ? '✅' : '❌'}
-                </td>
-                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                  <button
-                    onClick={() => handleEdit(house)}
-                    style={{ marginRight: '0.5rem', padding: '0.25rem 0.5rem' }}
-                  >
-                    Editar
-                  </button>
-                </td>
+      <div className="card">
+        {houses.length === 0 ? (
+          <div className="empty-state">Nenhuma casa cadastrada ainda.</div>
+        ) : (
+          <table className="table-engine">
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>Nome</th>
+                <th>País</th>
+                <th>Moeda</th>
+                <th>Tickets/depósito</th>
+                <th>Mín. R$/ticket</th>
+                <th>Status</th>
+                <th>Ações</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {houses.map(house => (
+                <tr key={house.id}>
+                  <td className="mono">{house.slug}</td>
+                  <td>{house.name}</td>
+                  <td>{house.country}</td>
+                  <td>{house.currency}</td>
+                  <td className="mono">{house.tickets_per_deposit}</td>
+                  <td className="mono">
+                    {house.min_amount_per_ticket_cents != null
+                      ? `R$ ${(house.min_amount_per_ticket_cents / 100).toFixed(2)}`
+                      : '—'}
+                  </td>
+                  <td>
+                    <span className={`badge ${house.active ? 'badge-success' : 'badge-gray'}`}>
+                      {house.active ? 'ativa' : 'inativa'}
+                    </span>
+                  </td>
+                  <td>
+                    <button type="button" className="action-btn" onClick={() => handleEdit(house)}>
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {showModal && (
         <HouseModal
           house={editingHouse}
           onSave={handleSave}
-          onClose={() => {
-            setShowModal(false);
-            setEditingHouse(null);
-          }}
+          onClose={() => { setShowModal(false); setEditingHouse(null); }}
         />
       )}
     </div>
@@ -178,139 +158,94 @@ function HouseModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          padding: '1.5rem',
-          borderRadius: '8px',
-          width: '100%',
-          maxWidth: '400px',
-        }}
-      >
-        <h2 style={{ margin: '0 0 1rem' }}>
-          {house ? 'Editar Casa' : 'Nova Casa'}
-        </h2>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <h2 className="card-title mb-4">{house ? 'Editar Casa' : 'Nova Casa'}</h2>
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>Slug</label>
+          <div className="field">
+            <label>Slug</label>
             <input
+              className="input"
               value={form.slug}
-              onChange={(e) => setForm({ ...form, slug: e.target.value })}
+              onChange={e => setForm({ ...form, slug: e.target.value })}
               required
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>Nome</label>
+
+          <div className="field">
+            <label>Nome</label>
             <input
+              className="input"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={e => setForm({ ...form, name: e.target.value })}
               required
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>País (2 letras)</label>
+
+          <div className="field">
+            <label>País (2 letras)</label>
             <input
+              className="input"
               value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value.toUpperCase() })}
+              onChange={e => setForm({ ...form, country: e.target.value.toUpperCase() })}
               required
               maxLength={2}
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>Moeda (3 letras)</label>
+
+          <div className="field">
+            <label>Moeda (3 letras)</label>
             <input
+              className="input"
               value={form.currency}
-              onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+              onChange={e => setForm({ ...form, currency: e.target.value.toUpperCase() })}
               required
               maxLength={3}
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>
-              Tickets por depósito
-            </label>
+
+          <div className="field">
+            <label>Tickets por depósito</label>
             <input
+              className="input"
               type="number"
               min={1}
               step={1}
               value={form.tickets_per_deposit}
-              onChange={(e) =>
-                setForm({ ...form, tickets_per_deposit: Math.max(1, Number(e.target.value) || 1) })
-              }
+              onChange={e => setForm({ ...form, tickets_per_deposit: Math.max(1, Number(e.target.value) || 1) })}
               required
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
             />
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.25rem' }}>
-              Valor mínimo por ticket (R$)
-            </label>
+
+          <div className="field">
+            <label>Valor mínimo por ticket (R$)</label>
             <input
+              className="input"
               type="text"
               inputMode="decimal"
-              placeholder="(opcional — deixe vazio para 1 ticket por depósito)"
+              placeholder="(opcional — vazio = 1 ticket por depósito)"
               value={form.min_amount_per_ticket_brl}
-              onChange={(e) =>
-                setForm({ ...form, min_amount_per_ticket_brl: e.target.value })
-              }
-              style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+              onChange={e => setForm({ ...form, min_amount_per_ticket_brl: e.target.value })}
             />
-            <small style={{ display: 'block', marginTop: '0.25rem', color: '#666' }}>
-              Se preenchido, gera <code>floor(valor / mínimo) × tickets por depósito</code> tickets (mínimo 1).
-            </small>
+            <p className="field-help">
+              Se preenchido, gera <code className="mono">floor(valor / mínimo) × tickets/depósito</code> tickets (mínimo 1).
+            </p>
           </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label>
+
+          <div className="field">
+            <label className="flex items-center gap-2 uppercase-off">
               <input
                 type="checkbox"
                 checked={form.active}
-                onChange={(e) => setForm({ ...form, active: e.target.checked })}
-              />{' '}
-              Ativa
+                onChange={e => setForm({ ...form, active: e.target.checked })}
+              />
+              <span>Casa ativa</span>
             </label>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              type="submit"
-              style={{
-                flex: 1,
-                padding: '0.5rem',
-                background: 'var(--color-primary-primary)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '4px',
-              }}
-            >
-              Salvar
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                flex: 1,
-                padding: '0.5rem',
-                background: '#ccc',
-                color: 'var(--text-secondary)',
-                border: 'none',
-                borderRadius: '4px',
-              }}
-            >
-              Cancelar
-            </button>
+
+          <div className="flex gap-3 mt-4">
+            <button type="submit" className="btn btn-primary">Salvar</button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           </div>
         </form>
       </div>
