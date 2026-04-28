@@ -1,5 +1,5 @@
 /**
- * WhatsApp Admin Page
+ * WhatsApp Admin Page — subscribers + deliveries with tabs.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,9 +15,7 @@ export default function WhatsAppPage() {
   const [status, setStatus] = useState<PageStatus>('loading');
   const [subscriberFilter, setSubscriberFilter] = useState({ status: '' });
 
-  useEffect(() => {
-    loadData();
-  }, [tab, subscriberFilter]);
+  useEffect(() => { loadData(); }, [tab, subscriberFilter]);
 
   async function loadData() {
     setStatus('loading');
@@ -28,17 +26,13 @@ export default function WhatsAppPage() {
       if (response.success && response.data) {
         setSubscribers(response.data.subscribers);
         setStatus('success');
-      } else {
-        setStatus('error');
-      }
+      } else { setStatus('error'); }
     } else {
       const response = await adminApi.listWhatsAppDeliveries({});
       if (response.success && response.data) {
         setDeliveries(response.data.deliveries);
         setStatus('success');
-      } else {
-        setStatus('error');
-      }
+      } else { setStatus('error'); }
     }
   }
 
@@ -50,143 +44,133 @@ export default function WhatsAppPage() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 1rem', fontSize: '1.5rem' }}>WhatsApp</h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">WhatsApp</h1>
+          <p className="page-subtitle">Inscritos e entregas via plataforma WhatsApp.</p>
+        </div>
+      </div>
 
-      {/* Tabs */}
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+      <div className="tab-bar">
         <button
+          type="button"
+          className={`tab-item ${tab === 'subscribers' ? 'active' : ''}`}
           onClick={() => setTab('subscribers')}
-          style={{
-            padding: '0.5rem 1rem',
-            background: tab === 'subscribers' ? '#0066cc' : '#eee',
-            color: tab === 'subscribers' ? '#fff' : '#333',
-            border: 'none',
-            borderRadius: '4px 4px 0 0',
-            cursor: 'pointer',
-          }}
         >
           Inscritos
         </button>
         <button
+          type="button"
+          className={`tab-item ${tab === 'deliveries' ? 'active' : ''}`}
           onClick={() => setTab('deliveries')}
-          style={{
-            padding: '0.5rem 1rem',
-            background: tab === 'deliveries' ? '#0066cc' : '#eee',
-            color: tab === 'deliveries' ? '#fff' : '#333',
-            border: 'none',
-            borderRadius: '4px 4px 0 0',
-            cursor: 'pointer',
-          }}
         >
           Entregas
         </button>
       </div>
 
-      {/* Filters for subscribers */}
       {tab === 'subscribers' && (
-        <div style={{ marginBottom: '1rem' }}>
-          <select
-            value={subscriberFilter.status}
-            onChange={(e) => setSubscriberFilter({ status: e.target.value })}
-            style={{ padding: '0.5rem' }}
-          >
-            <option value="">Todos</option>
-            <option value="active">Ativos</option>
-            <option value="opted_out">Opt-out</option>
-          </select>
+        <div className="filter-bar mb-6">
+          <div className="filter-group">
+            <span className="filter-label">Status</span>
+            <select
+              className="input"
+              value={subscriberFilter.status}
+              onChange={e => setSubscriberFilter({ status: e.target.value })}
+            >
+              <option value="">Todos</option>
+              <option value="active">Ativos</option>
+              <option value="opted_out">Opt-out</option>
+            </select>
+          </div>
         </div>
       )}
 
-      {status === 'loading' ? (
-        <div>Carregando...</div>
-      ) : status === 'error' ? (
-        <div>Erro ao carregar</div>
-      ) : tab === 'subscribers' ? (
-        subscribers.length === 0 ? (
-          <p>Nenhum inscrito encontrado.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #ddd' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>ID</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Telefone</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>Tier</th>
-                <th style={{ padding: '0.75rem', textAlign: 'right' }}>Criado em</th>
-                <th style={{ padding: '0.75rem', textAlign: 'right' }}>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {subscribers.map((sub) => (
-                <tr key={sub.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.75rem' }}>
-                    <code>{sub.id.slice(0, 8)}</code>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{sub.phone_number}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                    {sub.status === 'active' ? '✅' : '❌'}
-                  </td>
-                  <td style={{ padding: '0.75rem', textAlign: 'center' }}>{sub.tier || '-'}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    {formatDate(sub.created_at)}
-                  </td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    {sub.status === 'active' && (
-                      <button onClick={() => handleOptOut(sub.id)}>Opt-out</button>
-                    )}
-                  </td>
+      <div className="card">
+        {status === 'loading' ? (
+          <div className="empty-state">Carregando…</div>
+        ) : status === 'error' ? (
+          <div className="alert-box alert-error">Erro ao carregar dados.</div>
+        ) : tab === 'subscribers' ? (
+          subscribers.length === 0 ? (
+            <div className="empty-state">Nenhum inscrito encontrado.</div>
+          ) : (
+            <table className="table-engine">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Telefone</th>
+                  <th>Status</th>
+                  <th>Tier</th>
+                  <th>Criado em</th>
+                  <th>Ações</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )
-      ) : (
-        deliveries.length === 0 ? (
-          <p>Nenhuma entrega encontrada.</p>
+              </thead>
+              <tbody>
+                {subscribers.map(sub => (
+                  <tr key={sub.id}>
+                    <td className="mono">{sub.id.slice(0, 8)}</td>
+                    <td className="mono">{sub.phone_number}</td>
+                    <td>
+                      <span className={`badge ${sub.status === 'active' ? 'badge-success' : 'badge-gray'}`}>
+                        {sub.status === 'active' ? 'ativo' : 'opt-out'}
+                      </span>
+                    </td>
+                    <td>{sub.tier || '—'}</td>
+                    <td className="mono">{formatDate(sub.created_at)}</td>
+                    <td>
+                      {sub.status === 'active' && (
+                        <button type="button" className="action-btn" onClick={() => handleOptOut(sub.id)}>
+                          Opt-out
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #ddd' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>ID</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Telefone</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>Status</th>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Mensagem</th>
-                <th style={{ padding: '0.75rem', textAlign: 'right' }}>Enviado em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deliveries.map((del) => (
-                <tr key={del.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.75rem' }}>
-                    <code>{del.id.slice(0, 8)}</code>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{del.phone_number}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                    {deliveryStatus(del.status)}
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{del.message?.slice(0, 50) || '-'}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    {formatDate(del.sent_at)}
-                  </td>
+          deliveries.length === 0 ? (
+            <div className="empty-state">Nenhuma entrega encontrada.</div>
+          ) : (
+            <table className="table-engine">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Telefone</th>
+                  <th>Status</th>
+                  <th>Mensagem</th>
+                  <th>Enviado em</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )
-      )}
+              </thead>
+              <tbody>
+                {deliveries.map(del => (
+                  <tr key={del.id}>
+                    <td className="mono">{del.id.slice(0, 8)}</td>
+                    <td className="mono">{del.phone_number}</td>
+                    <td>
+                      <span className={`badge ${deliveryBadge(del.status)}`}>{del.status}</span>
+                    </td>
+                    <td>{del.message ? (del.message.length > 50 ? del.message.slice(0, 50) + '…' : del.message) : '—'}</td>
+                    <td className="mono">{formatDate(del.sent_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        )}
+      </div>
     </div>
   );
 }
 
-function deliveryStatus(status: string): string {
-  const labels: Record<string, string> = {
-    sent: '📤 Enviado',
-    delivered: '✅ Entregue',
-    failed: '❌ Falhou',
-  };
-  return labels[status] || status;
+function deliveryBadge(status: string): string {
+  if (status === 'delivered' || status === 'read') return 'badge-success';
+  if (status === 'failed') return 'badge-error';
+  if (status === 'sent') return 'badge-blue';
+  return 'badge-gray';
 }
 
 function formatDate(date: string): string {
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(date));
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(date));
 }

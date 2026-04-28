@@ -1,9 +1,8 @@
 /**
- * Email Templates Page - Admin email templates management
+ * Email Templates Page — admin can edit subject + html for each notification template.
  */
 
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { adminApi, EmailTemplate } from '../../services/admin-api';
 
 export default function EmailTemplatesPage() {
@@ -11,9 +10,8 @@ export default function EmailTemplatesPage() {
   const [selected, setSelected] = useState<EmailTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
-  // Edit form state
   const [subject, setSubject] = useState('');
   const [htmlBody, setHtmlBody] = useState('');
   const [description, setDescription] = useState('');
@@ -32,13 +30,13 @@ export default function EmailTemplatesPage() {
     setSubject(template.subject);
     setHtmlBody(template.html_body);
     setDescription(template.description || '');
-    setMessage('');
+    setMessage(null);
   };
 
   const handleSave = async () => {
     if (!selected) return;
     setSaving(true);
-    setMessage('');
+    setMessage(null);
 
     const response = await adminApi.updateEmailTemplate(selected.key, {
       subject,
@@ -47,210 +45,132 @@ export default function EmailTemplatesPage() {
     });
 
     if (response.success) {
-      setMessage('Template salvo com sucesso!');
-      // Refresh list
+      setMessage({ kind: 'success', text: 'Template salvo com sucesso.' });
       const listRes = await adminApi.listEmailTemplates();
-      if (listRes.success && listRes.data) {
-        setTemplates(listRes.data.templates);
-      }
+      if (listRes.success && listRes.data) setTemplates(listRes.data.templates);
     } else {
-      setMessage(response.error?.message || 'Erro ao salvar');
+      setMessage({ kind: 'error', text: response.error?.message || 'Erro ao salvar.' });
     }
     setSaving(false);
   };
 
   const handlePreview = async () => {
     if (!selected) return;
-    
     const response = await adminApi.previewEmailTemplate(selected.key);
     if (response.success && response.data) {
-      // Open in new window
       const win = window.open('', '_blank');
-      if (win) {
-        win.document.write(response.data.html);
-      }
+      if (win) win.document.write(response.data.html);
     }
   };
 
   const handleTestSend = async () => {
     if (!selected) return;
-    
     const email = prompt('Digite o email para teste:');
     if (!email) return;
-
     const response = await adminApi.testSendEmailTemplate(selected.key, { to: email });
     if (response.success && response.data?.ok) {
-      setMessage(`Email de teste enviado para ${email}`);
+      setMessage({ kind: 'success', text: `Email de teste enviado para ${email}.` });
     } else {
-      setMessage(response.error?.message || 'Erro ao enviar');
+      setMessage({ kind: 'error', text: response.error?.message || 'Erro ao enviar.' });
     }
   };
 
   if (isLoading) {
-    return <div style={{ color: '#fff' }}>Carregando...</div>;
+    return <div className="empty-state">Carregando…</div>;
   }
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', color: '#fff' }}>
-        Templates de Email
-      </h1>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Templates de Email</h1>
+          <p className="page-subtitle">Edite o assunto e o HTML dos emails enviados pelo sistema.</p>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: '2rem' }}>
-        {/* Sidebar - template list */}
-        <div style={{ width: '250px' }}>
+      <div className="split-pane">
+        <div className="split-pane-list">
           {templates.map(template => (
             <button
               key={template.key}
+              type="button"
+              className={`list-item ${selected?.key === template.key ? 'active' : ''}`}
               onClick={() => handleSelect(template)}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '1rem',
-                marginBottom: '0.5rem',
-                background: selected?.key === template.key ? '#FFD700' : '#0f0f1a',
-                color: selected?.key === template.key ? '#1a1a2e' : '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
             >
               {template.key}
             </button>
           ))}
         </div>
 
-        {/* Main content - editor */}
-        <div style={{ flex: 1 }}>
+        <div className="split-pane-detail">
           {selected ? (
-            <div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#a0a0b0' }}>
-                  Assunto
-                </label>
+            <div className="card">
+              <h2 className="card-title">{selected.key}</h2>
+
+              <div className="field">
+                <label>Assunto</label>
                 <input
                   type="text"
+                  className="input"
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    background: '#1a1a2e',
-                    color: '#fff',
-                  }}
+                  onChange={e => setSubject(e.target.value)}
                 />
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#a0a0b0' }}>
-                  Variáveis disponíveis: {selected.supported_variables.join(', ')}
-                </label>
-                <p style={{ color: '#666', fontSize: '0.75rem' }}>
-                  Use {'{{nome_da_variavel}}'} no HTML
+              <div className="field">
+                <label>Variáveis disponíveis</label>
+                <p className="text-secondary text-sm">
+                  {selected.supported_variables.join(', ') || '—'}
+                </p>
+                <p className="field-help">
+                  Use <code className="mono">{'{{nome_da_variavel}}'}</code> no HTML para substituir.
                 </p>
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#a0a0b0' }}>
-                  Corpo HTML
-                </label>
+              <div className="field">
+                <label>Corpo HTML</label>
                 <textarea
+                  className="input textarea-mono"
                   value={htmlBody}
-                  onChange={(e) => setHtmlBody(e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '300px',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    background: '#1a1a2e',
-                    color: '#fff',
-                    fontFamily: 'monospace',
-                    fontSize: '0.875rem',
-                  }}
+                  onChange={e => setHtmlBody(e.target.value)}
                 />
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#a0a0b0' }}>
-                  Descrição
-                </label>
+              <div className="field">
+                <label>Descrição</label>
                 <input
                   type="text"
+                  className="input"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #333',
-                    background: '#1a1a2e',
-                    color: '#fff',
-                  }}
+                  onChange={e => setDescription(e.target.value)}
                 />
               </div>
 
               {message && (
-                <p style={{ 
-                  color: message.includes('sucesso') ? '#FFD700' : '#ff6b6b', 
-                  marginBottom: '1rem' 
-                }}>
-                  {message}
-                </p>
+                <div className={`alert-box alert-${message.kind} mb-4`}>
+                  {message.text}
+                </div>
               )}
 
-              <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="flex gap-3">
                 <button
+                  type="button"
+                  className="btn btn-primary"
                   onClick={handleSave}
                   disabled={saving}
-                  style={{
-                    background: '#FFD700',
-                    color: '#1a1a2e',
-                    border: 'none',
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                  }}
                 >
-                  {saving ? 'Salvando...' : 'Salvar'}
+                  {saving ? 'Salvando…' : 'Salvar'}
                 </button>
-                <button
-                  onClick={handlePreview}
-                  style={{
-                    background: 'transparent',
-                    color: '#FFD700',
-                    border: '1px solid #FFD700',
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" className="btn btn-secondary" onClick={handlePreview}>
                   Preview
                 </button>
-                <button
-                  onClick={handleTestSend}
-                  style={{
-                    background: 'transparent',
-                    color: '#a0a0b0',
-                    border: '1px solid #333',
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" className="btn btn-ghost" onClick={handleTestSend}>
                   Test Send
                 </button>
               </div>
             </div>
           ) : (
-            <div style={{ color: '#a0a0b0', textAlign: 'center', padding: '3rem' }}>
-              Selecione um template para editar
-            </div>
+            <div className="card empty-state">Selecione um template para editar.</div>
           )}
         </div>
       </div>

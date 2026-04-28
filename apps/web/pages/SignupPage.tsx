@@ -1,13 +1,12 @@
 /**
- * Signup Page - Registration form
+ * Signup Page — registration form.
  */
 
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { authApi } from '../services/auth-api';
 
 export default function SignupPage() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,40 +19,33 @@ export default function SignupPage() {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (!email || !password || !confirmPassword) {
-      setError('Preencha todos os campos');
+      setError('Preencha todos os campos.');
       return;
     }
-
     if (password.length < 8) {
-      setError('A senha deve ter pelo menos 8 caracteres');
+      setError('A senha deve ter pelo menos 8 caracteres.');
       return;
     }
-
     if (password !== confirmPassword) {
-      setError('As senhas não coincidem');
+      setError('As senhas não coincidem.');
       return;
     }
 
     setIsLoading(true);
-
     try {
       const response = await authApi.register(email, password, displayName);
-      
       if (response.success) {
         setShowConfirmation(true);
+      } else if (response.error?.code === 'DUPLICATE_EMAIL') {
+        setError('Este email já está cadastrado.');
+      } else if (response.error?.code === 'RATE_LIMIT') {
+        setError('Muitas tentativas. Aguarde alguns minutos.');
       } else {
-        if (response.error?.code === 'DUPLICATE_EMAIL') {
-          setError('Este email já está cadastrado');
-        } else if (response.error?.code === 'RATE_LIMIT') {
-          setError('Muitas tentativas. Aguarde alguns minutos.');
-        } else {
-          setError(response.error?.message || 'Erro ao cadastrar');
-        }
+        setError(response.error?.message || 'Erro ao cadastrar.');
       }
-    } catch (err) {
-      setError('Erro ao conectar com o servidor');
+    } catch {
+      setError('Erro ao conectar com o servidor.');
     } finally {
       setIsLoading(false);
     }
@@ -61,188 +53,95 @@ export default function SignupPage() {
 
   if (showConfirmation) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#1a1a2e',
-        color: '#fff',
-        padding: '2rem',
-      }}>
-        <div style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '1.75rem', marginBottom: '1rem' }}>
-            Confirme seu email
-          </h1>
-          <p style={{ color: '#a0a0b0', marginBottom: '2rem', lineHeight: 1.6 }}>
-            Enviamos um link de confirmação para <strong>{email}</strong>. 
-            Clique no link para ativar sua conta.
+      <div className="auth-shell">
+        <div className="card auth-card text-center">
+          <h1 className="card-title mb-4">Confirme seu email</h1>
+          <p className="text-secondary mb-6">
+            Enviamos um link de confirmação para <strong>{email}</strong>. Clique no link para
+            ativar sua conta.
           </p>
-          
-          <p style={{ color: '#a0a0b0', marginBottom: '2rem', fontSize: '0.875rem' }}>
-            Não received?{' '}
+          <p className="text-secondary text-sm mb-4">
+            Não recebeu?{' '}
             <button
-              onClick={async () => {
-                await authApi.resendVerification(email);
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#FFD700',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
+              type="button"
+              className="btn-link"
+              onClick={() => { authApi.resendVerification(email); }}
             >
               Reenviar
             </button>
           </p>
-
-          <Link
-            to="/login"
-            style={{ color: '#FFD700', textDecoration: 'none' }}
-          >
-            Voltar para login
-          </Link>
+          <Link to="/login" className="btn-link">Voltar para login</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#1a1a2e',
-      color: '#fff',
-      padding: '2rem',
-    }}>
-      <div style={{ maxWidth: '400px', width: '100%' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '2rem', textAlign: 'center' }}>
-          Criar conta
-        </h1>
+    <div className="auth-shell">
+      <div className="card auth-card">
+        <h1 className="card-title text-center mb-6">Criar conta</h1>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Email *
-            </label>
+          <div className="field">
+            <label htmlFor="signup-email">Email *</label>
             <input
+              id="signup-email"
+              className="input"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={e => setEmail(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
             />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Nome (opcional)
-            </label>
+          <div className="field">
+            <label htmlFor="signup-name">Nome (opcional)</label>
             <input
+              id="signup-name"
+              className="input"
               type="text"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
+              onChange={e => setDisplayName(e.target.value)}
             />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Senha *
-            </label>
+          <div className="field">
+            <label htmlFor="signup-password">Senha *</label>
             <input
+              id="signup-password"
+              className="input"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={e => setPassword(e.target.value)}
               required
-              minLength={8}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
             />
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Confirmar senha *
-            </label>
+          <div className="field">
+            <label htmlFor="signup-confirm">Confirmar Senha *</label>
             <input
+              id="signup-confirm"
+              className="input"
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={e => setConfirmPassword(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                border: '1px solid #333',
-                background: '#0f0f1a',
-                color: '#fff',
-                fontSize: '1rem',
-              }}
             />
           </div>
 
-          {error && (
-            <div style={{
-              color: '#ff6b6b',
-              marginBottom: '1rem',
-              fontSize: '0.875rem',
-            }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="alert-box alert-error">{error}</div>}
 
           <button
             type="submit"
+            className="btn btn-primary full-width"
             disabled={isLoading}
-            style={{
-              width: '100%',
-              padding: '1rem',
-              background: '#FFD700',
-              color: '#1a1a2e',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 600,
-              fontSize: '1rem',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              opacity: isLoading ? 0.7 : 1,
-            }}
           >
-            {isLoading ? 'Cadastrando...' : 'Cadastrar'}
+            {isLoading ? 'Criando conta…' : 'Criar conta'}
           </button>
         </form>
 
-        <p style={{ marginTop: '1.5rem', textAlign: 'center', color: '#a0a0b0' }}>
-          Já tem conta?{' '}
-          <Link to="/login" style={{ color: '#FFD700', textDecoration: 'none' }}>
-            Entrar
-          </Link>
+        <p className="text-center text-secondary text-sm mt-4">
+          Já tem conta? <Link to="/login" className="btn-link">Entrar</Link>
         </p>
       </div>
     </div>

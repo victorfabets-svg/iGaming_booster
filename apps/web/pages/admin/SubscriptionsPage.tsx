@@ -1,15 +1,14 @@
 /**
  * Subscriptions Admin Page
+ * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState, useEffect } from 'react';
 import { adminApi, Subscription, SubscriptionFilters } from '../../services/admin-api';
 
-type PageStatus = 'loading' | 'success' | 'error';
-
 export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [status, setStatus] = useState<PageStatus>('loading');
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [filter, setFilter] = useState<SubscriptionFilters>({});
 
   useEffect(() => {
@@ -33,19 +32,20 @@ export default function SubscriptionsPage() {
     loadSubscriptions();
   }
 
-  if (status === 'loading') return <div>Carregando...</div>;
-  if (status === 'error') return <div>Erro ao carregar</div>;
+  if (status === 'loading') return <div className="loading-state">Carregando...</div>;
+  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar</div>;
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 1rem', fontSize: '1.5rem' }}>Assinaturas</h1>
+      <div className="page-header">
+        <h1 className="page-title">Assinaturas</h1>
+      </div>
 
-      {/* Filters */}
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem' }}>
+      <div className="filter-bar mb-6">
         <select
           value={filter.status || ''}
           onChange={(e) => setFilter({ ...filter, status: e.target.value as any || undefined })}
-          style={{ padding: '0.5rem' }}
+          className="input filter-select"
         >
           <option value="">Todos os status</option>
           <option value="pending">Pendente</option>
@@ -56,72 +56,51 @@ export default function SubscriptionsPage() {
       </div>
 
       {subscriptions.length === 0 ? (
-        <p>Nenhuma assinatura encontrada.</p>
+        <div className="card empty-state">Nenhuma assinatura encontrada.</div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #ddd' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>ID</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>Plano</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left' }}>User ID</th>
-              <th style={{ padding: '0.75rem', textAlign: 'center' }}>Status</th>
-              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Valor</th>
-              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Início</th>
-              <th style={{ padding: '0.75rem', textAlign: 'right' }}>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subscriptions.map((sub) => (
-              <tr key={sub.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.75rem' }}>
-                  <code>{sub.id.slice(0, 8)}</code>
-                </td>
-                <td style={{ padding: '0.75rem' }}>{sub.plan_slug}</td>
-                <td style={{ padding: '0.75rem' }}>
-                  <code>{sub.user_id?.slice(0, 8) || '-'}</code>
-                </td>
-                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                  {statusLabel(sub.status)}
-                </td>
-                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                  {sub.amount_cents && sub.currency
-                    ? formatCurrency(sub.amount_cents, sub.currency)
-                    : '-'}
-                </td>
-                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                  {sub.current_period_start ? formatDate(sub.current_period_start) : '-'}
-                </td>
-                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                  {sub.status === 'active' && (
-                    <button onClick={() => handleCancel(sub.id)}>Cancelar</button>
-                  )}
-                </td>
+        <div className="card">
+          <table className="table-engine">
+            <thead>
+              <tr>
+                <th>External ID</th>
+                <th>Plano</th>
+                <th>Status</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Valor</th>
+                <th>Ações</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {subscriptions.map(sub => (
+                <tr key={sub.id}>
+                  <td className="mono">{sub.external_id}</td>
+                  <td>{sub.plan_slug}</td>
+                  <td>
+                    <span className={`badge ${
+                      sub.status === 'active' ? 'badge-success' :
+                      sub.status === 'pending' ? 'badge-warning' :
+                      sub.status === 'canceled' ? 'badge-error' : 'badge-gray'
+                    }`}>
+                      {sub.status}
+                    </span>
+                  </td>
+                  <td className="mono">{sub.current_period_start ? new Date(sub.current_period_start).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="mono">{sub.current_period_end ? new Date(sub.current_period_end).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="mono">{sub.amount_cents != null ? `${(sub.amount_cents / 100).toFixed(2)} ${sub.currency || ''}` : '—'}</td>
+                  <td>
+                    {sub.status === 'active' && (
+                      <button className="action-btn" onClick={() => handleCancel(sub.id)}>
+                        Cancelar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
-}
-
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    pending: '⏳ Pendente',
-    active: '✅ Ativa',
-    canceled: '❌ Cancelada',
-    expired: '⏰ Expirada',
-  };
-  return labels[status] || status;
-}
-
-function formatCurrency(cents: number, currency: string): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
-}
-
-function formatDate(date: string): string {
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(date));
 }
