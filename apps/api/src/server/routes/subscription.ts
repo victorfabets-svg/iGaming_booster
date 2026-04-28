@@ -442,7 +442,7 @@ export async function subscriptionRoutes(
       }>(
         `SELECT slug, name, description, price_cents, currency, billing_cycle
          FROM subscription.plans
-         WHERE is_active = TRUE
+         WHERE active = TRUE
          ORDER BY price_cents`,
         []
       );
