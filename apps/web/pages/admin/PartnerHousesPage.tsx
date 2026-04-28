@@ -72,7 +72,7 @@ export default function PartnerHousesPage() {
           }}
           style={{
             padding: '0.5rem 1rem',
-            background: '#0066cc',
+            background: 'var(--color-primary-primary)',
             color: '#fff',
             border: 'none',
             borderRadius: '4px',
@@ -86,9 +86,9 @@ export default function PartnerHousesPage() {
       {houses.length === 0 ? (
         <p>Nenhuma casa encontrada.</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--bg-surface)' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #ddd' }}>
+            <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
               <th style={{ padding: '0.75rem', textAlign: 'left' }}>Slug</th>
               <th style={{ padding: '0.75rem', textAlign: 'left' }}>Nome</th>
               <th style={{ padding: '0.75rem', textAlign: 'left' }}>País</th>
@@ -190,7 +190,7 @@ function HouseModal({
     >
       <div
         style={{
-          background: '#fff',
+          background: 'var(--bg-surface)',
           padding: '1.5rem',
           borderRadius: '8px',
           width: '100%',
@@ -289,7 +289,7 @@ function HouseModal({
               style={{
                 flex: 1,
                 padding: '0.5rem',
-                background: '#0066cc',
+                background: 'var(--color-primary-primary)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '4px',
@@ -304,7 +304,7 @@ function HouseModal({
                 flex: 1,
                 padding: '0.5rem',
                 background: '#ccc',
-                color: '#333',
+                color: 'var(--text-secondary)',
                 border: 'none',
                 borderRadius: '4px',
               }}

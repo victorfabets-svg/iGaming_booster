@@ -149,7 +149,7 @@ export default function EmailTemplatesPage() {
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: '#a0a0b0' }}>
                   Variáveis disponíveis: {selected.supported_variables.join(', ')}
                 </label>
-                <p style={{ color: '#666', fontSize: '0.75rem' }}>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
                   Use {'{{nome_da_variavel}}'} no HTML
                 </p>
               </div>

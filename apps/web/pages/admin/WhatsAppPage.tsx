@@ -105,7 +105,7 @@ export default function WhatsAppPage() {
         subscribers.length === 0 ? (
           <p>Nenhum inscrito encontrado.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--bg-surface)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #ddd' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left' }}>ID</th>
@@ -144,7 +144,7 @@ export default function WhatsAppPage() {
         deliveries.length === 0 ? (
           <p>Nenhuma entrega encontrada.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--bg-surface)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #ddd' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left' }}>ID</th>
