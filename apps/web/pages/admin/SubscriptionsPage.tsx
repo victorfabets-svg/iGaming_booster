@@ -65,7 +65,7 @@ export default function SubscriptionsPage() {
             <thead>
               <tr>
                 <th>Usuario</th>
-               |Plano</th>
+                <th>Plano</th>
                 <th>Status</th>
                 <th>Inicio</th>
                 <th>Fim</th>
