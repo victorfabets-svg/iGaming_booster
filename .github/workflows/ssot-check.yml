@@ -49,18 +49,33 @@ jobs:
 
       - name: Validate DB host is Neon-only
         run: |
-          echo "🔍 Checking connection strings..."
+          echo "🔍 Checking connection strings in production code..."
 
-          # Get source files only
-          TARGETS=$(git ls-files 'apps/**/*.ts' 'shared/**/*.ts' | grep -v node_modules)
+          # Production-code scope ONLY. Tests, docs and other CI workflows are
+          # allowed to reference local/example DBs without tripping the gate.
+          TARGETS=$(git ls-files 'apps/**/*.ts' 'shared/**/*.ts' \
+            | grep -v -E '(node_modules|/tests/|/test/|\.test\.ts$|\.spec\.ts$|\.e2e\.ts$|/scripts/)')
+
+          if [ -z "$TARGETS" ]; then
+            echo "(no production source files matched, skipping)"
+            exit 0
+          fi
 
           FAIL=0
 
-          # Find all postgres connection strings
-          CONNS=$(git ls-files | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
+          # Find all postgres connection strings within the scoped target set.
+          CONNS=$(echo "$TARGETS" | xargs grep -rohE "postgres(ql)?://[^\"' ]+" 2>/dev/null | sort -u)
 
           for url in $CONNS; do
-            host=$(echo "$url" | sed -E 's|postgres(ql)?://([^/]+).*|\1|' | sed 's/:.*//')
+            # Strip scheme, then take everything before the first '/' or '?',
+            # then drop user:pass@ prefix if present, then drop :port suffix.
+            #   postgres://u:p@h.neon.tech:5432/db?sslmode=require → h.neon.tech
+            #   postgresql://h.neon.tech/db                        → h.neon.tech
+            host=$(echo "$url" \
+              | sed -E 's|^postgres(ql)?://||' \
+              | sed -E 's|[/?].*$||' \
+              | sed -E 's|^[^@]*@||' \
+              | sed -E 's|:[0-9]+$||')
             # SSOT: ONLY neon.tech allowed - no exceptions
             if [[ -n "$host" && "$host" != *"neon.tech"* ]]; then
               echo "❌ Invalid DB host: $host (only Neon allowed)"
