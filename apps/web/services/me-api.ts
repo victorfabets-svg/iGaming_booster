@@ -75,8 +75,21 @@ async function fetchJson<T>(
       },
     });
 
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('igb_access');
+        localStorage.removeItem('igb_refresh');
+      } catch { /* localStorage may be unavailable */ }
+      const here = window.location.pathname + window.location.search;
+      window.location.href = `/login?next=${encodeURIComponent(here)}`;
+      return {
+        success: false,
+        error: { message: 'Sessão expirada. Faça login novamente.', code: 'UNAUTHORIZED' },
+      };
+    }
+
     const data = await response.json();
-    
+
     if (!response.ok || !data.success) {
       return {
         success: false,

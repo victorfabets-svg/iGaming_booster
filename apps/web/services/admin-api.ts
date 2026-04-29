@@ -25,8 +25,23 @@ async function fetchJson<T>(
       },
     });
 
+    // JWT expired or missing — clear stored tokens and bounce the user to
+    // /login so they don't sit on an "Erro ao carregar" screen forever.
+    if (response.status === 401) {
+      try {
+        localStorage.removeItem('igb_access');
+        localStorage.removeItem('igb_refresh');
+      } catch { /* localStorage may be unavailable in some browsers */ }
+      const here = window.location.pathname + window.location.search;
+      window.location.href = `/login?next=${encodeURIComponent(here)}`;
+      return {
+        success: false,
+        error: { message: 'Sessão expirada. Faça login novamente.', code: 'UNAUTHORIZED' },
+      };
+    }
+
     const data = await response.json();
-    
+
     if (!response.ok || !data.success) {
       return {
         success: false,
