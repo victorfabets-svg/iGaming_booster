@@ -273,17 +273,22 @@ export interface AffiliateHouseUpdateInput {
 
 export interface AffiliateCampaign {
   id: string;
-  house_id: string;
-  house_slug: string;
   slug: string;
   label: string | null;
   created_at: string;
+  owner_user_id: string | null;
+  owner_email: string | null;
+  redirect_house_id: string | null;
+  redirect_house_slug: string | null;
+  tagged_house_slugs: string[];
 }
 
 export interface AffiliateCampaignCreateInput {
-  house_slug: string;
   slug: string;
   label?: string;
+  owner_user_id?: string;
+  redirect_house_slug?: string;
+  tagged_house_slugs?: string[];
 }
 
 export interface AffiliateFunnelRow {
@@ -300,6 +305,21 @@ export interface AffiliateFunnelFilters {
   house?: string;
   from?: string;
   to?: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: 'user' | 'admin' | 'affiliate';
+  email_verified: boolean;
+  display_name: string | null;
+  created_at: string;
+}
+
+export interface AdminUserFilters {
+  role?: 'user' | 'admin' | 'affiliate';
+  q?: string;
+  limit?: number;
 }
 
 // ============================================================================
@@ -525,6 +545,25 @@ export const adminApi = {
     return fetchJson<{ campaign: AffiliateCampaign }>('/admin/affiliate/campaigns', {
       method: 'POST',
       body: JSON.stringify(input),
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // Users
+  // -------------------------------------------------------------------------
+  async listUsers(filters?: AdminUserFilters) {
+    const params = new URLSearchParams();
+    if (filters?.role) params.set('role', filters.role);
+    if (filters?.q) params.set('q', filters.q);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    const query = params.toString();
+    return fetchJson<{ users: AdminUser[] }>(`/admin/users${query ? `?${query}` : ''}`);
+  },
+
+  async updateUserRole(id: string, role: 'user' | 'admin' | 'affiliate') {
+    return fetchJson<{ user: { id: string; email: string; role: string } }>(`/admin/users/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
     });
   },
 };

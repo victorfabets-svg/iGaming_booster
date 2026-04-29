@@ -12,7 +12,7 @@ type LoginStatus = 'idle' | 'loading' | 'error';
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isAuthenticated, isAdmin } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +21,9 @@ export default function LoginPage() {
 
   if (isAuthenticated) {
     const next = searchParams.get('next');
-    const target = next ?? (isAdmin ? '/admin' : '/me');
+    const userRole = user?.role;
+    // Redirect by role: admin -> /admin, affiliate -> /afiliado, user -> /me
+    const target = next ?? (userRole === 'admin' ? '/admin' : userRole === 'affiliate' ? '/afiliado' : '/me');
     return <Navigate to={target} replace />;
   }
 
