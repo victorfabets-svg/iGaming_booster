@@ -65,7 +65,7 @@ export default function UsersPage() {
 
   const getRoleBadgeClass = (role: string) => {
     switch (role) {
-      case 'admin': return 'badge-danger';
+      case 'admin': return 'badge-error';
       case 'affiliate': return 'badge-warning';
       default: return 'badge-gray';
     }
@@ -86,31 +86,29 @@ export default function UsersPage() {
         <div className="alert-box alert-error mb-4">{error}</div>
       )}
 
-      <div className="card mb-4">
-        <div className="flex gap-3">
-          <div className="field" style={{ flex: 1 }}>
-            <label>Buscar por email</label>
-            <input
-              className="input"
-              placeholder="email@example.com"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <div className="field" style={{ width: '200px' }}>
-            <label>Role</label>
-            <select
-              className="input"
-              value={roleFilter}
-              onChange={e => setRoleFilter(e.target.value as RoleFilter)}
-            >
-              <option value="">Todos</option>
-              <option value="user">Usuário</option>
-              <option value="affiliate">Afiliado</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-        </div>
+      <div className="filter-bar mb-4">
+        <label className="text-xs uppercase text-secondary">
+          Buscar por email
+          <input
+            className="input"
+            placeholder="email@example.com"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </label>
+        <label className="text-xs uppercase text-secondary">
+          Role
+          <select
+            className="input"
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value as RoleFilter)}
+          >
+            <option value="">Todos</option>
+            <option value="user">Usuário</option>
+            <option value="affiliate">Afiliado</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
       </div>
 
       <div className="card">
@@ -178,15 +176,17 @@ function RoleModal({
 }) {
   const [selectedRole, setSelectedRole] = useState<'user' | 'admin' | 'affiliate'>(user.role);
   const [confirmRole, setConfirmRole] = useState('');
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setModalError(null);
     if (confirmRole !== user.role) {
-      alert('ConfirmeDigitado diferente da role atual.');
+      setModalError('Confirmação digitada diferente da role atual.');
       return;
     }
     if (confirmRole === selectedRole) {
-      alert('A nova role deve ser diferente da atual.');
+      setModalError('A nova role deve ser diferente da atual.');
       return;
     }
     onSave(user.id, selectedRole);
@@ -208,13 +208,15 @@ function RoleModal({
         <p className="mb-4">Usuario: <strong>{user.email}</strong></p>
         <p className="mb-4">Role atual: <span className="badge badge-gray">{getRoleLabel(user.role)}</span></p>
 
+        {modalError && <div className="alert-box alert-error mb-3">{modalError}</div>}
+
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label>Nova role</label>
             <select
               className="input"
               value={selectedRole}
-              onChange={e => setSelectedRole(e.target.value as 'user' | 'admin' | 'affiliate')}
+              onChange={e => { setSelectedRole(e.target.value as 'user' | 'admin' | 'affiliate'); setModalError(null); }}
             >
               <option value="user">Usuário</option>
               <option value="affiliate">Afiliado</option>
@@ -223,11 +225,11 @@ function RoleModal({
           </div>
 
           <div className="field">
-            <label>ConfirmeDigitado a role atual ({getRoleLabel(user.role)}) para confirmar</label>
+            <label>Digite a role atual ({getRoleLabel(user.role)}) para confirmar</label>
             <input
               className="input"
               value={confirmRole}
-              onChange={e => setConfirmRole(e.target.value)}
+              onChange={e => { setConfirmRole(e.target.value); setModalError(null); }}
               placeholder={getRoleLabel(user.role)}
               required
             />

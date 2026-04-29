@@ -85,7 +85,7 @@ export default function AffiliateCampaignsPage() {
                   </td>
                   <td>
                     {campaign.tagged_house_slugs.length > 0 ? (
-                      <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
+                      <div className="flex flex-wrap gap-1">
                         {campaign.tagged_house_slugs.map(slug => (
                           <span key={slug} className="badge badge-gray">{slug}</span>
                         ))}

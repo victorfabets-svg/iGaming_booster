@@ -82,25 +82,33 @@ export default function AffiliateDashboardPage() {
         </div>
       </div>
 
-      <div className="flex gap-4 mb-4" style={{ flexWrap: 'wrap' }}>
-        <div className="card" style={{ flex: '1 1 200px', minWidth: '180px' }}>
-          <p className="text-muted text-sm uppercase mb-1">Cliques</p>
-          <p className="text-3xl mono">{formatNumber(totals.clicks)}</p>
+      <div className="g-row mb-4">
+        <div className="g-col-2-4">
+          <div className="card">
+            <p className="text-secondary text-xs uppercase mb-2">Cliques</p>
+            <p className="kpi-value">{formatNumber(totals.clicks)}</p>
+          </div>
         </div>
-        <div className="card" style={{ flex: '1 1 200px', minWidth: '180px' }}>
-          <p className="text-muted text-sm uppercase mb-1">Cadastros</p>
-          <p className="text-3xl mono">{formatNumber(totals.registers)}</p>
-          <p className="text-sm text-muted">{calcRate(totals.registers, totals.clicks)} dos cliques</p>
+        <div className="g-col-2-4">
+          <div className="card">
+            <p className="text-secondary text-xs uppercase mb-2">Cadastros</p>
+            <p className="kpi-value">{formatNumber(totals.registers)}</p>
+            <p className="text-muted text-xs mt-2">{calcRate(totals.registers, totals.clicks)} dos cliques</p>
+          </div>
         </div>
-        <div className="card" style={{ flex: '1 1 200px', minWidth: '180px' }}>
-          <p className="text-muted text-sm uppercase mb-1">1ª Prova</p>
-          <p className="text-3xl mono">{formatNumber(totals.first_proof)}</p>
-          <p className="text-sm text-muted">{calcRate(totals.first_proof, totals.registers)} dos cadastros</p>
+        <div className="g-col-2-4">
+          <div className="card">
+            <p className="text-secondary text-xs uppercase mb-2">1ª Prova</p>
+            <p className="kpi-value">{formatNumber(totals.first_proof)}</p>
+            <p className="text-muted text-xs mt-2">{calcRate(totals.first_proof, totals.registers)} dos cadastros</p>
+          </div>
         </div>
-        <div className="card" style={{ flex: '1 1 200px', minWidth: '180px' }}>
-          <p className="text-muted text-sm uppercase mb-1">Aprovadas</p>
-          <p className="text-3xl mono">{formatNumber(totals.approved)}</p>
-          <p className="text-sm text-muted">{calcRate(totals.approved, totals.first_proof)} das 1ª provas</p>
+        <div className="g-col-2-4">
+          <div className="card">
+            <p className="text-secondary text-xs uppercase mb-2">Aprovadas</p>
+            <p className="kpi-value">{formatNumber(totals.approved)}</p>
+            <p className="text-muted text-xs mt-2">{calcRate(totals.approved, totals.first_proof)} das 1ª provas</p>
+          </div>
         </div>
       </div>
     </div>

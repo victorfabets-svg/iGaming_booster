@@ -792,7 +792,7 @@ function CampaignModal({
           )}
           <div className="field">
             <label>Casas tagueadas (opcional)</label>
-            <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
+            <div className="flex flex-wrap gap-1">
               {houses.map(h => (
                 <label key={h.slug} className="flex items-center gap-1">
                   <input
