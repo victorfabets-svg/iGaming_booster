@@ -24,6 +24,7 @@ import TipsPage from './pages/admin/TipsPage';
 import WhatsAppPage from './pages/admin/WhatsAppPage';
 import IntegrationsPage from './pages/admin/IntegrationsPage';
 import EmailTemplatesPage from './pages/admin/EmailTemplatesPage';
+import AffiliatePage from './pages/admin/AffiliatePage';
 import './styles/global.css';
 
 // Protected route wrapper
@@ -103,6 +104,7 @@ function App() {
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="email-templates" element={<EmailTemplatesPage />} />
+        <Route path="afiliados" element={<AffiliatePage />} />
       </Route>
 
       {/* Catch all - redirect to home */}

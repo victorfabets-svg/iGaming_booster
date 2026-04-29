@@ -240,6 +240,68 @@ export interface EmailTemplate {
   updated_at: string;
 }
 
+export interface AffiliateHouse {
+  id: string;
+  slug: string;
+  name: string;
+  domain: string;
+  base_url: string;
+  cpa_brl: number;
+  revshare_pct: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface AffiliateHouseCreateInput {
+  slug: string;
+  name: string;
+  domain: string;
+  base_url: string;
+  cpa_brl?: number;
+  revshare_pct?: number;
+  active?: boolean;
+}
+
+export interface AffiliateHouseUpdateInput {
+  name?: string;
+  domain?: string;
+  base_url?: string;
+  cpa_brl?: number;
+  revshare_pct?: number;
+  active?: boolean;
+}
+
+export interface AffiliateCampaign {
+  id: string;
+  house_id: string;
+  house_slug: string;
+  slug: string;
+  label: string | null;
+  created_at: string;
+}
+
+export interface AffiliateCampaignCreateInput {
+  house_slug: string;
+  slug: string;
+  label?: string;
+}
+
+export interface AffiliateFunnelRow {
+  slug: string;
+  name: string;
+  clicks: number;
+  registers: number;
+  first_proof: number;
+  approved: number;
+  rewards: number;
+}
+
+export interface AffiliateFunnelFilters {
+  house?: string;
+  from?: string;
+  to?: string;
+}
+
 // ============================================================================
 // API Methods
 // ============================================================================
@@ -420,5 +482,49 @@ export const adminApi = {
         body: JSON.stringify(input),
       }
     );
+  },
+
+  // -------------------------------------------------------------------------
+  // Affiliate
+  // -------------------------------------------------------------------------
+  async getAffiliateFunnel(filters?: AffiliateFunnelFilters) {
+    const params = new URLSearchParams();
+    if (filters?.house) params.set('house', filters.house);
+    if (filters?.from) params.set('from', filters.from);
+    if (filters?.to) params.set('to', filters.to);
+    const query = params.toString();
+    return fetchJson<{ funnel: AffiliateFunnelRow[]; range: { from: string; to: string } }>(
+      `/admin/affiliate/funnel${query ? `?${query}` : ''}`
+    );
+  },
+
+  async listAffiliateHouses() {
+    return fetchJson<{ houses: AffiliateHouse[] }>('/admin/affiliate/houses');
+  },
+
+  async createAffiliateHouse(input: AffiliateHouseCreateInput) {
+    return fetchJson<{ house: AffiliateHouse }>('/admin/affiliate/houses', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateAffiliateHouse(slug: string, input: AffiliateHouseUpdateInput) {
+    return fetchJson<{ house: AffiliateHouse }>(`/admin/affiliate/houses/${slug}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async listAffiliateCampaigns(houseSlug?: string) {
+    const query = houseSlug ? `?house=${encodeURIComponent(houseSlug)}` : '';
+    return fetchJson<{ campaigns: AffiliateCampaign[] }>(`/admin/affiliate/campaigns${query}`);
+  },
+
+  async createAffiliateCampaign(input: AffiliateCampaignCreateInput) {
+    return fetchJson<{ campaign: AffiliateCampaign }>('/admin/affiliate/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
   },
 };
