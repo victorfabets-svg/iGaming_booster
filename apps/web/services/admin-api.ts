@@ -42,7 +42,22 @@ async function fetchJson<T>(
 
     const data = await response.json();
 
-    if (!response.ok || !data.success) {
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          message: data?.error?.message || data?.error || data?.message || 'Request failed',
+          code: data?.error?.code || 'REQUEST_FAILED',
+        },
+      };
+    }
+
+    // Some admin routes (subscription, whatsapp) skip the {success,data}
+    // envelope and return the payload at the top level. Tolerate both shapes:
+    // - envelope:  { success: true, data: { plans: [...] } }   → unwrap data.data
+    // - raw:       { plans: [...] }                            → use the body
+    // Explicit { success: false } is still an error.
+    if (data?.success === false) {
       return {
         success: false,
         error: {
@@ -51,8 +66,8 @@ async function fetchJson<T>(
         },
       };
     }
-
-    return { success: true, data: data.data };
+    const payload = data?.success === true ? data.data : data;
+    return { success: true, data: payload };
   } catch (err) {
     return {
       success: false,
