@@ -569,7 +569,7 @@ function CampaignsTab() {
   }
 
   function buildLink(c: AffiliateCampaign) {
-    return `${API_BASE}/r/${c.house_slug}/${c.slug}`;
+    return `${API_BASE}/r/c/${c.slug}`;
   }
 
   async function copyLink(c: AffiliateCampaign) {
@@ -635,7 +635,7 @@ function CampaignsTab() {
             <tbody>
               {campaigns.map(c => (
                 <tr key={c.id}>
-                  <td className="mono">{c.house_slug}</td>
+                  <td className="mono">{c.redirect_house_slug || 'Signup'}</td>
                   <td className="mono">{c.slug}</td>
                   <td>{c.label || '—'}</td>
                   <td className="mono text-xs">{buildLink(c)}</td>
@@ -677,23 +677,42 @@ function CampaignModal({
   houses: AffiliateHouse[];
   defaultHouseSlug?: string;
   error: string | null;
-  onSave: (input: AffiliateCampaignCreateInput) => void;
+  onSave: (input:AffiliateCampaignCreateInput) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState({
-    house_slug: defaultHouseSlug || houses[0]?.slug || '',
     slug: '',
     label: '',
+    owner_user_id: '',
+    redirect_type: defaultHouseSlug ? 'house' : 'signup',
+    redirect_house_slug: defaultHouseSlug || '',
+    tagged_house_slugs: [] as string[],
   });
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onSave({
-      house_slug: form.house_slug,
+    if (!/^[a-z0-9-]+$/.test(form.slug)) {
+      alert('Slug deve ter apenas letras minúsculas, números e hifens.');
+      return;
+    }
+    const input: AffiliateCampaignCreateInput = {
       slug: form.slug,
       label: form.label.trim() || undefined,
-    });
+      owner_user_id: form.owner_user_id || undefined,
+      redirect_house_slug: form.redirect_type === 'house' ? form.redirect_house_slug : undefined,
+      tagged_house_slugs: form.tagged_house_slugs.length > 0 ? form.tagged_house_slugs : undefined,
+    };
+    onSave(input);
   }
+
+  const toggleTagged = (slug: string) => {
+    setForm(f => ({
+      ...f,
+      tagged_house_slugs: f.tagged_house_slugs.includes(slug)
+        ? f.tagged_house_slugs.filter(s => s !== slug)
+        : [...f.tagged_house_slugs, slug],
+    }));
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -701,21 +720,6 @@ function CampaignModal({
         <h2 className="card-title mb-4">Nova Campanha</h2>
         {error && <div className="alert-box alert-error mb-3">{error}</div>}
         <form onSubmit={submit}>
-          <div className="field">
-            <label>Casa</label>
-            <select
-              className="input"
-              value={form.house_slug}
-              onChange={e => setForm({ ...form, house_slug: e.target.value })}
-              required
-            >
-              {houses.map(h => (
-                <option key={h.slug} value={h.slug}>
-                  {h.name} ({h.slug})
-                </option>
-              ))}
-            </select>
-          </div>
           <div className="field">
             <label>Slug</label>
             <input
@@ -726,7 +730,7 @@ function CampaignModal({
               placeholder="instagram-bio"
             />
             <p className="field-help">
-              Define o sufixo do link: <code className="mono">/r/casa/slug</code>.
+              Link: <code className="mono">/r/c/{form.slug || '[slug]'}</code>
             </p>
           </div>
           <div className="field">
@@ -737,6 +741,69 @@ function CampaignModal({
               onChange={e => setForm({ ...form, label: e.target.value })}
               placeholder="Bio do Instagram"
             />
+          </div>
+          <div className="field">
+            <label>Dono (opcional)</label>
+            <select
+              className="input"
+              value={form.owner_user_id}
+              onChange={e => setForm({ ...form, owner_user_id: e.target.value })}
+            >
+              <option value="">Sem dono</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Tipo de redirect</label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="redirect_type"
+                checked={form.redirect_type === 'signup'}
+                onChange={() => setForm({ ...form, redirect_type: 'signup' })}
+              />
+              <span>Página de cadastro</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="redirect_type"
+                checked={form.redirect_type === 'house'}
+                onChange={() => setForm({ ...form, redirect_type: 'house' })}
+              />
+              <span>Casa específica</span>
+            </label>
+          </div>
+          {form.redirect_type === 'house' && (
+            <div className="field">
+              <label>Casa de redirect</label>
+              <select
+                className="input"
+                value={form.redirect_house_slug}
+                onChange={e => setForm({ ...form, redirect_house_slug: e.target.value })}
+              >
+                <option value="">Selecione...</option>
+                {houses.map(h => (
+                  <option key={h.slug} value={h.slug}>
+                    {h.name} ({h.slug})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="field">
+            <label>Casas tagueadas (opcional)</label>
+            <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
+              {houses.map(h => (
+                <label key={h.slug} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={form.tagged_house_slugs.includes(h.slug)}
+                    onChange={() => toggleTagged(h.slug)}
+                  />
+                  <span>{h.slug}</span>
+                </label>
+              ))}
+            </div>
           </div>
           <div className="flex gap-3 mt-4">
             <button type="submit" className="btn btn-primary">

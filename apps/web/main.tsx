@@ -25,17 +25,21 @@ import WhatsAppPage from './pages/admin/WhatsAppPage';
 import IntegrationsPage from './pages/admin/IntegrationsPage';
 import EmailTemplatesPage from './pages/admin/EmailTemplatesPage';
 import AffiliatePage from './pages/admin/AffiliatePage';
+import UsersPage from './pages/admin/UsersPage';
+import AffiliateLayout from './components/AffiliateLayout';
+import AffiliateDashboardPage from './pages/affiliate/DashboardPage';
+import AffiliateCampaignsPage from './pages/affiliate/CampaignsPage';
 import './styles/global.css';
 
 // Protected route wrapper
 function ProtectedRoute({
   children,
-  requireAdmin = false,
+  requireRole,
 }: {
   children: React.ReactNode;
-  requireAdmin?: boolean;
+  requireRole?: ('admin' | 'affiliate' | 'user')[];
 }) {
-  const { isAuthenticated, isAdmin, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return <div>Carregando...</div>;
@@ -45,14 +49,18 @@ function ProtectedRoute({
     return <Navigate to="/login" replace />;
   }
 
-  if (requireAdmin && !isAdmin) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <h1>Acesso Negado</h1>
-        <p>Você não tem permissão para acessar esta página.</p>
-        <a href="/">Voltar para página inicial</a>
-      </div>
-    );
+  // If requireRole is specified, check user's role
+  if (requireRole && requireRole.length > 0) {
+    const userRole = user?.role as 'admin' | 'affiliate' | 'user' | undefined;
+    if (!userRole || !requireRole.includes(userRole)) {
+      return (
+        <div className="card">
+          <h1>Acesso Negado</h1>
+          <p>Você não tem permissão para acessar esta página.</p>
+          <a href="/">Voltar para página inicial</a>
+        </div>
+      );
+    }
   }
 
   return <>{children}</>;
@@ -91,7 +99,7 @@ function App() {
       <Route
         path="/admin"
         element={
-          <ProtectedRoute requireAdmin>
+          <ProtectedRoute requireRole={['admin']}>
             <AdminLayout />
           </ProtectedRoute>
         }
@@ -105,6 +113,20 @@ function App() {
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="email-templates" element={<EmailTemplatesPage />} />
         <Route path="afiliados" element={<AffiliatePage />} />
+        <Route path="usuarios" element={<UsersPage />} />
+      </Route>
+
+      {/* Affiliate routes */}
+      <Route
+        path="/afiliado"
+        element={
+          <ProtectedRoute requireRole={['affiliate', 'admin']}>
+            <AffiliateLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<AffiliateDashboardPage />} />
+        <Route path="campanhas" element={<AffiliateCampaignsPage />} />
       </Route>
 
       {/* Catch all - redirect to home */}

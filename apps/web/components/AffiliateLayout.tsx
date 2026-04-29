@@ -1,5 +1,5 @@
 /**
- * Admin Layout — sidebar shell for /admin/*.
+ * Affiliate Layout — sidebar shell for /afiliado/*.
  */
 
 import React from 'react';
@@ -9,19 +9,11 @@ import { useAuth } from '../state/AuthContext';
 interface NavItem { path: string; label: string; }
 
 const navItems: NavItem[] = [
-  { path: '/admin', label: 'Dashboard' },
-  { path: '/admin/houses', label: 'Casas Parceiras' },
-  { path: '/admin/plans', label: 'Planos' },
-  { path: '/admin/subscriptions', label: 'Assinaturas' },
-  { path: '/admin/tips', label: 'Tips' },
-  { path: '/admin/whatsapp', label: 'WhatsApp' },
-  { path: '/admin/afiliados', label: 'Afiliados' },
-  { path: '/admin/usuarios', label: 'Usuários' },
-  { path: '/admin/integrations', label: 'Integrações' },
-  { path: '/admin/email-templates', label: 'Templates de Email' },
+  { path: '/afiliado', label: 'Dashboard' },
+  { path: '/afiliado/campanhas', label: 'Minhas Campanhas' },
 ];
 
-export default function AdminLayout() {
+export default function AffiliateLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -38,13 +30,13 @@ export default function AdminLayout() {
       <aside className="sidebar expanded">
         <div className="sidebar-header">
           <h2 className="brand-title">iGaming Booster</h2>
-          <p className="brand-subtitle">Admin</p>
+          <p className="brand-subtitle">Afiliado</p>
         </div>
 
         <nav className="sidebar-nav">
           {navItems.map(item => {
-            const isActive = item.path === '/admin'
-              ? currentPath === '/admin'
+            const isActive = item.path === '/afiliado'
+              ? currentPath === '/afiliado'
               : currentPath.startsWith(item.path);
             return (
               <NavLink
