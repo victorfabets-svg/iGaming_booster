@@ -58,6 +58,9 @@ interface CampaignCreateBody {
   house_slug?: string;
   slug?: string;
   label?: string;
+  owner_user_id?: string;
+  redirect_house_slug?: string;
+  tagged_house_slugs?: string[];
 }
 
 function normalizeHouse(row: HouseRow) {
@@ -235,52 +238,150 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
     }
   );
 
-  // POST /admin/affiliate/campaigns
+  // POST /admin/affiliate/campaigns - Extended with owner/redirect/tagged support
   fastify.post<{ Body: CampaignCreateBody }>(
     '/admin/affiliate/campaigns',
     { preHandler: [authMiddleware, requireAdmin(fastify)] },
     async (request: FastifyRequest<{ Body: CampaignCreateBody }>, reply: FastifyReply) => {
       const body = request.body || {};
-      if (!body.house_slug) return fail(reply, 'house_slug is required', 'VALIDATION_ERROR');
+      
+      // Validate slug required
       if (!body.slug) return fail(reply, 'slug is required', 'VALIDATION_ERROR');
       if (!SLUG_REGEX.test(body.slug)) {
         return fail(reply, 'slug must be lowercase alphanumeric with dashes only', 'VALIDATION_ERROR');
       }
 
-      const houseResult = await db.query<{ id: string }>(
-        `SELECT id FROM affiliate.houses WHERE slug = $1`,
-        [body.house_slug]
+      // Check global slug uniqueness (now enforced by DB)
+      const slugCheck = await db.query<{ id: string }>(
+        `SELECT id FROM affiliate.campaigns WHERE slug = $1`,
+        [body.slug]
       );
-      const house = houseResult.rows[0];
-      if (!house) {
-        return fail(reply, `House '${body.house_slug}' not found`, 'NOT_FOUND');
+      if (slugCheck.rows.length > 0) {
+        return fail(reply, `Slug '${body.slug}' already exists`, 'DUPLICATE_SLUG', 409);
       }
 
-      const dup = await db.query<{ id: string }>(
-        `SELECT id FROM affiliate.campaigns WHERE house_id = $1 AND slug = $2`,
-        [house.id, body.slug]
-      );
-      if (dup.rows.length > 0) {
-        return fail(
-          reply,
-          `Campaign '${body.slug}' already exists for house '${body.house_slug}'`,
-          'DUPLICATE_SLUG',
-          409
+      // Validate owner_user_id if provided
+      let ownerUserId: string | null = null;
+      if (body.owner_user_id) {
+        const ownerResult = await db.query<{ id: string; role: string }>(
+          `SELECT id, role FROM identity.users WHERE id = $1`,
+          [body.owner_user_id]
         );
+        if (ownerResult.rows.length === 0) {
+          return fail(reply, 'Owner user not found', 'NOT_FOUND');
+        }
+        if (ownerResult.rows[0].role !== 'affiliate') {
+          return fail(reply, 'Owner must have role affiliate', 'INVALID_OWNER', 400);
+        }
+        ownerUserId = ownerResult.rows[0].id;
       }
 
-      const result = await db.query<CampaignRow>(
-        `WITH inserted AS (
-           INSERT INTO affiliate.campaigns (house_id, slug, label)
-             VALUES ($1, $2, $3)
-             RETURNING id, house_id, slug, label, created_at
-         )
-         SELECT i.id, i.house_id, h.slug AS house_slug, i.slug, i.label, i.created_at
-           FROM inserted i
-           JOIN affiliate.houses h ON h.id = i.house_id`,
-        [house.id, body.slug, body.label ?? null]
-      );
-      return ok(reply, { campaign: result.rows[0] });
+      // Resolve redirect_house_id if redirect_house_slug provided
+      let redirectHouseId: string | null = null;
+      if (body.redirect_house_slug) {
+        const houseResult = await db.query<{ id: string }>(
+          `SELECT id FROM affiliate.houses WHERE slug = $1`,
+          [body.redirect_house_slug]
+        );
+        if (houseResult.rows.length === 0) {
+          return fail(reply, `House '${body.redirect_house_slug}' not found`, 'NOT_FOUND');
+        }
+        redirectHouseId = houseResult.rows[0].id;
+      }
+
+      // Legacy: house_id from house_slug (for backward compat)
+      let houseId: string | null = null;
+      if (body.house_slug) {
+        const houseResult = await db.query<{ id: string }>(
+          `SELECT id FROM affiliate.houses WHERE slug = $1`,
+          [body.house_slug]
+        );
+        if (houseResult.rows.length === 0) {
+          return fail(reply, `House '${body.house_slug}' not found`, 'NOT_FOUND');
+        }
+        houseId = houseResult.rows[0].id;
+      }
+
+      // Resolve tagged house slugs
+      const taggedHouseIds: string[] = [];
+      if (body.tagged_house_slugs && body.tagged_house_slugs.length > 0) {
+        for (const tagSlug of body.tagged_house_slugs) {
+          const houseResult = await db.query<{ id: string }>(
+            `SELECT id FROM affiliate.houses WHERE slug = $1`,
+            [tagSlug]
+          );
+          if (houseResult.rows.length > 0) {
+            taggedHouseIds.push(houseResult.rows[0].id);
+          }
+        }
+      }
+
+      // Insert campaign in transaction
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Insert campaign - legacy house_id kept NULL even when redirect_house_id present
+        const campaignResult = await client.query<{
+          id: string;
+          house_id: string;
+          house_slug: string;
+          slug: string;
+          label: string | null;
+          owner_user_id: string | null;
+          redirect_house_id: string | null;
+          created_at: string;
+        }>(
+          `INSERT INTO affiliate.campaigns (house_id, slug, label, owner_user_id, redirect_house_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, house_id, slug, label, owner_user_id, redirect_house_id, created_at`,
+          [houseId, body.slug, body.label ?? null, ownerUserId, redirectHouseId]
+        );
+
+        const campaign = campaignResult.rows[0];
+
+        // Insert tagged houses
+        if (taggedHouseIds.length > 0) {
+          for (const taggedHouseId of taggedHouseIds) {
+            await client.query(
+              `INSERT INTO affiliate.campaign_houses (campaign_id, house_id)
+               VALUES ($1, $2)
+               ON CONFLICT DO NOTHING`,
+              [campaign.id, taggedHouseId]
+            );
+          }
+        }
+
+        await client.query('COMMIT');
+
+        // Get house slug for redirect
+        let redirectHouseSlug: string | null = null;
+        if (campaign.redirect_house_id) {
+          const rhResult = await db.query<{ slug: string }>(
+            `SELECT slug FROM affiliate.houses WHERE id = $1`,
+            [campaign.redirect_house_id]
+          );
+          redirectHouseSlug = rhResult.rows[0]?.slug ?? null;
+        }
+
+        return ok(reply, {
+          campaign: {
+            id: campaign.id,
+            slug: campaign.slug,
+            label: campaign.label,
+            owner_user_id: campaign.owner_user_id,
+            redirect_house_id: campaign.redirect_house_id,
+            redirect_house_slug: redirectHouseSlug,
+            tagged_house_ids: taggedHouseIds,
+          }
+        });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[admin-affiliate] campaign insert failed:', err);
+        return fail(reply, 'Failed to create campaign', 'INTERNAL_ERROR');
+      } finally {
+        client.release();
+      }
     }
   );
 }

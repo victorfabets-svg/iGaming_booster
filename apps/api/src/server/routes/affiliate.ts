@@ -21,7 +21,119 @@ interface FunnelQuery {
  * Affiliate routes - click tracking, attribution, and funnel analytics
  */
 export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
-  // Affiliate redirect: /r/:house_slug/:campaign_slug?
+  // Canonical affiliate redirect: /r/c/:slug
+  // Registers click, sets cookie, redirects to house or /signup
+  fastify.get<{ Params: { slug: string } }>(
+    '/r/c/:slug',
+    async (request: FastifyRequest<{ Params: { slug: string } }>, reply: FastifyReply) => {
+      const { slug } = request.params;
+
+      // Get client info
+      const ip = request.ip
+        || (request.headers['x-forwarded-for'] as string)
+        || 'unknown';
+      const userAgent = request.headers['user-agent'];
+      const country = request.headers['cf-ipcountry'] as string
+        || request.headers['x-vercel-ip-country'] as string
+        || null;
+
+      // UTM params
+      const utmSource = request.query['utm_source'] as string | undefined;
+      const utmMedium = request.query['utm_medium'] as string | undefined;
+      const utmCampaign = request.query['utm_campaign'] as string | undefined;
+      const utmTerm = request.query['utm_term'] as string | undefined;
+      const utmContent = request.query['utm_content'] as string | undefined;
+
+      // Lookup campaign by slug
+      const campaignResult = await db.query<{
+        id: string;
+        slug: string;
+        redirect_house_id: string | null;
+        owner_user_id: string | null;
+      }>(
+        `SELECT id, slug, redirect_house_id, owner_user_id 
+         FROM affiliate.campaigns WHERE slug = $1`,
+        [slug]
+      );
+
+      if (campaignResult.rows.length === 0) {
+        return reply.status(404).send({
+          success: false,
+          error: { message: 'Campaign not found', code: 'NOT_FOUND' }
+        });
+      }
+
+      const campaign = campaignResult.rows[0];
+      const clickId = randomUUID();
+
+      // Insert click
+      try {
+        await db.query(
+          `INSERT INTO affiliate.clicks (
+            house_id, campaign_id, click_id, ip, user_agent, ref_cookie,
+            utm_source, utm_medium, utm_campaign, utm_term, utm_content, country
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            campaign.redirect_house_id,
+            campaign.id,
+            clickId,
+            ip,
+            userAgent,
+            null,
+            utmSource,
+            utmMedium,
+            utmCampaign,
+            utmTerm,
+            utmContent,
+            country
+          ]
+        );
+      } catch (err) {
+        console.error('[affiliate] canonical click insert failed:', err);
+      }
+
+      // Set cookie for attribution
+      const isProduction = process.env.NODE_ENV === 'production';
+      reply.setCookie('tipster_cid', clickId, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 90 * 24 * 60 * 60,
+      });
+
+      // Determine destination
+      let destination: string;
+      if (campaign.redirect_house_id) {
+        // Redirect to house
+        const houseResult = await db.query<{ base_url: string }>(
+          `SELECT base_url FROM affiliate.houses WHERE id = $1`,
+          [campaign.redirect_house_id]
+        );
+
+        if (houseResult.rows.length === 0) {
+          // Fallback to signup if house not found
+          destination = `${process.env.WEB_BASE_URL || 'http://localhost:5173'}/signup?ref=${clickId}`;
+        } else {
+          const house = houseResult.rows[0];
+          const url = new URL(house.base_url);
+          if (utmSource) url.searchParams.set('utm_source', utmSource);
+          if (utmMedium) url.searchParams.set('utm_medium', utmMedium);
+          if (utmCampaign) url.searchParams.set('utm_campaign', utmCampaign);
+          if (utmTerm) url.searchParams.set('utm_term', utmTerm);
+          if (utmContent) url.searchParams.set('utm_content', utmContent);
+          destination = url.toString();
+        }
+      } else {
+        // Redirect to signup
+        destination = `${process.env.WEB_BASE_URL || 'http://localhost:5173'}/signup?ref=${clickId}`;
+      }
+
+      return reply.status(302).header('Location', destination).send();
+    }
+  );
+
+  // Legacy affiliate redirect: /r/:house_slug/:campaign_slug?
   // Registers click, sets cookie, redirects to house base URL
   fastify.get<{ Params: ClickParams }>(
     '/r/:house_slug/:campaign_slug?',

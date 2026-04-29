@@ -16,6 +16,7 @@ import { alertsRoutes } from './routes/alerts';
 import healthRoutes from './routes/health';
 import { devRoutes } from './routes/dev';
 import { adminPartnerHousesRoutes } from './routes/admin-partner-houses';
+import { adminUserRoutes } from './routes/admin-users';
 import { tipsterRoutes } from './routes/tipster';
 import { adminTipsRoutes } from './routes/admin-tips';
 import { whatsappRoutes } from './routes/whatsapp';
@@ -26,6 +27,7 @@ import { adminIntegrationsRoutes } from './routes/admin-integrations';
 import { meRoutes } from './routes/me';
 import { adminEmailTemplatesRoutes } from './routes/admin-email-templates';
 import { adminAffiliateRoutes } from './routes/admin-affiliate';
+import { affiliateMeRoutes } from './routes/affiliate-me';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -179,6 +181,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(adminEmailTemplatesRoutes);
   // Admin affiliate routes (houses + campaigns CRUD; admin role required)
   app.register(adminAffiliateRoutes);
+  // Admin user routes (user listing and role management)
+  app.register(adminUserRoutes);
+  // Affiliate "me" routes (campaign management and funnel)
+  app.register(affiliateMeRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
