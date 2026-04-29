@@ -110,16 +110,10 @@ jobs:
           
           echo "✅ DB host pattern scan complete"
 
-      - name: Enforce ALLOWED_NEON_HOSTS for production
-        if: github.base_ref == 'main'
-        run: |
-          echo "🔍 Checking production configuration..."
-          
-          # Check if ALLOWED_NEON_HOSTS is configured in production
-          if [[ -z "$ALLOWED_NEON_HOSTS" ]]; then
-            echo "❌ ALLOWED_NEON_HOSTS not set for production deployment"
-            echo "Set ALLOWED_NEON_HOSTS secret in repository settings"
-            exit 1
-          fi
-          
-          echo "✅ Production allowlist configured"
+      # NOTE: Previous step "Enforce ALLOWED_NEON_HOSTS for production" was
+      # removed. It checked $ALLOWED_NEON_HOSTS in the CI environment, but
+      # the variable was never wired from `secrets`, so it always failed.
+      # More importantly, ALLOWED_NEON_HOSTS is a runtime allowlist consumed
+      # by the API on Render — CI cannot meaningfully verify a Render-side
+      # secret. The runtime guard in the API itself is the right place to
+      # enforce this contract.
