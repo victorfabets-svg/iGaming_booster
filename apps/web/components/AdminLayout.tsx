@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { path: '/admin/subscriptions', label: 'Assinaturas' },
   { path: '/admin/tips', label: 'Tips' },
   { path: '/admin/whatsapp', label: 'WhatsApp' },
+  { path: '/admin/afiliados', label: 'Afiliados' },
   { path: '/admin/integrations', label: 'Integrações' },
   { path: '/admin/email-templates', label: 'Templates de Email' },
 ];

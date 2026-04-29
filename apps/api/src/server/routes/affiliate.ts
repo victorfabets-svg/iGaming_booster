@@ -3,6 +3,7 @@ import { db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
 import { ok, fail } from '../utils/response';
 import { authMiddleware } from '../../infrastructure/auth/middleware';
+import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import { auditLog } from '@shared/events/audit-log';
 
 interface ClickParams {
@@ -106,7 +107,7 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{ Querystring: FunnelQuery }>(
     '/admin/affiliate/funnel',
     {
-      preHandler: authMiddleware,
+      preHandler: [authMiddleware, requireAdmin(fastify)],
     },
     async (request: FastifyRequest<{ Querystring: FunnelQuery }>, reply: FastifyReply) => {
       const { house: houseSlug, from, to } = request.query;

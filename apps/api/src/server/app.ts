@@ -25,6 +25,7 @@ import { adminSubscriptionRoutes } from './routes/admin-subscription';
 import { adminIntegrationsRoutes } from './routes/admin-integrations';
 import { meRoutes } from './routes/me';
 import { adminEmailTemplatesRoutes } from './routes/admin-email-templates';
+import { adminAffiliateRoutes } from './routes/admin-affiliate';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -176,6 +177,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(meRoutes);
   // Admin email templates routes (admin role required)
   app.register(adminEmailTemplatesRoutes);
+  // Admin affiliate routes (houses + campaigns CRUD; admin role required)
+  app.register(adminAffiliateRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
