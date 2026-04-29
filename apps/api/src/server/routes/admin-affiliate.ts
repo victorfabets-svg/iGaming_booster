@@ -217,7 +217,7 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
     }
   );
 
-  // GET /admin/affiliate/campaigns?house=<slug>
+  // GET /admin/affiliate/campaigns?house=<slug> — Extended with owner/redirect/tagged
   fastify.get<{ Querystring: { house?: string } }>(
     '/admin/affiliate/campaigns',
     { preHandler: [authMiddleware, requireAdmin(fastify)] },
@@ -226,12 +226,49 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
       reply: FastifyReply
     ) => {
       const houseSlug = request.query.house || null;
-      const result = await db.query<CampaignRow>(
-        `SELECT c.id, c.house_id, h.slug AS house_slug, c.slug, c.label, c.created_at
-           FROM affiliate.campaigns c
-           JOIN affiliate.houses h ON h.id = c.house_id
-          WHERE $1::text IS NULL OR h.slug = $1
-          ORDER BY h.slug, c.slug`,
+
+      // Use LEFT JOIN to include campaigns with NULL house_id (signup-only campaigns)
+      const result = await db.query<{
+        id: string;
+        slug: string;
+        label: string | null;
+        created_at: string;
+        owner_user_id: string | null;
+        owner_email: string | null;
+        redirect_house_id: string | null;
+        redirect_house_slug: string | null;
+        tagged_house_slugs: string[];
+      }>(
+        `SELECT
+          c.id,
+          c.slug,
+          c.label,
+          c.created_at,
+          c.owner_user_id,
+          u.email AS owner_email,
+          c.redirect_house_id,
+          rh.slug AS redirect_house_slug,
+          COALESCE(
+            (
+              SELECT ARRAY_AGG(h2.slug ORDER BY h2.slug)
+              FROM affiliate.campaign_houses ch
+              JOIN affiliate.houses h2 ON h2.id = ch.house_id
+              WHERE ch.campaign_id = c.id
+            ),
+            ARRAY[]::text[]
+          ) AS tagged_house_slugs
+        FROM affiliate.campaigns c
+        LEFT JOIN identity.users u ON u.id = c.owner_user_id
+        LEFT JOIN affiliate.houses rh ON rh.id = c.redirect_house_id
+        WHERE
+          $1::text IS NULL
+          OR rh.slug = $1
+          OR c.id IN (
+            SELECT ch2.campaign_id FROM affiliate.campaign_houses ch2
+            JOIN affiliate.houses h2 ON h2.id = ch2.house_id
+            WHERE h2.slug = $1
+          )
+        ORDER BY c.created_at DESC`,
         [houseSlug]
       );
       return ok(reply, { campaigns: result.rows });
@@ -302,17 +339,20 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
         houseId = houseResult.rows[0].id;
       }
 
-      // Resolve tagged house slugs
+      // Resolve tagged house slugs - FAIL on missing (B3)
       const taggedHouseIds: string[] = [];
+      const taggedHouseSlugs: string[] = [];
       if (body.tagged_house_slugs && body.tagged_house_slugs.length > 0) {
         for (const tagSlug of body.tagged_house_slugs) {
           const houseResult = await db.query<{ id: string }>(
             `SELECT id FROM affiliate.houses WHERE slug = $1`,
             [tagSlug]
           );
-          if (houseResult.rows.length > 0) {
-            taggedHouseIds.push(houseResult.rows[0].id);
+          if (houseResult.rows.length === 0) {
+            return fail(reply, `Tagged house '${tagSlug}' not found`, 'NOT_FOUND', 404);
           }
+          taggedHouseIds.push(houseResult.rows[0].id);
+          taggedHouseSlugs.push(tagSlug);
         }
       }
 
@@ -324,8 +364,6 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
         // Insert campaign - legacy house_id kept NULL even when redirect_house_id present
         const campaignResult = await client.query<{
           id: string;
-          house_id: string;
-          house_slug: string;
           slug: string;
           label: string | null;
           owner_user_id: string | null;
@@ -334,7 +372,7 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
         }>(
           `INSERT INTO affiliate.campaigns (house_id, slug, label, owner_user_id, redirect_house_id)
            VALUES ($1, $2, $3, $4, $5)
-           RETURNING id, house_id, slug, label, owner_user_id, redirect_house_id, created_at`,
+           RETURNING id, slug, label, owner_user_id, redirect_house_id, created_at`,
           [houseId, body.slug, body.label ?? null, ownerUserId, redirectHouseId]
         );
 
@@ -370,9 +408,9 @@ export async function adminAffiliateRoutes(fastify: FastifyInstance): Promise<vo
             slug: campaign.slug,
             label: campaign.label,
             owner_user_id: campaign.owner_user_id,
-            redirect_house_id: campaign.redirect_house_id,
             redirect_house_slug: redirectHouseSlug,
-            tagged_house_ids: taggedHouseIds,
+            tagged_house_slugs: taggedHouseSlugs,
+            created_at: campaign.created_at,
           }
         });
       } catch (err) {
