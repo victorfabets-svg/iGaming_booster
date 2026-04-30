@@ -200,4 +200,77 @@ export const meApi = {
       reason?: string;
     }>('/me/tips');
   },
+
+  /**
+   * Get active promotions in window
+   */
+  async getPromotions(): Promise<ApiResponse<{ promotions: MePromotion[] }>> {
+    return fetchJson<{ promotions: MePromotion[] }>('/me/promotions');
+  },
+
+  /**
+   * Get single promotion + invitation pending flag
+   */
+  async getPromotion(slug: string): Promise<ApiResponse<{
+    promotion: MePromotion & { user_has_invitation_pending: boolean };
+  }>> {
+    return fetchJson(`/me/promotions/${slug}`);
+  },
+
+  /**
+   * List repescagem invitations for current user (pending only)
+   */
+  async getInvitations(): Promise<ApiResponse<{ invitations: RepescagemInvitation[] }>> {
+    return fetchJson<{ invitations: RepescagemInvitation[] }>('/me/repescagem/invitations');
+  },
+
+  /**
+   * Accept a repescagem invitation — emits new ticket in the promotion's raffle
+   */
+  async acceptInvitation(id: string): Promise<ApiResponse<{
+    invitation: { id: string; status: string; decided_at: string };
+    ticket: { id: string; number: number; raffle_id: string };
+  }>> {
+    return fetchJson(`/me/repescagem/invitations/${id}/accept`, { method: 'POST' });
+  },
+
+  /**
+   * Decline a repescagem invitation
+   */
+  async declineInvitation(id: string): Promise<ApiResponse<{
+    invitation: { id: string; status: string; decided_at: string };
+  }>> {
+    return fetchJson(`/me/repescagem/invitations/${id}/decline`, { method: 'POST' });
+  },
 };
+
+export interface MePromotionTier {
+  min_deposit_cents: number;
+  tickets: number;
+}
+
+export interface MePromotion {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  creative_url: string | null;
+  house_slug: string;
+  house_name: string;
+  deposit_url: string;
+  starts_at: string;
+  ends_at: string;
+  draw_at: string;
+  tiers: MePromotionTier[];
+}
+
+export interface RepescagemInvitation {
+  id: string;
+  promotion_id: string;
+  promotion_slug: string;
+  promotion_name: string;
+  promotion_creative_url: string | null;
+  source_promotion_slug: string;
+  source_promotion_name: string;
+  created_at: string;
+}

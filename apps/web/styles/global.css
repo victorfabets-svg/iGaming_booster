@@ -1227,3 +1227,16 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 /* Utility: wrap flex items */
 .flex-wrap { flex-wrap: wrap; }
 
+/* === PROMO CARD CREATIVE === */
+.promo-creative {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: block;
+}
+.promo-creative-placeholder {
+  background: linear-gradient(135deg, var(--color-primary-glow) 0%, var(--color-primary-dim, rgba(99,102,241,0.2)) 100%);
+}
+
