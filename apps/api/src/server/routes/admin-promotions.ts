@@ -577,16 +577,16 @@ async function applyRepescagem(slug: string): Promise<{ invitations_created: num
   try {
     await client.query('BEGIN');
 
-    // Find losing tickets from source promotions
+    // Find losing tickets from source promotions (tickets where raffle has been drawn and user didn't win)
     const losingUsersResult = await client.query(
-      `SELECT DISTINCT t.user_id
+      `SELECT DISTINCT t.user_id, src.id AS source_promotion_id
          FROM raffles.tickets t
          JOIN raffles.raffles r ON r.id = t.raffle_id
+         JOIN raffles.raffle_draws rd ON rd.raffle_id = r.id
          JOIN promotions.promotions src ON src.raffle_id = r.id
          JOIN promotions.repescagem_sources rs ON rs.source_promotion_id = src.id
         WHERE rs.promotion_id = $1
-          AND r.winning_number IS NOT NULL
-          AND t.ticket_number IS DISTINCT FROM r.winning_number`,
+          AND t.id <> rd.winner_ticket_id`,
       [promotion.id]
     );
 
@@ -600,10 +600,10 @@ async function applyRepescagem(slug: string): Promise<{ invitations_created: num
         `SELECT DISTINCT src.id as source_promotion_id
            FROM raffles.tickets t
            JOIN raffles.raffles r ON r.id = t.raffle_id
+           JOIN raffles.raffle_draws rd ON rd.raffle_id = r.id
            JOIN promotions.promotions src ON src.raffle_id = r.id
            JOIN promotions.repescagem_sources rs ON rs.source_promotion_id = src.id
-          WHERE rs.promotion_id = $1 AND t.user_id = $2 AND r.winning_number IS NOT NULL
-            AND t.ticket_number IS DISTINCT FROM r.winning_number`,
+          WHERE rs.promotion_id = $1 AND t.user_id = $2 AND t.id <> rd.winner_ticket_id`,
         [promotion.id, userId]
       );
 

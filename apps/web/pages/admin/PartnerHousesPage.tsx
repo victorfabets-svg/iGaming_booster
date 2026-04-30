@@ -1,24 +1,25 @@
 /**
- * Partner Houses Admin Page — list, create/edit casas parceiras + ticket-ratio config.
+ * Partner Houses Admin Page — canonical houses management.
+ * Now using core.houses (canonical source).
  */
 
 import React, { useState, useEffect } from 'react';
-import { adminApi, PartnerHouse, PartnerHouseInput } from '../../services/admin-api';
+import { adminApi, CoreHouse, CoreHouseCreateInput, CoreHouseUpdateInput } from '../../services/admin-api';
 
 type PageStatus = 'loading' | 'success' | 'error';
 
 export default function PartnerHousesPage() {
-  const [houses, setHouses] = useState<PartnerHouse[]>([]);
+  const [houses, setHouses] = useState<CoreHouse[]>([]);
   const [status, setStatus] = useState<PageStatus>('loading');
   const [showModal, setShowModal] = useState(false);
-  const [editingHouse, setEditingHouse] = useState<PartnerHouse | null>(null);
+  const [editingHouse, setEditingHouse] = useState<CoreHouse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => { loadHouses(); }, []);
 
   async function loadHouses() {
     setStatus('loading');
-    const response = await adminApi.listPartnerHouses();
+    const response = await adminApi.listCoreHouses();
     if (response.success && response.data) {
       setHouses(response.data.houses);
       setStatus('success');
@@ -27,9 +28,14 @@ export default function PartnerHousesPage() {
     }
   }
 
-  async function handleSave(input: PartnerHouseInput) {
+  async function handleSave(input: CoreHouseCreateInput | CoreHouseUpdateInput) {
     setFormError(null);
-    const response = await adminApi.createPartnerHouse(input);
+    let response;
+    if (editingHouse) {
+      response = await adminApi.updateCoreHouse(editingHouse.slug, input as CoreHouseUpdateInput);
+    } else {
+      response = await adminApi.createCoreHouse(input as CoreHouseCreateInput);
+    }
     if (response.success) {
       setShowModal(false);
       setEditingHouse(null);
@@ -39,21 +45,21 @@ export default function PartnerHousesPage() {
     }
   }
 
-  const handleEdit = (house: PartnerHouse) => {
+  const handleEdit = (house: CoreHouse) => {
     setEditingHouse(house);
     setFormError(null);
     setShowModal(true);
   };
 
   if (status === 'loading') return <div className="empty-state">Carregando…</div>;
-  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar casas parceiras.</div>;
+  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar casas.</div>;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Casas Parceiras</h1>
-          <p className="page-subtitle">Configure casas, regras de OCR e taxa de tickets por depósito.</p>
+          <p className="page-subtitle">Cadastro canônico das casas de aposta — tickets/depósito agora ficam por promoção.</p>
         </div>
         <button
           type="button"
@@ -75,8 +81,7 @@ export default function PartnerHousesPage() {
                 <th>Nome</th>
                 <th>País</th>
                 <th>Moeda</th>
-                <th>Tickets/depósito</th>
-                <th>Mín. R$/ticket</th>
+                <th>Deposit URL</th>
                 <th>Status</th>
                 <th>Ações</th>
               </tr>
@@ -88,12 +93,7 @@ export default function PartnerHousesPage() {
                   <td>{house.name}</td>
                   <td>{house.country}</td>
                   <td>{house.currency}</td>
-                  <td className="mono">{house.tickets_per_deposit}</td>
-                  <td className="mono">
-                    {house.min_amount_per_ticket_cents != null
-                      ? `R$ ${(house.min_amount_per_ticket_cents / 100).toFixed(2)}`
-                      : '—'}
-                  </td>
+                  <td className="mono">{house.deposit_url.length > 30 ? house.deposit_url.slice(0, 30) + '…' : house.deposit_url}</td>
                   <td>
                     <span className={`badge ${house.active ? 'badge-success' : 'badge-gray'}`}>
                       {house.active ? 'ativa' : 'inativa'}
@@ -129,39 +129,31 @@ function HouseModal({
   onSave,
   onClose,
 }: {
-  house: PartnerHouse | null;
+  house: CoreHouse | null;
   error: string | null;
-  onSave: (input: PartnerHouseInput) => void;
+  onSave: (input: CoreHouseCreateInput | CoreHouseUpdateInput) => void;
   onClose: () => void;
 }) {
   const [form, setForm] = useState({
     slug: house?.slug || '',
     name: house?.name || '',
-    country: house?.country || '',
-    currency: house?.currency || '',
+    country: house?.country || 'BR',
+    currency: house?.currency || 'BRL',
+    deposit_url: house?.deposit_url || '',
+    signup_url: house?.signup_url || '',
     active: house?.active ?? true,
-    tickets_per_deposit: house?.tickets_per_deposit ?? 1,
-    min_amount_per_ticket_brl:
-      house?.min_amount_per_ticket_cents != null
-        ? (house.min_amount_per_ticket_cents / 100).toFixed(2)
-        : '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const minBrlTrimmed = form.min_amount_per_ticket_brl.trim();
-    const minCents =
-      minBrlTrimmed === ''
-        ? null
-        : Math.round(Number(minBrlTrimmed.replace(',', '.')) * 100);
     onSave({
       slug: form.slug,
       name: form.name,
       country: form.country,
       currency: form.currency,
+      deposit_url: form.deposit_url,
+      signup_url: form.signup_url || undefined,
       active: form.active,
-      tickets_per_deposit: form.tickets_per_deposit,
-      min_amount_per_ticket_cents: minCents,
     });
   };
 
@@ -178,9 +170,9 @@ function HouseModal({
               value={form.slug}
               onChange={e => setForm({ ...form, slug: e.target.value })}
               required
+              disabled={!!house}
             />
           </div>
-
           <div className="field">
             <label>Nome</label>
             <input
@@ -190,9 +182,8 @@ function HouseModal({
               required
             />
           </div>
-
           <div className="field">
-            <label>País (2 letras)</label>
+            <label>País</label>
             <input
               className="input"
               value={form.country}
@@ -201,9 +192,8 @@ function HouseModal({
               maxLength={2}
             />
           </div>
-
           <div className="field">
-            <label>Moeda (3 letras)</label>
+            <label>Moeda</label>
             <input
               className="input"
               value={form.currency}
@@ -212,47 +202,36 @@ function HouseModal({
               maxLength={3}
             />
           </div>
-
           <div className="field">
-            <label>Tickets por depósito</label>
+            <label>Deposit URL</label>
             <input
               className="input"
-              type="number"
-              min={1}
-              step={1}
-              value={form.tickets_per_deposit}
-              onChange={e => setForm({ ...form, tickets_per_deposit: Math.max(1, Number(e.target.value) || 1) })}
+              type="url"
+              value={form.deposit_url}
+              onChange={e => setForm({ ...form, deposit_url: e.target.value })}
               required
             />
           </div>
-
           <div className="field">
-            <label>Valor mínimo por ticket (R$)</label>
+            <label>Signup URL (opcional)</label>
             <input
               className="input"
-              type="text"
-              inputMode="decimal"
-              placeholder="(opcional — vazio = 1 ticket por depósito)"
-              value={form.min_amount_per_ticket_brl}
-              onChange={e => setForm({ ...form, min_amount_per_ticket_brl: e.target.value })}
+              type="url"
+              value={form.signup_url}
+              onChange={e => setForm({ ...form, signup_url: e.target.value })}
             />
-            <p className="field-help">
-              Se preenchido, gera <code className="mono">floor(valor / mínimo) × tickets/depósito</code> tickets (mínimo 1).
-            </p>
           </div>
-
           <div className="field">
-            <label className="flex items-center gap-2 uppercase-off">
+            <label>
               <input
                 type="checkbox"
                 checked={form.active}
                 onChange={e => setForm({ ...form, active: e.target.checked })}
               />
-              <span>Casa ativa</span>
+              {' '}Ativa
             </label>
           </div>
-
-          <div className="flex gap-3 mt-4">
+          <div className="flex gap-2 mt-4">
             <button type="submit" className="btn btn-primary">Salvar</button>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           </div>
