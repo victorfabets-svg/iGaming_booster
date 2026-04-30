@@ -147,9 +147,10 @@ const createApiClient = (baseUrl: string = '') => {
       }
     },
 
-    async submitProof(file: File): Promise<SubmitProofResponse> {
+    async submitProof(file: File, promotionId?: string): Promise<SubmitProofResponse> {
       const formData = new FormData();
       formData.append('file', file);
+      if (promotionId) formData.append('promotion_id', promotionId);
       const response = await fetch(url('/proofs'), {
         method: 'POST',
         body: formData,

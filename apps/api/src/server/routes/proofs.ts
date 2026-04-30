@@ -87,20 +87,41 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
 
       let fileBuffer: Buffer | null = null;
       let filename: string | null = null;
+      let promotionId: string | null = null;
 
       // Async iteration over parts
       for await (const part of parts) {
         if (part.type === 'file' && part.fieldname === 'file') {
-          // Read file buffer from stream
           fileBuffer = await part.toBuffer();
           filename = part.filename;
+        } else if (part.type === 'field' && part.fieldname === 'promotion_id') {
+          const value = typeof part.value === 'string' ? part.value.trim() : '';
+          if (value) promotionId = value;
         }
-        // NOTE: user_id no longer accepted from body - extracted from token only
       }
 
       // Validate file: File must be present and non-empty (multipart form data)
       if (!fileBuffer || fileBuffer.length === 0) {
         return fail(reply, 'Missing required file upload or file is empty', 'VALIDATION_ERROR');
+      }
+
+      // If promotion_id provided, validate it's an active promotion in window
+      if (promotionId) {
+        const { db } = await import('@shared/database/connection');
+        const promoCheck = await db.query<{ id: string }>(
+          `SELECT id FROM promotions.promotions
+            WHERE id = $1 AND active = true
+              AND starts_at <= NOW() AND ends_at >= NOW()`,
+          [promotionId]
+        );
+        if (promoCheck.rows.length === 0) {
+          return fail(
+            reply,
+            'Promoção não encontrada ou fora da janela',
+            'INVALID_PROMOTION',
+            400
+          );
+        }
       }
 
       // Use context-aware logger (automatically includes request_id)
@@ -119,6 +140,7 @@ export async function proofRoutes(fastify: FastifyInstance): Promise<void> {
           user_id,
           file_buffer: fileBuffer,
           filename: filename || undefined,
+          promotion_id: promotionId || undefined,
         });
 
         // Build response — include is_new + submitted_at so the frontend
