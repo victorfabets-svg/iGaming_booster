@@ -1,6 +1,5 @@
 /**
  * Plans Admin Page
- * Refactored to use DESIGN_SYSTEM.md tokens and global.css classes
  */
 
 import React, { useState, useEffect } from 'react';
@@ -11,6 +10,7 @@ export default function PlansPage() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [showModal, setShowModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPlans();
@@ -28,29 +28,43 @@ export default function PlansPage() {
   }
 
   async function handleSave(input: PlanInput) {
-    if (editingPlan) {
-      await adminApi.updatePlan(editingPlan.id, input);
+    setFormError(null);
+    const response = editingPlan
+      ? await adminApi.updatePlan(editingPlan.slug, {
+          name: input.name,
+          description: input.description,
+          price_cents: input.price_cents,
+          metadata: input.metadata,
+        })
+      : await adminApi.createPlan(input);
+
+    if (response.success) {
+      setShowModal(false);
+      setEditingPlan(null);
+      loadPlans();
     } else {
-      await adminApi.createPlan(input);
+      setFormError(response.error?.message || 'Erro ao salvar plano.');
     }
-    setShowModal(false);
-    setEditingPlan(null);
-    loadPlans();
   }
 
   function handleEdit(plan: Plan) {
     setEditingPlan(plan);
+    setFormError(null);
     setShowModal(true);
   }
 
-  if (status === 'loading') return <div className="loading-state">Carregando...</div>;
-  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar</div>;
+  if (status === 'loading') return <div className="empty-state">Carregando…</div>;
+  if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar.</div>;
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Planos</h1>
-        <button className="btn btn-primary" onClick={() => { setEditingPlan(null); setShowModal(true); }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => { setEditingPlan(null); setFormError(null); setShowModal(true); }}
+        >
           + Novo Plano
         </button>
       </div>
@@ -83,13 +97,145 @@ export default function PlansPage() {
                     </span>
                   </td>
                   <td>
-                    <button className="action-btn" onClick={() => handleEdit(plan)}>Editar</button>
+                    <button type="button" className="action-btn" onClick={() => handleEdit(plan)}>
+                      Editar
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+
+      {showModal && (
+        <PlanModal
+          plan={editingPlan}
+          error={formError}
+          onSave={handleSave}
+          onClose={() => { setShowModal(false); setEditingPlan(null); setFormError(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PlanModal({
+  plan,
+  error,
+  onSave,
+  onClose,
+}: {
+  plan: Plan | null;
+  error: string | null;
+  onSave: (input: PlanInput) => void;
+  onClose: () => void;
+}) {
+  const editing = !!plan;
+  const [form, setForm] = useState({
+    slug: plan?.slug || '',
+    name: plan?.name || '',
+    description: plan?.description || '',
+    price_brl: plan ? (plan.price_cents / 100).toFixed(2) : '',
+    currency: plan?.currency || 'BRL',
+    billing_cycle: plan?.billing_cycle || 'monthly',
+  });
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const priceCents = Math.round(Number(form.price_brl.replace(',', '.')) * 100);
+    onSave({
+      slug: form.slug,
+      name: form.name,
+      description: form.description.trim() || undefined,
+      price_cents: priceCents,
+      currency: form.currency,
+      billing_cycle: form.billing_cycle as 'monthly' | 'annual',
+    });
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <h2 className="card-title mb-4">{editing ? 'Editar Plano' : 'Novo Plano'}</h2>
+        {error && <div className="alert-box alert-error mb-3">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="field">
+            <label>Slug</label>
+            <input
+              className="input"
+              value={form.slug}
+              onChange={e => setForm({ ...form, slug: e.target.value })}
+              required
+              disabled={editing}
+              placeholder="premium-mensal"
+            />
+            {editing && <p className="field-help">Slug não pode ser alterado.</p>}
+          </div>
+
+          <div className="field">
+            <label>Nome</label>
+            <input
+              className="input"
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label>Descrição (opcional)</label>
+            <input
+              className="input"
+              value={form.description}
+              onChange={e => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+
+          <div className="field">
+            <label>Preço (R$)</label>
+            <input
+              className="input"
+              type="text"
+              inputMode="decimal"
+              placeholder="29.90"
+              value={form.price_brl}
+              onChange={e => setForm({ ...form, price_brl: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label>Moeda</label>
+            <input
+              className="input"
+              value={form.currency}
+              onChange={e => setForm({ ...form, currency: e.target.value.toUpperCase() })}
+              required
+              maxLength={3}
+              disabled={editing}
+            />
+          </div>
+
+          <div className="field">
+            <label>Ciclo de cobrança</label>
+            <select
+              className="input"
+              value={form.billing_cycle}
+              onChange={e => setForm({ ...form, billing_cycle: e.target.value as 'monthly' | 'annual' })}
+              disabled={editing}
+            >
+              <option value="monthly">Mensal</option>
+              <option value="annual">Anual</option>
+            </select>
+            {editing && <p className="field-help">Ciclo não pode ser alterado.</p>}
+          </div>
+
+          <div className="flex gap-3 mt-4">
+            <button type="submit" className="btn btn-primary">Salvar</button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          </div>
+        </form>
       </div>
     </div>
   );
