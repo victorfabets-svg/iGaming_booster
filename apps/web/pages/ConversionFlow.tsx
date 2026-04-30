@@ -38,6 +38,8 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
     <PromotionContextBanner promotion={promotion} error={promoError} />
   ) : null;
 
+  const handleSubmit = (file: File) => flow.submit(file, promotion?.id);
+
   switch (flow.phase) {
     case 'idle':
     case 'submitting':
@@ -45,7 +47,7 @@ const ConversionFlow: React.FC<ConversionFlowProps> = ({ onOpenHistory }) => {
         <>
           {banner}
           <UploadScreen
-            onSubmit={flow.submit}
+            onSubmit={handleSubmit}
             isSubmitting={flow.phase === 'submitting'}
           />
         </>

@@ -16,6 +16,7 @@ export interface CreateTicketInput {
   reward_id: string;
   raffle_id: string;
   number?: number; // Optional - will be assigned deterministically if not provided
+  promotion_id?: string; // Optional - stamps the proof's source promotion onto the ticket
 }
 
 /**
@@ -72,11 +73,11 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket | n
     // Step 4: Insert ticket with the deterministic number
     // ON CONFLICT handles race condition (another request created ticket)
     const ticketResult = await client.query(
-      `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number, promotion_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (reward_id) DO NOTHING
        RETURNING id, user_id, proof_id, raffle_id, reward_id, number, created_at`,
-      [input.user_id, input.proof_id, input.raffle_id, input.reward_id, ticketNumber]
+      [input.user_id, input.proof_id, input.raffle_id, input.reward_id, ticketNumber, input.promotion_id ?? null]
     );
     
     let ticket = ticketResult.rows[0];
@@ -200,11 +201,11 @@ export async function createTicketWithSequence(
     
     // Step 4: Insert ticket with deterministic number
     const ticketResult = await ownClient.query(
-      `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO raffles.tickets (user_id, proof_id, raffle_id, reward_id, number, promotion_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (reward_id) DO NOTHING
        RETURNING id, user_id, proof_id, raffle_id, reward_id, number, created_at`,
-      [input.user_id, input.proof_id, input.raffle_id, input.reward_id, next_number]
+      [input.user_id, input.proof_id, input.raffle_id, input.reward_id, next_number, input.promotion_id ?? null]
     );
     
     if (!client) {

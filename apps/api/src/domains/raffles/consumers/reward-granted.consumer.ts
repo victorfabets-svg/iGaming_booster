@@ -108,11 +108,15 @@ async function processEvent(event: Event): Promise<void> {
 async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): Promise<void> {
   const { user_id, reward_id, raffle_id, partner_house_slug, amount_cents } = payload;
 
-  // Get reward with proof_id - required for ticket creation
-  const rewardResult = await client.query<{ id: string; status: string; user_id: string; proof_id: string }>(
-    `SELECT id, status, user_id, proof_id
-     FROM rewards.rewards
-     WHERE id = $1`,
+  // Get reward with proof_id + proof.promotion_id (for promotion attribution on tickets)
+  const rewardResult = await client.query<{
+    id: string; status: string; user_id: string; proof_id: string;
+    promotion_id: string | null;
+  }>(
+    `SELECT r.id, r.status, r.user_id, r.proof_id, p.promotion_id
+       FROM rewards.rewards r
+       JOIN validation.proofs p ON p.id = r.proof_id
+      WHERE r.id = $1`,
     [reward_id]
   );
 
@@ -157,6 +161,7 @@ async function handleEvent(payload: RewardGrantedPayload, client: PoolClient): P
       raffle_id,
       reward_id,
       proof_id: reward.proof_id,
+      promotion_id: reward.promotion_id ?? undefined,
     };
 
     const ticket = await createTicket(ticketInput);

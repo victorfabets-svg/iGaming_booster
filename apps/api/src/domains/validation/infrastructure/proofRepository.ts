@@ -19,11 +19,11 @@ export async function createProofInTransaction(
   // poisoned state and every subsequent query fails with 'current transaction
   // is aborted'. DO NOTHING RETURNING lets us detect the conflict cleanly.
   const inserted = await client.query(
-    `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO validation.proofs (id, user_id, file_url, hash, submitted_at, promotion_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (hash) DO NOTHING
      RETURNING id`,
-    [id, proof.user_id, fileUrl, hash, submitted_at]
+    [id, proof.user_id, fileUrl, hash, submitted_at, proof.promotion_id ?? null]
   );
 
   if (inserted.rows.length > 0) {
@@ -34,6 +34,7 @@ export async function createProofInTransaction(
         file_url: fileUrl,
         hash,
         submitted_at,
+        promotion_id: proof.promotion_id ?? null,
       },
       isNew: true,
     };
@@ -56,7 +57,7 @@ export async function createProofInTransaction(
  */
 async function findByHashWithClient(client: any, hash: string): Promise<Proof | null> {
   const result = await client.query(
-    `SELECT id, user_id, file_url, hash, submitted_at FROM validation.proofs WHERE hash = $1`,
+    `SELECT id, user_id, file_url, hash, submitted_at, promotion_id FROM validation.proofs WHERE hash = $1`,
     [hash]
   );
 

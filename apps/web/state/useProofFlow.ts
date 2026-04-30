@@ -28,7 +28,7 @@ export interface UseProofFlowReturn {
   submittedAt: string | null;
   confidenceScore: number | null;
   canRetry: boolean;
-  submit: (file: File) => Promise<void>;
+  submit: (file: File, promotionId?: string) => Promise<void>;
   retry: () => Promise<void>;
   reset: () => void;
 }
@@ -150,11 +150,14 @@ export function useProofFlow(): UseProofFlowReturn {
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
-  const submit = useCallback(async (file: File) => {
+  const lastPromotionRef = useRef<string | undefined>(undefined);
+
+  const submit = useCallback(async (file: File, promotionId?: string) => {
     lastFileRef.current = file;
+    lastPromotionRef.current = promotionId;
     dispatch({ type: 'SUBMIT_START' });
     try {
-      const res = await api.submitProof(file);
+      const res = await api.submitProof(file, promotionId);
       track('proof_submitted', { proof_id: res.proof_id, is_new: res.is_new });
       dispatch({
         type: 'SUBMIT_OK',
@@ -175,7 +178,7 @@ export function useProofFlow(): UseProofFlowReturn {
       dispatch({ type: 'RESET' });
       return;
     }
-    await submit(file);
+    await submit(file, lastPromotionRef.current);
   }, [submit]);
 
   const reset = useCallback(() => {
