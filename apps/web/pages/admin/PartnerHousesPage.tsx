@@ -14,6 +14,7 @@ export default function PartnerHousesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingHouse, setEditingHouse] = useState<CoreHouse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => { loadHouses(); }, []);
 
@@ -51,6 +52,20 @@ export default function PartnerHousesPage() {
     setShowModal(true);
   };
 
+  async function handleDelete(house: CoreHouse) {
+    const confirmed = window.confirm(
+      `Excluir definitivamente a casa "${house.name}" (${house.slug})?\n\nA ação será bloqueada se a casa estiver em uso por afiliado, OCR ou promoção.`
+    );
+    if (!confirmed) return;
+    setDeleteError(null);
+    const response = await adminApi.deleteCoreHouse(house.slug);
+    if (response.success) {
+      loadHouses();
+    } else {
+      setDeleteError(response.error?.message || 'Erro ao excluir casa.');
+    }
+  }
+
   if (status === 'loading') return <div className="empty-state">Carregando…</div>;
   if (status === 'error') return <div className="alert-box alert-error">Erro ao carregar casas.</div>;
 
@@ -69,6 +84,10 @@ export default function PartnerHousesPage() {
           + Nova Casa
         </button>
       </div>
+
+      {deleteError && (
+        <div className="alert-box alert-error mb-3">{deleteError}</div>
+      )}
 
       <div className="card">
         {houses.length === 0 ? (
@@ -102,6 +121,10 @@ export default function PartnerHousesPage() {
                   <td>
                     <button type="button" className="action-btn" onClick={() => handleEdit(house)}>
                       Editar
+                    </button>
+                    {' '}
+                    <button type="button" className="action-btn" onClick={() => handleDelete(house)}>
+                      Excluir
                     </button>
                   </td>
                 </tr>
