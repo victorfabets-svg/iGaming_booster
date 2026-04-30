@@ -12,6 +12,7 @@ export default function PartnerHousesPage() {
   const [status, setStatus] = useState<PageStatus>('loading');
   const [showModal, setShowModal] = useState(false);
   const [editingHouse, setEditingHouse] = useState<PartnerHouse | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => { loadHouses(); }, []);
 
@@ -27,16 +28,20 @@ export default function PartnerHousesPage() {
   }
 
   async function handleSave(input: PartnerHouseInput) {
+    setFormError(null);
     const response = await adminApi.createPartnerHouse(input);
     if (response.success) {
       setShowModal(false);
       setEditingHouse(null);
       loadHouses();
+    } else {
+      setFormError(response.error?.message || 'Erro ao salvar casa.');
     }
   }
 
   const handleEdit = (house: PartnerHouse) => {
     setEditingHouse(house);
+    setFormError(null);
     setShowModal(true);
   };
 
@@ -53,7 +58,7 @@ export default function PartnerHousesPage() {
         <button
           type="button"
           className="btn btn-primary"
-          onClick={() => { setEditingHouse(null); setShowModal(true); }}
+          onClick={() => { setEditingHouse(null); setFormError(null); setShowModal(true); }}
         >
           + Nova Casa
         </button>
@@ -109,8 +114,9 @@ export default function PartnerHousesPage() {
       {showModal && (
         <HouseModal
           house={editingHouse}
+          error={formError}
           onSave={handleSave}
-          onClose={() => { setShowModal(false); setEditingHouse(null); }}
+          onClose={() => { setShowModal(false); setEditingHouse(null); setFormError(null); }}
         />
       )}
     </div>
@@ -119,10 +125,12 @@ export default function PartnerHousesPage() {
 
 function HouseModal({
   house,
+  error,
   onSave,
   onClose,
 }: {
   house: PartnerHouse | null;
+  error: string | null;
   onSave: (input: PartnerHouseInput) => void;
   onClose: () => void;
 }) {
@@ -161,6 +169,7 @@ function HouseModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <h2 className="card-title mb-4">{house ? 'Editar Casa' : 'Nova Casa'}</h2>
+        {error && <div className="alert-box alert-error mb-3">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label>Slug</label>
