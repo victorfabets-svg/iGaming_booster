@@ -314,4 +314,46 @@ export async function adminCoreHousesRoutes(
       return ok(reply, { house });
     }
   );
+
+  // DELETE /admin/core-houses/:slug - Permanently remove a canonical house
+  // Refuses if any FK references exist (campaigns/promotions/partner_houses).
+  fastify.delete(
+    '/admin/core-houses/:slug',
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = request.params as { slug: string };
+
+      const existing = await getCoreHouseBySlug(params.slug);
+      if (!existing) {
+        return fail(reply, 'House not found', 'NOT_FOUND');
+      }
+
+      // Reference guard: check every FK that points to core.houses
+      const refCheck = await db.query<{ source: string; count: string }>(
+        `SELECT 'affiliate.houses' AS source, COUNT(*)::text AS count
+           FROM affiliate.houses WHERE house_id = $1
+         UNION ALL
+         SELECT 'validation.partner_houses', COUNT(*)::text
+           FROM validation.partner_houses WHERE house_id = $1
+         UNION ALL
+         SELECT 'promotions.promotions', COUNT(*)::text
+           FROM promotions.promotions WHERE house_id = $1`,
+        [existing.id]
+      );
+
+      const blockers = refCheck.rows.filter(r => parseInt(r.count, 10) > 0);
+      if (blockers.length > 0) {
+        const detail = blockers.map(b => `${b.source} (${b.count})`).join(', ');
+        return fail(
+          reply,
+          `Casa em uso por: ${detail}. Remova as referências antes de excluir.`,
+          'HOUSE_IN_USE',
+          409
+        );
+      }
+
+      await db.query(`DELETE FROM core.houses WHERE id = $1`, [existing.id]);
+      return ok(reply, { deleted: true, slug: params.slug });
+    }
+  );
 }

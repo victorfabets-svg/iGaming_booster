@@ -588,6 +588,12 @@ export const adminApi = {
     });
   },
 
+  async deleteCoreHouse(slug: string) {
+    return fetchJson<{ deleted: boolean; slug: string }>(`/admin/core-houses/${slug}`, {
+      method: 'DELETE',
+    });
+  },
+
   // -------------------------------------------------------------------------
   // Promotions
   // -------------------------------------------------------------------------
