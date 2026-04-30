@@ -18,6 +18,7 @@ import ConversionFlow from './pages/ConversionFlow';
 import AdminLayout from './components/AdminLayout';
 import DashboardPage from './pages/admin/DashboardPage';
 import PartnerHousesPage from './pages/admin/PartnerHousesPage';
+import PromotionsPage from './pages/admin/PromotionsPage';
 import PlansPage from './pages/admin/PlansPage';
 import SubscriptionsPage from './pages/admin/SubscriptionsPage';
 import TipsPage from './pages/admin/TipsPage';
@@ -106,6 +107,7 @@ function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="houses" element={<PartnerHousesPage />} />
+        <Route path="promocoes" element={<PromotionsPage />} />
         <Route path="plans" element={<PlansPage />} />
         <Route path="subscriptions" element={<SubscriptionsPage />} />
         <Route path="tips" element={<TipsPage />} />

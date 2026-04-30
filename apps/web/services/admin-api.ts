@@ -566,4 +566,162 @@ export const adminApi = {
       body: JSON.stringify({ role }),
     });
   },
+
+  // -------------------------------------------------------------------------
+  // Core Houses (canonical)
+  // -------------------------------------------------------------------------
+  async listCoreHouses() {
+    return fetchJson<{ houses: CoreHouse[] }>('/admin/core-houses');
+  },
+
+  async createCoreHouse(input: CoreHouseCreateInput) {
+    return fetchJson<{ house: CoreHouse }>('/admin/core-houses', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateCoreHouse(slug: string, input: CoreHouseUpdateInput) {
+    return fetchJson<{ house: CoreHouse }>(`/admin/core-houses/${slug}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // Promotions
+  // -------------------------------------------------------------------------
+  async listPromotions(filters?: { house?: string; active?: boolean }) {
+    const params = new URLSearchParams();
+    if (filters?.house) params.set('house', filters.house);
+    if (filters?.active !== undefined) params.set('active', String(filters.active));
+    const query = params.toString();
+    return fetchJson<{ promotions: Promotion[] }>(`/admin/promotions${query ? `?${query}` : ''}`);
+  },
+
+  async createPromotion(input: PromotionCreateInput) {
+    return fetchJson<{ promotion: Promotion; tiers: PromotionTier[]; repescagem_source_slugs: string[] }>('/admin/promotions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updatePromotion(slug: string, input: PromotionUpdateInput) {
+    return fetchJson<{ promotion: Promotion; tiers: PromotionTier[]; repescagem_source_slugs: string[] }>(`/admin/promotions/${slug}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async applyRepescagem(slug: string) {
+    return fetchJson<{ invitations_created: number; applied_at: string }>(`/admin/promotions/${slug}/apply-repescagem`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    });
+  },
+
+  async listRaffles(filters?: { active?: boolean; without_promotion?: boolean }) {
+    const params = new URLSearchParams();
+    if (filters?.active !== undefined) params.set('active', String(filters.active));
+    if (filters?.without_promotion !== undefined) params.set('without_promotion', String(filters.without_promotion));
+    const query = params.toString();
+    return fetchJson<{ raffles: RaffleSummary[] }>(`/admin/raffles${query ? `?${query}` : ''}`);
+  },
 };
+
+// ============================================================================
+// Types - Core Houses & Promotions
+// ============================================================================
+
+export interface CoreHouse {
+  id: string;
+  slug: string;
+  name: string;
+  country: string;
+  currency: string;
+  deposit_url: string;
+  signup_url: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CoreHouseCreateInput {
+  slug: string;
+  name: string;
+  country: string;
+  currency: string;
+  deposit_url: string;
+  signup_url?: string;
+  active?: boolean;
+}
+
+export interface CoreHouseUpdateInput {
+  name?: string;
+  country?: string;
+  currency?: string;
+  deposit_url?: string;
+  signup_url?: string;
+  active?: boolean;
+}
+
+export interface PromotionTier {
+  min_deposit_cents: number;
+  tickets: number;
+}
+
+export interface Promotion {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  creative_url: string | null;
+  house_id: string;
+  house_slug: string;
+  house_name: string;
+  raffle_id: string;
+  starts_at: string;
+  ends_at: string;
+  draw_at: string;
+  repescagem: boolean;
+  repescagem_applied_at: string | null;
+  active: boolean;
+  tiers: PromotionTier[];
+  repescagem_source_slugs: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromotionCreateInput {
+  slug: string;
+  name: string;
+  description?: string;
+  creative_url?: string;
+  house_slug: string;
+  raffle_id: string;
+  starts_at: string;
+  ends_at: string;
+  draw_at: string;
+  tiers: PromotionTier[];
+  repescagem_source_slugs?: string[];
+  active?: boolean;
+}
+
+export interface PromotionUpdateInput {
+  name?: string;
+  description?: string;
+  creative_url?: string;
+  ends_at?: string;
+  draw_at?: string;
+  active?: boolean;
+  tiers?: PromotionTier[];
+  repescagem_source_slugs?: string[];
+}
+
+export interface RaffleSummary {
+  id: string;
+  name: string;
+  prize: string;
+  draw_date: string;
+  status: string;
+}

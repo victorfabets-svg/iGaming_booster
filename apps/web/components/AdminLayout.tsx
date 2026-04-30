@@ -11,6 +11,7 @@ interface NavItem { path: string; label: string; }
 const navItems: NavItem[] = [
   { path: '/admin', label: 'Dashboard' },
   { path: '/admin/houses', label: 'Casas Parceiras' },
+  { path: '/admin/promocoes', label: 'Promoções' },
   { path: '/admin/plans', label: 'Planos' },
   { path: '/admin/subscriptions', label: 'Assinaturas' },
   { path: '/admin/tips', label: 'Tips' },

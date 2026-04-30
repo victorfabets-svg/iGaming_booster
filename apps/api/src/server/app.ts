@@ -27,6 +27,8 @@ import { adminIntegrationsRoutes } from './routes/admin-integrations';
 import { meRoutes } from './routes/me';
 import { adminEmailTemplatesRoutes } from './routes/admin-email-templates';
 import { adminAffiliateRoutes } from './routes/admin-affiliate';
+import { adminCoreHousesRoutes } from './routes/admin-core-houses';
+import { adminPromotionsRoutes } from './routes/admin-promotions';
 import { affiliateMeRoutes } from './routes/affiliate-me';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
@@ -181,6 +183,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(adminEmailTemplatesRoutes);
   // Admin affiliate routes (houses + campaigns CRUD; admin role required)
   app.register(adminAffiliateRoutes);
+  // Admin core houses routes (canonical houses CRUD; admin role required)
+  app.register(adminCoreHousesRoutes);
+  // Admin promotions routes (promotions + tiers + repescagem; admin role required)
+  app.register(adminPromotionsRoutes);
   // Admin user routes (user listing and role management)
   app.register(adminUserRoutes);
   // Affiliate "me" routes (campaign management and funnel)
