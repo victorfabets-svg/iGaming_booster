@@ -178,28 +178,31 @@ function RoleModal({
   const [confirmRole, setConfirmRole] = useState('');
   const [modalError, setModalError] = useState<string | null>(null);
 
+  const normalize = (s: string) =>
+    s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
-    if (confirmRole !== user.role) {
-      setModalError('Confirmação digitada diferente da role atual.');
+    if (selectedRole === user.role) {
+      setModalError('A nova role deve ser diferente da atual.');
       return;
     }
-    if (confirmRole === selectedRole) {
-      setModalError('A nova role deve ser diferente da atual.');
+    if (normalize(confirmRole) !== normalize(getRoleLabel(user.role))) {
+      setModalError('Confirmação digitada diferente da role atual.');
       return;
     }
     onSave(user.id, selectedRole);
     onClose();
   };
 
-  const getRoleLabel = (role: string) => {
+  function getRoleLabel(role: string) {
     switch (role) {
       case 'admin': return 'Admin';
       case 'affiliate': return 'Afiliado';
       default: return 'Usuário';
     }
-  };
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
