@@ -273,6 +273,27 @@ function PromotionModal({
   });
 
   const [localError, setLocalError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleCreativeUpload = async (file: File | null) => {
+    if (!file) return;
+    setLocalError(null);
+    setUploading(true);
+    try {
+      const res = await adminApi.uploadPromotionCreative(file);
+      if (!res.success || !res.data) {
+        setLocalError(res.error?.message || 'Falha no upload.');
+        return;
+      }
+      setForm(f => ({
+        ...f,
+        creative_url: res.data!.url,
+        creative_type: res.data!.creative_type,
+      }));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -365,6 +386,37 @@ function PromotionModal({
             <textarea className="input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="field">
+            <label>Criatividade (imagem ou vídeo)</label>
+            <input
+              type="file"
+              className="input"
+              accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+              disabled={uploading}
+              onChange={e => handleCreativeUpload(e.target.files?.[0] ?? null)}
+            />
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              JPG, PNG, WEBP, GIF, MP4, WEBM ou MOV — até 10MB. {uploading ? 'Enviando…' : 'O arquivo é enviado direto para o R2.'}
+            </p>
+            {form.creative_url && (
+              <div style={{ marginTop: 8 }}>
+                {form.creative_type === 'video' ? (
+                  <video src={form.creative_url} muted playsInline controls style={{ maxWidth: 240, borderRadius: 6 }} />
+                ) : (
+                  <img src={form.creative_url} alt="Pré-visualização" style={{ maxWidth: 240, borderRadius: 6 }} />
+                )}
+                <div className="text-muted text-xs mono" style={{ wordBreak: 'break-all', marginTop: 4 }}>{form.creative_url}</div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ marginTop: 4 }}
+                  onClick={() => setForm(f => ({ ...f, creative_url: '' }))}
+                >
+                  Remover
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="field">
             <label>Tipo da Criatividade</label>
             <select
               className="input"
@@ -374,16 +426,22 @@ function PromotionModal({
               <option value="image">Imagem</option>
               <option value="video">Vídeo (sem áudio)</option>
             </select>
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              Detectado automaticamente no upload. Ajuste manualmente apenas se usar URL externa.
+            </p>
           </div>
           <div className="field">
-            <label>URL da Criatividade</label>
+            <label>URL externa da Criatividade (opcional)</label>
             <input
               className="input"
               type="url"
-              placeholder={form.creative_type === 'video' ? 'https://...mp4' : 'https://...jpg'}
+              placeholder="https://...mp4 ou https://...jpg (apenas se não for usar upload)"
               value={form.creative_url}
               onChange={e => setForm({ ...form, creative_url: e.target.value })}
             />
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              Use apenas se já hospedar o criativo em CDN próprio (Cloudflare, Vercel Blob, etc). O upload acima preenche este campo automaticamente.
+            </p>
           </div>
           <div className="field">
             <label>Texto do Botão (CTA)</label>
@@ -547,7 +605,9 @@ function PromotionModal({
             </label>
           </div>
           <div className="flex gap-2 mt-4">
-            <button type="submit" className="btn btn-primary">Salvar</button>
+            <button type="submit" className="btn btn-primary" disabled={uploading}>
+              {uploading ? 'Enviando arquivo…' : 'Salvar'}
+            </button>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
           </div>
         </form>

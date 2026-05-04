@@ -10,6 +10,22 @@ import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import { ok, fail } from '../utils/response';
 import { db } from '@shared/database/connection';
 import { randomUUID } from 'crypto';
+import { getStorageService } from '../../infrastructure/storage';
+
+// MIME → extension map for promotion creatives. The key returned by R2
+// is generated server-side (uuid + ext from this map) — we never trust the
+// user-supplied filename for the extension.
+const CREATIVE_MIME_TO_EXT: Record<string, { ext: string; type: 'image' | 'video' }> = {
+  'image/jpeg': { ext: '.jpg', type: 'image' },
+  'image/png': { ext: '.png', type: 'image' },
+  'image/webp': { ext: '.webp', type: 'image' },
+  'image/gif': { ext: '.gif', type: 'image' },
+  'video/mp4': { ext: '.mp4', type: 'video' },
+  'video/webm': { ext: '.webm', type: 'video' },
+  'video/quicktime': { ext: '.mov', type: 'video' },
+};
+
+const CREATIVE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB — matches multipart global limit
 
 // Input validation constants
 const SLUG_REGEX = /^[a-z0-9-]+$/;
@@ -772,6 +788,72 @@ export async function adminPromotionsRoutes(
         return fail(reply, 'Promotion not found', 'NOT_FOUND');
       }
       return ok(reply, { promotion: promotion.promotion, tiers: promotion.tiers, repescagem_source_slugs: promotion.repescagem_source_slugs });
+    }
+  );
+
+  // POST /admin/promotions/upload-creative — accepts a multipart `file`,
+  // uploads it to R2 under `promotions/creatives/<uuid>.<ext>`, and returns
+  // a relative path (`/public/creatives/<key>`) the admin UI prepends with
+  // VITE_API_URL before storing in promotions.creative_url. The key is
+  // generated server-side; the user-supplied filename is never trusted for
+  // the extension. Allowlist: image/jpeg|png|webp|gif, video/mp4|webm|quicktime.
+  fastify.post(
+    '/admin/promotions/upload-creative',
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const parts = request.parts();
+
+      let fileBuffer: Buffer | null = null;
+      let mimetype: string | null = null;
+
+      try {
+        for await (const part of parts) {
+          if (part.type === 'file' && part.fieldname === 'file') {
+            fileBuffer = await part.toBuffer();
+            mimetype = part.mimetype || null;
+          }
+        }
+      } catch (err) {
+        // @fastify/multipart throws RequestFileTooLargeError when limit is hit.
+        const msg = err instanceof Error ? err.message : 'upload failed';
+        return fail(reply, msg, 'UPLOAD_ERROR');
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return fail(reply, 'Arquivo ausente ou vazio.', 'VALIDATION_ERROR');
+      }
+      if (fileBuffer.length > CREATIVE_MAX_BYTES) {
+        return fail(reply, 'Arquivo grande demais — máximo 10MB.', 'VALIDATION_ERROR');
+      }
+
+      const meta = mimetype ? CREATIVE_MIME_TO_EXT[mimetype] : undefined;
+      if (!meta) {
+        return fail(
+          reply,
+          'Tipo não suportado. Use JPG, PNG, WEBP, GIF, MP4, WEBM ou MOV.',
+          'VALIDATION_ERROR'
+        );
+      }
+
+      const key = `promotions/creatives/${randomUUID()}${meta.ext}`;
+
+      try {
+        const storage = getStorageService();
+        await storage.upload(fileBuffer, key, mimetype!);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'storage error';
+        return fail(reply, msg, 'STORAGE_ERROR');
+      }
+
+      return ok(reply, {
+        key,
+        // Relative path — frontend prepends VITE_API_URL to get an absolute
+        // URL it can store in creative_url and render in <img>/<video>.
+        url: `/public/creatives/${key}`,
+        creative_type: meta.type,
+        content_type: mimetype,
+        size_bytes: fileBuffer.length,
+      });
     }
   );
 
