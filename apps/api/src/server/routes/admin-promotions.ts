@@ -43,7 +43,7 @@ interface RaffleRow {
   id: string;
   name: string;
   prize: string;
-  draw_date: Date;
+  end_at: Date;
   status: string;
 }
 
@@ -68,8 +68,11 @@ function validatePromotionInput(input: unknown, isUpdate = false): string | null
     if (typeof body.house_slug !== 'string' || !body.house_slug) {
       return 'house_slug is required';
     }
-    if (typeof body.raffle_id !== 'string' || !body.raffle_id) {
-      return 'raffle_id is required';
+    if (typeof body.prize !== 'string' || !body.prize) {
+      return 'prize is required';
+    }
+    if (typeof body.total_numbers !== 'number' || !Number.isInteger(body.total_numbers) || body.total_numbers < 1) {
+      return 'total_numbers must be a positive integer';
     }
     if (typeof body.starts_at !== 'string' || !body.starts_at) {
       return 'starts_at is required';
@@ -156,27 +159,30 @@ function validatePromotionInput(input: unknown, isUpdate = false): string | null
 }
 
 /**
- * GET /admin/raffles - List all raffles (for selection)
+ * GET /admin/raffles - List raffles (for legacy compatibility).
+ * Promotions create their own raffle inline now, so this is mostly
+ * informational; kept so existing tooling/scripts don't break.
  */
 async function listRaffles(filters?: { active?: boolean; without_promotion?: boolean }): Promise<RaffleRow[]> {
-  let sql = `SELECT r.id, r.name, r.prize, r.draw_date, r.status FROM raffles.raffles r`;
+  let sql = `SELECT r.id, r.name, r.prize, r.end_at, r.status FROM raffles.raffles r`;
   const params: unknown[] = [];
-  let where = '';
+  const where: string[] = [];
 
   if (filters?.without_promotion) {
-    sql = `SELECT r.id, r.name, r.prize, r.draw_date, r.status
-            FROM raffles.raffles r
-            WHERE NOT EXISTS (
-              SELECT 1 FROM promotions.promotions p WHERE p.raffle_id = r.id
-            )`;
+    where.push(`NOT EXISTS (SELECT 1 FROM promotions.promotions p WHERE p.raffle_id = r.id)`);
   }
 
-  if (filters?.active !== undefined) {
-    where = params.length === 0 ? ' WHERE r.active = $1' : ' AND r.active = $1';
-    params.push(filters.active);
+  if (filters?.active === true) {
+    where.push(`r.status = 'active'`);
+  } else if (filters?.active === false) {
+    where.push(`r.status <> 'active'`);
   }
 
-  const result = await db.query(sql + (where ? where : ''), params);
+  if (where.length > 0) {
+    sql += ' WHERE ' + where.join(' AND ');
+  }
+
+  const result = await db.query(sql, params);
   return result.rows as RaffleRow[];
 }
 
@@ -307,7 +313,10 @@ async function getPromotionById(id: string): Promise<{
 }
 
 /**
- * CREATE a promotion with tiers and sources (in transaction)
+ * CREATE a promotion with tiers and sources (in transaction).
+ * Also creates the underlying raffle inline (1 promotion : 1 raffle) —
+ * raffle.name = promotion.name, raffle window = promotion window,
+ * raffle.prize and raffle.total_numbers come from input.
  */
 async function createPromotion(input: {
   slug: string;
@@ -315,7 +324,8 @@ async function createPromotion(input: {
   description?: string;
   creative_url?: string;
   house_slug: string;
-  raffle_id: string;
+  prize: string;
+  total_numbers: number;
   starts_at: string;
   ends_at: string;
   draw_at: string;
@@ -329,12 +339,6 @@ async function createPromotion(input: {
     throw new Error('NOT_FOUND');
   }
   const house_id = houseResult.rows[0].id;
-
-  // Validate raffle exists
-  const raffleResult = await db.query(`SELECT id FROM raffles.raffles WHERE id = $1`, [input.raffle_id]);
-  if (raffleResult.rows.length === 0) {
-    throw new Error('RAFFLE_NOT_FOUND');
-  }
 
   // Resolve source slugs to promotion IDs
   const sourceIds: string[] = [];
@@ -357,6 +361,15 @@ async function createPromotion(input: {
   try {
     await client.query('BEGIN');
 
+    // Create the raffle that backs this promotion (1:1).
+    const raffleResult = await client.query<{ id: string }>(
+      `INSERT INTO raffles.raffles (name, prize, total_numbers, start_at, end_at, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')
+       RETURNING id`,
+      [input.name, input.prize, input.total_numbers, startsAt, endsAt]
+    );
+    const raffleId = raffleResult.rows[0].id;
+
     // Insert promotion
     const promoResult = await client.query(
       `INSERT INTO promotions.promotions (slug, name, description, creative_url, house_id, raffle_id, starts_at, ends_at, draw_at, repescagem, active)
@@ -368,7 +381,7 @@ async function createPromotion(input: {
         input.description || null,
         input.creative_url || null,
         house_id,
-        input.raffle_id,
+        raffleId,
         startsAt,
         endsAt,
         drawAt,
@@ -721,7 +734,8 @@ export async function adminPromotionsRoutes(
         description?: string;
         creative_url?: string;
         house_slug: string;
-        raffle_id: string;
+        prize: string;
+        total_numbers: number;
         starts_at: string;
         ends_at: string;
         draw_at: string;
@@ -752,7 +766,6 @@ export async function adminPromotionsRoutes(
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         if (msg === 'NOT_FOUND') return fail(reply, 'House not found', 'NOT_FOUND');
-        if (msg === 'RAFFLE_NOT_FOUND') return fail(reply, 'Raffle not found', 'NOT_FOUND');
         if (msg === 'SOURCE_NOT_FOUND') return fail(reply, 'Source promotion not found', 'NOT_FOUND');
         return fail(reply, msg, 'CREATE_ERROR');
       }

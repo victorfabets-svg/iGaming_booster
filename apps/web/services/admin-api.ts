@@ -712,7 +712,8 @@ export interface PromotionCreateInput {
   description?: string;
   creative_url?: string;
   house_slug: string;
-  raffle_id: string;
+  prize: string;
+  total_numbers: number;
   starts_at: string;
   ends_at: string;
   draw_at: string;
@@ -736,6 +737,6 @@ export interface RaffleSummary {
   id: string;
   name: string;
   prize: string;
-  draw_date: string;
+  end_at: string;
   status: string;
 }

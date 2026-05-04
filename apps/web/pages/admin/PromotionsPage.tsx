@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { adminApi, Promotion, PromotionCreateInput, PromotionUpdateInput, CoreHouse, RaffleSummary, PromotionTier } from '../../services/admin-api';
+import { adminApi, Promotion, PromotionCreateInput, PromotionUpdateInput, CoreHouse, PromotionTier } from '../../services/admin-api';
 
 type PageStatus = 'loading' | 'success' | 'error';
 
@@ -258,7 +258,8 @@ function PromotionModal({
     description: promotion?.description || '',
     creative_url: promotion?.creative_url || '',
     house_slug: promotion?.house_slug || (houses.length > 0 ? houses[0].slug : ''),
-    raffle_id: promotion?.raffle_id || '',
+    prize: '',
+    total_numbers: 1000,
     starts_at: promotion?.starts_at ? new Date(promotion.starts_at).toISOString().slice(0, 16) : '',
     ends_at: promotion?.ends_at ? new Date(promotion.ends_at).toISOString().slice(0, 16) : '',
     draw_at: promotion?.draw_at ? new Date(promotion.draw_at).toISOString().slice(0, 16) : '',
@@ -267,20 +268,6 @@ function PromotionModal({
     repescagem_enabled: promotion?.repescagem || false,
     active: promotion?.active ?? true,
   });
-  const [raffles, setRaffles] = useState<RaffleSummary[]>([]);
-  const [rafflesLoading, setRafflesLoading] = useState(!promotion);
-
-  useEffect(() => {
-    if (!promotion) {
-      setRafflesLoading(true);
-      adminApi.listRaffles({ without_promotion: true }).then((res) => {
-        if (res.success && res.data) {
-          setRaffles(res.data.raffles);
-        }
-        setRafflesLoading(false);
-      });
-    }
-  }, [promotion]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,12 +275,11 @@ function PromotionModal({
     const [endsDate, endsTime] = form.ends_at.split('T');
     const [drawDate, drawTime] = form.draw_at.split('T');
 
-    const input: PromotionCreateInput | PromotionUpdateInput = {
+    const baseInput = {
       name: form.name,
       description: form.description || undefined,
       creative_url: form.creative_url || undefined,
       house_slug: form.house_slug,
-      raffle_id: form.raffle_id,
       starts_at: new Date(`${startsDate}T${startsTime}`).toISOString(),
       ends_at: new Date(`${endsDate}T${endsTime}`).toISOString(),
       draw_at: new Date(`${drawDate}T${drawTime}`).toISOString(),
@@ -303,9 +289,16 @@ function PromotionModal({
     };
 
     if (promotion) {
-      onSave(input);
+      // Edit: raffle is immutable, can't change prize/total_numbers
+      onSave(baseInput as PromotionUpdateInput);
     } else {
-      onSave({ ...input, slug: form.slug });
+      const createInput: PromotionCreateInput = {
+        ...baseInput,
+        slug: form.slug,
+        prize: form.prize,
+        total_numbers: form.total_numbers,
+      };
+      onSave(createInput);
     }
   };
 
@@ -355,15 +348,33 @@ function PromotionModal({
               {houses.map(h => <option key={h.id} value={h.slug}>{h.name}</option>)}
             </select>
           </div>
-          <div className="field">
-            <label>Raffle</label>
-            {rafflesLoading ? <div className="empty-state">Carregando...</div> : (
-              <select className="input" value={form.raffle_id} onChange={e => setForm({ ...form, raffle_id: e.target.value })} required>
-                <option value="">Selecione...</option>
-                {raffles.map(r => <option key={r.id} value={r.id}>{r.name} ({r.prize})</option>)}
-              </select>
-            )}
-          </div>
+          {!promotion && (
+            <>
+              <div className="field">
+                <label>Prêmio</label>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Ex: Hilux SRX 2026 Zero KM"
+                  value={form.prize}
+                  onChange={e => setForm({ ...form, prize: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Total de Cotas</label>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={form.total_numbers}
+                  onChange={e => setForm({ ...form, total_numbers: Math.max(1, parseInt(e.target.value, 10) || 0) })}
+                  required
+                />
+              </div>
+            </>
+          )}
           <div className="field">
             <label>Início</label>
             <input className="input" type="datetime-local" value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} required />
