@@ -2089,19 +2089,29 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   margin-top: 16px;
   padding: 16px 0 0;
   border-top: 1px solid var(--color-border-subtle);
-  display: grid;
-  grid-template-columns: minmax(0, 200px) 1fr;
+  display: flex;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 .landing-house-promo-block:first-child {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
 }
+.landing-house-promo-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .landing-house-promo-creative {
-  width: 100%;
+  flex-shrink: 0;
+  /* Width derives from stretched height × 4/3 — keeps the 4:3 ratio while
+     filling the full card height. No explicit width needed. */
   aspect-ratio: 4 / 3;
+  align-self: stretch;
+  height: auto;
   border-radius: 8px;
   overflow: hidden;
   background: var(--color-background-tertiary);
@@ -2111,6 +2121,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   display: flex;
   align-items: center;
   justify-content: center;
+  max-width: 360px;
 }
 .landing-house-promo-creative img,
 .landing-house-promo-creative video,
@@ -2118,12 +2129,6 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.landing-house-promo-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
 }
 .landing-house-promo-title {
   width: 100%;
@@ -2148,7 +2153,8 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   white-space: pre-line;
 }
 @media (max-width: 640px) {
-  .landing-house-promo-block { grid-template-columns: 1fr; }
+  .landing-house-promo-block { flex-direction: column; }
+  .landing-house-promo-creative { width: 100%; max-width: none; }
 }
 
 /* Tier grid embedded inside the hero featured card. Uses smaller min-width
