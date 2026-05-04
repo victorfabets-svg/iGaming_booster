@@ -248,6 +248,99 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // Promotion deposit redirect: /r/p/:promo_slug/deposit
+  // Same tracking as /r/p/:slug (records click + sets cookie) but the
+  // destination is the partner house's deposit_url instead of /signup.
+  // Used by the landing's "Fazer depósito" button so the operator can
+  // attribute conversions even when the user goes straight to deposit.
+  fastify.get<{ Params: { promo_slug: string } }>(
+    '/r/p/:promo_slug/deposit',
+    async (request: FastifyRequest<{ Params: { promo_slug: string } }>, reply: FastifyReply) => {
+      const { promo_slug } = request.params;
+
+      const ip = request.ip
+        || (request.headers['x-forwarded-for'] as string)
+        || 'unknown';
+      const userAgent = request.headers['user-agent'];
+      const country = request.headers['cf-ipcountry'] as string
+        || request.headers['x-vercel-ip-country'] as string
+        || null;
+
+      const utmSource = request.query['utm_source'] as string | undefined;
+      const utmMedium = request.query['utm_medium'] as string | undefined;
+      const utmCampaign = request.query['utm_campaign'] as string | undefined;
+      const utmTerm = request.query['utm_term'] as string | undefined;
+      const utmContent = request.query['utm_content'] as string | undefined;
+
+      // Resolve promo → core.house deposit_url + matching affiliate.house.
+      const promoResult = await db.query<{
+        deposit_url: string;
+        affiliate_house_id: string | null;
+      }>(
+        `SELECT
+           h.deposit_url,
+           ah.id AS affiliate_house_id
+         FROM promotions.promotions p
+         JOIN core.houses h ON h.id = p.house_id
+         LEFT JOIN affiliate.houses ah ON ah.house_id = p.house_id AND ah.active = true
+         WHERE p.slug = $1
+           AND p.active = true
+           AND p.starts_at <= NOW()
+           AND p.ends_at >= NOW()
+         LIMIT 1`,
+        [promo_slug]
+      );
+
+      const webBase = process.env.WEB_BASE_URL || 'http://localhost:5173';
+
+      if (promoResult.rows.length === 0) {
+        // Promo invalid — bounce to landing rather than dead-end.
+        return reply.status(302).header('Location', webBase).send();
+      }
+
+      const { deposit_url: depositUrl, affiliate_house_id } = promoResult.rows[0];
+
+      // Try to record click (best-effort). If the house has no affiliate
+      // entry, we still redirect — just without tracking.
+      if (affiliate_house_id) {
+        const clickId = randomUUID();
+        try {
+          await db.query(
+            `INSERT INTO affiliate.clicks (
+              house_id, campaign_id, click_id, ip, user_agent, ref_cookie,
+              utm_source, utm_medium, utm_campaign, utm_term, utm_content, country
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [
+              affiliate_house_id, null, clickId, ip, userAgent, null,
+              utmSource, utmMedium, utmCampaign, utmTerm, utmContent, country,
+            ]
+          );
+
+          const isProduction = process.env.NODE_ENV === 'production';
+          reply.setCookie('tipster_cid', clickId, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 90 * 24 * 60 * 60,
+          });
+        } catch (err) {
+          console.error('[affiliate] promo deposit click insert failed:', err);
+        }
+      }
+
+      // Forward UTM params to the house URL.
+      const dest = new URL(depositUrl);
+      if (utmSource) dest.searchParams.set('utm_source', utmSource);
+      if (utmMedium) dest.searchParams.set('utm_medium', utmMedium);
+      if (utmCampaign) dest.searchParams.set('utm_campaign', utmCampaign);
+      if (utmTerm) dest.searchParams.set('utm_term', utmTerm);
+      if (utmContent) dest.searchParams.set('utm_content', utmContent);
+
+      return reply.status(302).header('Location', dest.toString()).send();
+    }
+  );
+
   // Legacy affiliate redirect: /r/:house_slug/:campaign_slug?
   // Registers click, sets cookie, redirects to house base URL
   fastify.get<{ Params: ClickParams }>(
