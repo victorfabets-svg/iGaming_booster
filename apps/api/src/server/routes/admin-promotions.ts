@@ -29,6 +29,7 @@ interface PromotionRow {
   repescagem: boolean;
   repescagem_applied_at: Date | null;
   active: boolean;
+  is_featured: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -186,7 +187,7 @@ async function listPromotions(filters?: { house?: string; active?: boolean }): P
   let sql = `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
                     p.house_id, h.slug as house_slug, h.name as house_name,
                     p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
-                    p.repescagem, p.repescagem_applied_at, p.active,
+                    p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
                     p.created_at, p.updated_at
                FROM promotions.promotions p
                JOIN core.houses h ON h.id = p.house_id`;
@@ -224,7 +225,7 @@ async function getPromotionBySlug(slug: string): Promise<{
     `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
             p.house_id, h.slug as house_slug, h.name as house_name,
             p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
-            p.repescagem, p.repescagem_applied_at, p.active,
+            p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
             p.created_at, p.updated_at
        FROM promotions.promotions p
        JOIN core.houses h ON h.id = p.house_id
@@ -273,7 +274,7 @@ async function getPromotionById(id: string): Promise<{
     `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
             p.house_id, h.slug as house_slug, h.name as house_name,
             p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
-            p.repescagem, p.repescagem_applied_at, p.active,
+            p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
             p.created_at, p.updated_at
        FROM promotions.promotions p
        JOIN core.houses h ON h.id = p.house_id
@@ -796,6 +797,78 @@ export async function adminPromotionsRoutes(
         }
         return fail(reply, msg, 'UPDATE_ERROR');
       }
+    }
+  );
+
+  // POST /admin/promotions/:slug/feature - Mark this promotion as featured on
+  // the public landing. At most one featured at any time (DB partial UNIQUE).
+  // Body: { featured: boolean }. featured=true clears the previous featured
+  // and sets this one in a transaction; featured=false just clears this one.
+  fastify.post(
+    '/admin/promotions/:slug/feature',
+    { preHandler: [authMiddleware, requireAdmin(fastify)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = request.params as { slug: string };
+      const body = request.body as { featured?: boolean };
+
+      if (typeof body.featured !== 'boolean') {
+        return fail(reply, 'featured must be a boolean', 'VALIDATION_ERROR');
+      }
+
+      // Confirm the promotion exists.
+      const exists = await db.query<{ id: string }>(
+        `SELECT id FROM promotions.promotions WHERE slug = $1`,
+        [params.slug]
+      );
+      if (exists.rows.length === 0) {
+        return fail(reply, 'Promotion not found', 'NOT_FOUND');
+      }
+
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        if (body.featured) {
+          // Clear any existing featured first to satisfy the partial UNIQUE.
+          await client.query(
+            `UPDATE promotions.promotions
+                SET is_featured = FALSE, updated_at = NOW()
+              WHERE is_featured = TRUE AND slug <> $1`,
+            [params.slug]
+          );
+          await client.query(
+            `UPDATE promotions.promotions
+                SET is_featured = TRUE, updated_at = NOW()
+              WHERE slug = $1`,
+            [params.slug]
+          );
+        } else {
+          await client.query(
+            `UPDATE promotions.promotions
+                SET is_featured = FALSE, updated_at = NOW()
+              WHERE slug = $1`,
+            [params.slug]
+          );
+        }
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        return fail(reply, msg, 'FEATURE_ERROR');
+      } finally {
+        client.release();
+      }
+
+      const result = await getPromotionBySlug(params.slug);
+      if (!result) {
+        return fail(reply, 'Promotion not found', 'NOT_FOUND');
+      }
+      return ok(reply, {
+        promotion: result.promotion,
+        tiers: result.tiers,
+        repescagem_source_slugs: result.repescagem_source_slugs,
+      });
     }
   );
 

@@ -18,6 +18,8 @@ export default function PromotionsPage() {
   const [repescagemTarget, setRepescagemTarget] = useState<Promotion | null>(null);
   const [repescagemLoading, setRepescagemLoading] = useState(false);
   const [repescagemResult, setRepescagemResult] = useState<{ count: number; date: string } | null>(null);
+  const [featurePending, setFeaturePending] = useState<string | null>(null);
+  const [featureConfirm, setFeatureConfirm] = useState<{ target: Promotion; current: Promotion } | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -57,6 +59,34 @@ export default function PromotionsPage() {
     setEditingPromotion(promo);
     setFormError(null);
     setShowModal(true);
+  };
+
+  const handleToggleFeatured = (promo: Promotion) => {
+    if (promo.is_featured) {
+      void applyFeatured(promo.slug, false);
+      return;
+    }
+    const current = promotions.find(p => p.is_featured && p.id !== promo.id);
+    if (current) {
+      setFeatureConfirm({ target: promo, current });
+      return;
+    }
+    void applyFeatured(promo.slug, true);
+  };
+
+  const applyFeatured = async (slug: string, featured: boolean) => {
+    setFeaturePending(slug);
+    try {
+      const res = await adminApi.setPromotionFeatured(slug, featured);
+      if (res.success) {
+        setFeatureConfirm(null);
+        loadData();
+      } else {
+        setFormError(res.error?.message || 'Erro ao alterar destaque.');
+      }
+    } finally {
+      setFeaturePending(null);
+    }
   };
 
   const handleApplyRepescagem = async (promo: Promotion) => {
@@ -109,6 +139,7 @@ export default function PromotionsPage() {
                 <th>Repescagem</th>
                 <th>Tiers</th>
                 <th>Status</th>
+                <th>Destaque</th>
                 <th>Ações</th>
               </tr>
             </thead>
@@ -139,6 +170,17 @@ export default function PromotionsPage() {
                     </span>
                   </td>
                   <td>
+                    <button
+                      type="button"
+                      className={`action-btn ${promo.is_featured ? 'is-featured' : ''}`}
+                      disabled={featurePending === promo.slug || (!promo.active && !promo.is_featured)}
+                      title={promo.is_featured ? 'Promoção em destaque na landing' : !promo.active ? 'Ative a promoção antes de destacar' : 'Marcar como destaque'}
+                      onClick={() => handleToggleFeatured(promo)}
+                    >
+                      {promo.is_featured ? '★ destacada' : '☆ destacar'}
+                    </button>
+                  </td>
+                  <td>
                     <button type="button" className="action-btn" onClick={() => handleEdit(promo)}>Editar</button>
                     {promo.repescagem && !promo.repescagem_applied_at && (
                       <button type="button" className="action-btn" onClick={() => handleApplyRepescagem(promo)}>Aplicar repescagem</button>
@@ -159,6 +201,29 @@ export default function PromotionsPage() {
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditingPromotion(null); setFormError(null); }}
         />
+      )}
+
+      {featureConfirm && (
+        <div className="modal-overlay" onClick={() => setFeatureConfirm(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 className="card-title mb-4">Substituir promoção em destaque?</h2>
+            <p className="mb-4">
+              <strong>{featureConfirm.current.name}</strong> está atualmente em destaque na landing.
+              Marcar <strong>{featureConfirm.target.name}</strong> vai removê-la imediatamente.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={featurePending !== null}
+                onClick={() => applyFeatured(featureConfirm.target.slug, true)}
+              >
+                {featurePending ? 'Aplicando…' : 'Substituir'}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setFeatureConfirm(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showRepescagemModal && (

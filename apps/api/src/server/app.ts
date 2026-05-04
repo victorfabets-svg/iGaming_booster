@@ -31,6 +31,7 @@ import { adminCoreHousesRoutes } from './routes/admin-core-houses';
 import { adminPromotionsRoutes } from './routes/admin-promotions';
 import { affiliateMeRoutes } from './routes/affiliate-me';
 import { mePromotionsRoutes } from './routes/me-promotions';
+import { publicPromotionsRoutes } from './routes/public-promotions';
 import { cleanupIdempotency } from './utils/idempotency';
 import { requestIdMiddleware } from './middleware/request-id';
 import { mapError } from './utils/error-mapper';
@@ -194,6 +195,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(affiliateMeRoutes);
   // User /me promotions routes (active promos + repescagem invitations)
   app.register(mePromotionsRoutes);
+  // Public promotions (landing) — no auth, cached
+  app.register(publicPromotionsRoutes);
 
   // Global error handler - catches all unhandled errors and logs with context
   app.setErrorHandler((err, request, reply) => {
