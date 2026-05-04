@@ -17,6 +17,9 @@ interface FeaturedRow {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
+  cta_label: string | null;
+  cta_url: string | null;
   house_slug: string;
   house_name: string;
   deposit_url: string;
@@ -42,6 +45,7 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
       const result = await db.query<FeaturedRow>(
         `SELECT
            p.id, p.slug, p.name, p.description, p.creative_url,
+           p.creative_type, p.cta_label, p.cta_url,
            h.slug AS house_slug, h.name AS house_name, h.deposit_url,
            p.starts_at, p.ends_at, p.draw_at,
            p.raffle_id, r.name AS raffle_name, r.prize AS raffle_prize,
@@ -82,6 +86,9 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
           name: promo.name,
           description: promo.description,
           creative_url: promo.creative_url,
+          creative_type: promo.creative_type,
+          cta_label: promo.cta_label,
+          cta_url: promo.cta_url,
           house_slug: promo.house_slug,
           house_name: promo.house_name,
           starts_at: promo.starts_at,

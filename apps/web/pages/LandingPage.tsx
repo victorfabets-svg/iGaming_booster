@@ -16,6 +16,9 @@ interface FeaturedPromotion {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
+  cta_label: string | null;
+  cta_url: string | null;
   house_slug: string;
   house_name: string;
   starts_at: string;
@@ -114,19 +117,41 @@ function FeaturedHero({ promo, isAuthenticated }: { promo: FeaturedPromotion; is
   const emitted = promo.raffle.tickets_emitted;
   const pct = total > 0 ? Math.min(100, (emitted / total) * 100) : 0;
 
-  // Authenticated → straight to /me. Unauthenticated → redirect via the API
-  // so the affiliate click is registered + cookie set + ?ref forwarded to
-  // /signup. Anchor (not <Link>) because the destination is a separate origin.
-  const ctaLabel = isAuthenticated ? 'Ir para minha conta' : 'Cadastrar e participar';
-  const ctaHref = isAuthenticated
-    ? '/me'
-    : `${API_BASE}/r/p/${encodeURIComponent(promo.slug)}`;
+  // CTA precedence:
+  //   1. Custom cta_label + cta_url set by admin (any URL — WhatsApp,
+  //      deposit page, internal route, etc.)
+  //   2. Authenticated → /me
+  //   3. Default → API redirect /r/p/:slug (affiliate tracking + signup)
+  const customCta = promo.cta_label && promo.cta_url
+    ? { label: promo.cta_label, href: promo.cta_url }
+    : null;
+  const ctaLabel = customCta
+    ? customCta.label
+    : isAuthenticated
+      ? 'Ir para minha conta'
+      : 'Cadastrar e participar';
+  const ctaHref = customCta
+    ? customCta.href
+    : isAuthenticated
+      ? '/me'
+      : `${API_BASE}/r/p/${encodeURIComponent(promo.slug)}`;
+  const ctaIsExternal = !!customCta && /^https?:\/\//i.test(customCta.href);
 
   return (
     <article className="landing-promo">
       <div className="landing-promo-card">
         <div className="landing-promo-creative">
-          {promo.creative_url ? (
+          {promo.creative_url && promo.creative_type === 'video' ? (
+            <video
+              src={promo.creative_url}
+              autoPlay
+              loop
+              muted
+              playsInline
+              poster=""
+              aria-label={promo.name}
+            />
+          ) : promo.creative_url ? (
             <img src={promo.creative_url} alt={promo.name} />
           ) : (
             <div className="landing-promo-creative-placeholder" aria-hidden>
@@ -176,7 +201,19 @@ function FeaturedHero({ promo, isAuthenticated }: { promo: FeaturedPromotion; is
       )}
 
       <div className="landing-promo-cta">
-        {isAuthenticated ? (
+        {customCta ? (
+          customCta.href.startsWith('/') ? (
+            <Link to={customCta.href} className="btn btn-primary btn-lg">{ctaLabel}</Link>
+          ) : (
+            <a
+              href={customCta.href}
+              className="btn btn-primary btn-lg"
+              {...(ctaIsExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            >
+              {ctaLabel}
+            </a>
+          )
+        ) : isAuthenticated ? (
           <Link to={ctaHref} className="btn btn-primary btn-lg">{ctaLabel}</Link>
         ) : (
           <a href={ctaHref} className="btn btn-primary btn-lg">{ctaLabel}</a>
