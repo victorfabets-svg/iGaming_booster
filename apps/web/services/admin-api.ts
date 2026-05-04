@@ -633,6 +633,53 @@ export const adminApi = {
     });
   },
 
+  // Upload a promotion creative (image/video) directly to R2 via the API.
+  // Backend returns a relative path (`/public/creatives/<key>`); we prepend
+  // API_BASE so the resulting URL is absolute and renderable from any origin.
+  async uploadPromotionCreative(file: File): Promise<{
+    success: boolean;
+    data?: { url: string; creative_type: 'image' | 'video' };
+    error?: { message: string; code: string };
+  }> {
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const response = await fetch(`${API_BASE}/admin/promotions/upload-creative`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: fd,
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.success === false) {
+        return {
+          success: false,
+          error: {
+            message: data?.error?.message || 'Falha no upload.',
+            code: data?.error?.code || 'UPLOAD_ERROR',
+          },
+        };
+      }
+      const payload = data?.success === true ? data.data : data;
+      const relativeUrl: string = payload?.url || '';
+      const creativeType: 'image' | 'video' = payload?.creative_type || 'image';
+      return {
+        success: true,
+        data: {
+          url: relativeUrl.startsWith('/') ? `${API_BASE}${relativeUrl}` : relativeUrl,
+          creative_type: creativeType,
+        },
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: {
+          message: err instanceof Error ? err.message : 'Network error',
+          code: 'NETWORK_ERROR',
+        },
+      };
+    }
+  },
+
   async listRaffles(filters?: { active?: boolean; without_promotion?: boolean }) {
     const params = new URLSearchParams();
     if (filters?.active !== undefined) params.set('active', String(filters.active));

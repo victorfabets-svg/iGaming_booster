@@ -16,6 +16,11 @@ import { sendEmail } from '@shared/infrastructure/email/resend';
 import { loadAndRender } from '@shared/infrastructure/email/render-template';
 import { renderFallback } from '@shared/infrastructure/email/fallback-templates';
 import { auditLog } from '@shared/events/audit-log';
+import { getStorageService } from '../../infrastructure/storage';
+
+// Keys we accept for /public/creatives/* — must start with this prefix.
+// Anything else is rejected before touching storage.
+const CREATIVE_KEY_PREFIX = 'promotions/creatives/';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
@@ -392,6 +397,32 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
         proof_id: proofId,
         promotion_name: promotion.name,
       });
+    }
+  );
+
+  // GET /public/creatives/* — public proxy for promotion creatives uploaded
+  // via /admin/promotions/upload-creative. Streams from R2 with a 1y immutable
+  // cache (keys are UUIDs — never reused). Restricted to the dedicated
+  // `promotions/creatives/` prefix so this endpoint can't be abused to read
+  // arbitrary objects (e.g. proofs) from the same bucket.
+  fastify.get(
+    '/public/creatives/*',
+    async (request: FastifyRequest<{ Params: { '*': string } }>, reply: FastifyReply) => {
+      const key = request.params['*'];
+      if (!key || !key.startsWith(CREATIVE_KEY_PREFIX) || key.includes('..')) {
+        return reply.status(404).send({ error: 'Not found' });
+      }
+
+      const storage = getStorageService();
+      const file = await storage.download(key);
+      if (!file) {
+        return reply.status(404).send({ error: 'Not found' });
+      }
+
+      return reply
+        .header('Content-Type', file.contentType)
+        .header('Cache-Control', 'public, max-age=31536000, immutable')
+        .send(file.buffer);
     }
   );
 }
