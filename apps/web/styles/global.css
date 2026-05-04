@@ -1987,3 +1987,253 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   margin: 0;
 }
 
+/* === HERO FEATURED CARD (replaces the mechanic pill) === */
+.landing-featured-card {
+  display: grid;
+  grid-template-columns: minmax(0, 280px) 1fr;
+  gap: 24px;
+  align-items: stretch;
+  padding: 0;
+  border: 1px solid var(--color-value);
+  border-radius: 16px;
+  background: linear-gradient(135deg,
+    var(--color-warning-glow) 0%,
+    var(--surface-overlay-soft) 100%);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  overflow: hidden;
+  width: 100%;
+  max-width: 760px;
+}
+.landing-featured-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px var(--color-warning-glow);
+  border-color: var(--color-action);
+}
+.landing-featured-media {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  background: var(--color-background-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.landing-featured-media img,
+.landing-featured-media video,
+.landing-featured-media .landing-promo-creative-placeholder {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.landing-featured-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+.landing-featured-title {
+  font-family: var(--font-display);
+  font-size: clamp(20px, 2.5vw, 26px);
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.landing-featured-prize {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-value);
+}
+.landing-featured-house {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.landing-featured-cta {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-action);
+}
+@media (max-width: 640px) {
+  .landing-featured-card { grid-template-columns: 1fr; }
+  .landing-featured-media { min-height: 180px; }
+}
+
+/* === HOUSE / PROMO / TIER BUTTONS === */
+.landing-house-promo-block {
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+.landing-house-promo-block:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.landing-house-promo-title {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+  padding: 8px 0 12px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.landing-house-promo-title:hover { color: var(--color-action); }
+.landing-house-promo-title .landing-house-promo-prize {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-value);
+}
+.landing-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.landing-tier-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.landing-tier-btn:hover {
+  background: var(--color-warning-glow);
+  border-color: var(--color-value);
+  transform: translateY(-1px);
+}
+.landing-tier-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.landing-tier-amount strong {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.landing-tier-amount span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.landing-tier-tickets {
+  font-size: 14px;
+  color: var(--color-action);
+  white-space: nowrap;
+}
+.landing-tier-tickets strong { font-weight: 700; }
+.landing-accent { color: var(--color-action); }
+
+/* === CLAIM MODAL === */
+.claim-modal {
+  width: 100%;
+  max-width: 520px;
+  position: relative;
+}
+.claim-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.claim-modal-close:hover { color: var(--text-primary); }
+.claim-modal-header {
+  margin-bottom: 18px;
+}
+.claim-modal-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.claim-modal-tier {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-success-glow);
+  color: var(--color-action);
+  font-size: 12px;
+  font-weight: 600;
+}
+.claim-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.claim-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 28px 20px;
+  border: 2px dashed var(--color-border-subtle);
+  border-radius: 12px;
+  background: var(--surface-overlay-soft);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.claim-dropzone:hover,
+.claim-dropzone.is-drag {
+  border-color: var(--color-action);
+  background: var(--color-success-glow);
+}
+.claim-dropzone.has-file {
+  border-style: solid;
+  border-color: var(--color-action);
+}
+.claim-dropzone-icon {
+  font-size: 22px;
+  color: var(--color-action);
+}
+.claim-dropzone-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.claim-dropzone-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.claim-modal-success {
+  margin: 8px 0 12px;
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.claim-modal-foot {
+  text-align: center;
+  margin: 4px 0 0;
+}
+.btn.full-width { display: flex; justify-content: center; align-items: center; }
+

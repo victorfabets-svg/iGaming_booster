@@ -1,25 +1,30 @@
 /**
  * Landing Page — Tipster Engine
  *
- * Sections (in order):
+ * Sections:
  *   1. Top bar  — brand + theme toggle + auth CTAs
- *   2. Hero     — headline + sub + mechanic + CTAs + grid of active promos
- *   3. Como Funciona — 4 steps + per-house promo list with tracked CTAs
- *   4. Core mecanismo, Loop, Prova, Objeções, Urgência — narrative copy
+ *   2. Hero     — headline + featured promo card (replaces mechanic pill)
+ *   3. Como Funciona — 4 steps + per-house promo list with TIER buttons
+ *   4. Narrative — core/loop/prova/objections/urgency
  *   5. CTA final
  *
- * Active promos come from GET /public/promotions/active.
- * Per-promo CTAs route through:
- *   /r/p/:slug          → tracking + signup (proof upload flow)
- *   /r/p/:slug/deposit  → tracking + redirect to house deposit_url
+ * Anywhere a promo or tier is clicked, PromoClaimModal opens with the
+ * upload form. Modal handles passwordless signup + proof submission via
+ * POST /public/promotions/:slug/claim.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
+import PromoClaimModal, { PromoClaimContext } from '../components/PromoClaimModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+interface Tier {
+  min_deposit_cents: number;
+  tickets: number;
+}
 
 interface ActivePromotion {
   slug: string;
@@ -41,16 +46,23 @@ interface ActivePromotion {
     total_numbers: number;
     tickets_emitted: number;
   };
+  tiers: Tier[];
 }
 
 type LoadStatus = 'loading' | 'loaded' | 'error';
 
-// Google Drive file links cannot be embedded directly into <img>/<video>
-// (Drive rewrites/blocks hotlinking). Detect and warn the operator
-// rather than render a silently broken element.
 function isUnsupportedDriveUrl(url: string | null): boolean {
   if (!url) return false;
   return /drive\.google\.com\/file\/d\//.test(url);
+}
+
+function formatBRL(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 function PromoCreative({ promo }: { promo: ActivePromotion }) {
@@ -101,87 +113,91 @@ function TopBar({ isAuthenticated }: { isAuthenticated: boolean }) {
   );
 }
 
-function ActivePromoCard({ promo }: { promo: ActivePromotion }) {
+function FeaturedPromoCard({ promo, onClick }: { promo: ActivePromotion; onClick: () => void }) {
   return (
-    <article className="landing-active-card">
-      <div className="landing-active-card-media">
+    <button type="button" className="landing-featured-card" onClick={onClick}>
+      <div className="landing-featured-media">
         <PromoCreative promo={promo} />
       </div>
-      <div className="landing-active-card-body">
-        {promo.is_featured && <span className="badge badge-warning">★ Destaque</span>}
-        <h3 className="landing-active-card-title">{promo.name}</h3>
-        <p className="landing-active-card-house">{promo.house_name}</p>
-        <p className="landing-active-card-prize">{promo.raffle.prize}</p>
+      <div className="landing-featured-body">
+        <span className="badge badge-warning">★ PRÊMIO PRINCIPAL</span>
+        <h2 className="landing-featured-title">{promo.name}</h2>
+        <p className="landing-featured-prize">{promo.raffle.prize}</p>
+        <p className="landing-featured-house">{promo.house_name}</p>
+        <span className="landing-featured-cta">Participar agora →</span>
       </div>
-    </article>
+    </button>
+  );
+}
+
+function HousePromoBlock({
+  promo,
+  onTierClick,
+  onPromoClick,
+}: {
+  promo: ActivePromotion;
+  onTierClick: (tier: Tier) => void;
+  onPromoClick: () => void;
+}) {
+  const sortedTiers = useMemo(
+    () => [...promo.tiers].sort((a, b) => a.min_deposit_cents - b.min_deposit_cents),
+    [promo.tiers]
+  );
+
+  return (
+    <div className="landing-house-promo-block">
+      <button type="button" className="landing-house-promo-title" onClick={onPromoClick}>
+        <span>{promo.name}</span>
+        <span className="landing-house-promo-prize">{promo.raffle.prize}</span>
+      </button>
+      {sortedTiers.length > 0 ? (
+        <div className="landing-tier-grid">
+          {sortedTiers.map(tier => (
+            <button
+              key={tier.min_deposit_cents}
+              type="button"
+              className="landing-tier-btn"
+              onClick={() => onTierClick(tier)}
+            >
+              <div className="landing-tier-amount">
+                <strong>{formatBRL(tier.min_deposit_cents)}</strong>
+                <span>depósito mínimo</span>
+              </div>
+              <div className="landing-tier-tickets">
+                🎟 <strong>{tier.tickets}</strong> {tier.tickets === 1 ? 'cota' : 'cotas'}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted text-sm">Sem tiers configurados.</p>
+      )}
+    </div>
   );
 }
 
 function HouseGroup({
   houseName,
   promos,
-  isAuthenticated,
-  expanded,
-  onToggle,
+  onPromoClick,
+  onTierClick,
 }: {
   houseName: string;
   promos: ActivePromotion[];
-  isAuthenticated: boolean;
-  expanded: string | null;
-  onToggle: (slug: string) => void;
+  onPromoClick: (promo: ActivePromotion) => void;
+  onTierClick: (promo: ActivePromotion, tier: Tier) => void;
 }) {
   return (
     <div className="landing-house-group">
       <h3 className="landing-house-group-title">{houseName}</h3>
-      <ul className="landing-house-group-list">
-        {promos.map(promo => {
-          const isOpen = expanded === promo.slug;
-          // CTA "Enviar comprovante":
-          //   - logged in: go straight to upload (already attributed)
-          //   - logged out: through /r/p/:slug to record click + signup
-          const proofHref = isAuthenticated
-            ? `/me/upload?promo=${encodeURIComponent(promo.slug)}`
-            : `${API_BASE}/r/p/${encodeURIComponent(promo.slug)}`;
-          const proofIsExternal = !isAuthenticated;
-          // CTA "Fazer depósito": always through the API to record the
-          // click before bouncing to the partner house deposit URL.
-          const depositHref = `${API_BASE}/r/p/${encodeURIComponent(promo.slug)}/deposit`;
-
-          return (
-            <li key={promo.slug} className={`landing-house-promo ${isOpen ? 'is-open' : ''}`}>
-              <button
-                type="button"
-                className="landing-house-promo-header"
-                onClick={() => onToggle(promo.slug)}
-                aria-expanded={isOpen}
-              >
-                <span className="landing-house-promo-name">{promo.name}</span>
-                <span className="landing-house-promo-prize">{promo.raffle.prize}</span>
-                <span className="landing-house-promo-chevron" aria-hidden>
-                  {isOpen ? '−' : '+'}
-                </span>
-              </button>
-              {isOpen && (
-                <div className="landing-house-promo-actions">
-                  {proofIsExternal ? (
-                    <a href={proofHref} className="btn btn-primary">Enviar comprovante</a>
-                  ) : (
-                    <Link to={proofHref} className="btn btn-primary">Enviar comprovante</Link>
-                  )}
-                  <a
-                    href={depositHref}
-                    className="btn btn-secondary"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Fazer depósito
-                  </a>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {promos.map(promo => (
+        <HousePromoBlock
+          key={promo.slug}
+          promo={promo}
+          onPromoClick={() => onPromoClick(promo)}
+          onTierClick={t => onTierClick(promo, t)}
+        />
+      ))}
     </div>
   );
 }
@@ -208,7 +224,7 @@ export default function LandingPage() {
   const { isAuthenticated } = useAuth();
   const [promos, setPromos] = useState<ActivePromotion[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
-  const [expandedPromo, setExpandedPromo] = useState<string | null>(null);
+  const [claim, setClaim] = useState<PromoClaimContext | null>(null);
   const howItWorksRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -228,15 +244,17 @@ export default function LandingPage() {
     return () => { cancelled = true; };
   }, []);
 
+  const featured = useMemo(
+    () => promos.find(p => p.is_featured) ?? promos[0] ?? null,
+    [promos]
+  );
+
   const promosByHouse = useMemo(() => {
     const acc = new Map<string, { name: string; promos: ActivePromotion[] }>();
     for (const p of promos) {
       const existing = acc.get(p.house_slug);
-      if (existing) {
-        existing.promos.push(p);
-      } else {
-        acc.set(p.house_slug, { name: p.house_name, promos: [p] });
-      }
+      if (existing) existing.promos.push(p);
+      else acc.set(p.house_slug, { name: p.house_name, promos: [p] });
     }
     return Array.from(acc.entries());
   }, [promos]);
@@ -245,7 +263,18 @@ export default function LandingPage() {
     howItWorksRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const openClaim = (promo: ActivePromotion, tier?: Tier) => {
+    setClaim({
+      promo_slug: promo.slug,
+      promo_name: promo.name,
+      house_name: promo.house_name,
+      tier_min_deposit_cents: tier?.min_deposit_cents,
+      tier_tickets: tier?.tickets,
+    });
+  };
+
   const primaryCtaHref = isAuthenticated ? '/me/upload' : '/signup';
+  const primaryCtaOnClick = featured ? () => openClaim(featured) : undefined;
 
   return (
     <div className="landing-shell">
@@ -261,29 +290,28 @@ export default function LandingPage() {
             <p className="landing-hero-sub">
               Você já aposta. Aqui, cada depósito vira tickets para participar das promoções ativas.
             </p>
-            <p className="landing-hero-mechanic">
-              Depositou → enviou comprovante → ganhou tickets
-            </p>
+
+            {featured ? (
+              <FeaturedPromoCard promo={featured} onClick={() => openClaim(featured)} />
+            ) : status === 'loaded' ? (
+              <p className="landing-active-empty">Novas promoções em breve.</p>
+            ) : (
+              <p className="text-muted">Carregando promoções…</p>
+            )}
+
             <div className="landing-hero-ctas">
-              <Link to={primaryCtaHref} className="btn btn-primary btn-lg">
-                👉 Participar agora
-              </Link>
+              {primaryCtaOnClick ? (
+                <button type="button" className="btn btn-primary btn-lg" onClick={primaryCtaOnClick}>
+                  👉 Participar agora
+                </button>
+              ) : (
+                <Link to={primaryCtaHref} className="btn btn-primary btn-lg">👉 Participar agora</Link>
+              )}
               <button type="button" className="btn btn-ghost btn-lg" onClick={scrollToHowItWorks}>
                 Ver como funciona ↓
               </button>
             </div>
           </div>
-
-          {status === 'loaded' && promos.length > 0 && (
-            <div className="landing-active-grid">
-              {promos.map(p => (
-                <ActivePromoCard key={p.slug} promo={p} />
-              ))}
-            </div>
-          )}
-          {status === 'loaded' && promos.length === 0 && (
-            <p className="landing-active-empty">Novas promoções em breve.</p>
-          )}
         </section>
 
         {/* === COMO FUNCIONA === */}
@@ -298,28 +326,23 @@ export default function LandingPage() {
 
           {promosByHouse.length > 0 && (
             <>
-              <h3 className="landing-subsection-title">Promoções disponíveis por casa</h3>
+              <h3 className="landing-subsection-title">Deposite e ganhe bilhetes <span className="landing-accent">grátis</span></h3>
               <div className="landing-houses">
                 {promosByHouse.map(([slug, group]) => (
                   <HouseGroup
                     key={slug}
                     houseName={group.name}
                     promos={group.promos}
-                    isAuthenticated={isAuthenticated}
-                    expanded={expandedPromo}
-                    onToggle={s => setExpandedPromo(prev => prev === s ? null : s)}
+                    onPromoClick={p => openClaim(p)}
+                    onTierClick={(p, t) => openClaim(p, t)}
                   />
                 ))}
               </div>
             </>
           )}
-
-          <div className="landing-section-cta">
-            <Link to={primaryCtaHref} className="btn btn-primary btn-lg">Quero gerar meus tickets</Link>
-          </div>
         </section>
 
-        {/* === CORE MECANISMO === */}
+        {/* === CORE === */}
         <section className="landing-section landing-section-tinted">
           <h2 className="landing-section-title">Aqui sua aposta vale mais</h2>
           <div className="landing-narrative">
@@ -365,22 +388,10 @@ export default function LandingPage() {
         <section className="landing-section">
           <h2 className="landing-section-title">Dúvidas comuns</h2>
           <div className="landing-faq">
-            <FAQItem
-              q="Preciso ganhar na aposta?"
-              a={<p>Não. Só o depósito já conta.</p>}
-            />
-            <FAQItem
-              q="Preciso pagar para participar?"
-              a={<p>Não. Você usa depósitos que já faria normalmente.</p>}
-            />
-            <FAQItem
-              q="É complicado?"
-              a={<p>Não. Leva menos de 1 minuto.</p>}
-            />
-            <FAQItem
-              q="Tem limite de participação?"
-              a={<p>Não. Quanto mais você participa, mais chances você tem.</p>}
-            />
+            <FAQItem q="Preciso ganhar na aposta?" a={<p>Não. Só o depósito já conta.</p>} />
+            <FAQItem q="Preciso pagar para participar?" a={<p>Não. Você usa depósitos que já faria normalmente.</p>} />
+            <FAQItem q="É complicado?" a={<p>Não. Leva menos de 1 minuto.</p>} />
+            <FAQItem q="Tem limite de participação?" a={<p>Não. Quanto mais você participa, mais chances você tem.</p>} />
           </div>
         </section>
 
@@ -393,13 +404,21 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* === CTA FINAL === */}
+        {/* === FINAL === */}
         <section className="landing-section landing-section-final">
           <h2 className="landing-final-headline">Você já aposta. Agora faça isso valer mais.</h2>
           <p className="landing-final-sub">Transforme seus depósitos em chances reais de ganhar.</p>
-          <Link to={primaryCtaHref} className="btn btn-primary btn-lg">👉 Começar agora</Link>
+          {primaryCtaOnClick ? (
+            <button type="button" className="btn btn-primary btn-lg" onClick={primaryCtaOnClick}>
+              👉 Começar agora
+            </button>
+          ) : (
+            <Link to={primaryCtaHref} className="btn btn-primary btn-lg">👉 Começar agora</Link>
+          )}
         </section>
       </main>
+
+      {claim && <PromoClaimModal context={claim} onClose={() => setClaim(null)} />}
     </div>
   );
 }
