@@ -272,11 +272,32 @@ function PromotionModal({
     active: promotion?.active ?? true,
   });
 
+  const [localError, setLocalError] = useState<string | null>(null);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const [startsDate, startsTime] = form.starts_at.split('T');
-    const [endsDate, endsTime] = form.ends_at.split('T');
-    const [drawDate, drawTime] = form.draw_at.split('T');
+    setLocalError(null);
+
+    // Date sanity in PT-BR before sending — backend re-checks the same
+    // invariants but its message is in English (e.g. "draw_at must be
+    // >= ends_at"); duplicate the check here so the operator gets a
+    // clear, localised message and never reaches that branch.
+    const startsAt = form.starts_at ? new Date(form.starts_at) : null;
+    const endsAt = form.ends_at ? new Date(form.ends_at) : null;
+    const drawAt = form.draw_at ? new Date(form.draw_at) : null;
+
+    if (!startsAt || !endsAt || !drawAt) {
+      setLocalError('Preencha início, fim e data do sorteio.');
+      return;
+    }
+    if (endsAt < startsAt) {
+      setLocalError('A data de fim precisa ser igual ou posterior à de início.');
+      return;
+    }
+    if (drawAt < endsAt) {
+      setLocalError('A data do sorteio precisa ser igual ou posterior ao fim da promoção (o sorteio acontece quando a promoção termina).');
+      return;
+    }
 
     const baseInput = {
       name: form.name,
@@ -286,9 +307,9 @@ function PromotionModal({
       cta_label: form.cta_label.trim() || undefined,
       cta_url: form.cta_url.trim() || undefined,
       house_slug: form.house_slug,
-      starts_at: new Date(`${startsDate}T${startsTime}`).toISOString(),
-      ends_at: new Date(`${endsDate}T${endsTime}`).toISOString(),
-      draw_at: new Date(`${drawDate}T${drawTime}`).toISOString(),
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      draw_at: drawAt.toISOString(),
       tiers: form.tiers,
       repescagem_source_slugs: form.repescagem_enabled ? form.repescagem_source_slugs : undefined,
       active: form.active,
@@ -327,7 +348,7 @@ function PromotionModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <h2 className="card-title mb-4">{promotion ? 'Editar Promoção' : 'Nova Promoção'}</h2>
-        {error && <div className="alert-box alert-error mb-3">{error}</div>}
+        {(localError || error) && <div className="alert-box alert-error mb-3">{localError || error}</div>}
         <form onSubmit={handleSubmit}>
           {!promotion && (
             <div className="field">
@@ -423,15 +444,58 @@ function PromotionModal({
           )}
           <div className="field">
             <label>Início</label>
-            <input className="input" type="datetime-local" value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} required />
+            <input
+              className="input"
+              type="datetime-local"
+              value={form.starts_at}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({
+                  ...f,
+                  starts_at: v,
+                  // If ends_at falls behind starts_at, push it forward; same for draw_at.
+                  ends_at: f.ends_at && f.ends_at < v ? v : f.ends_at,
+                  draw_at: f.draw_at && f.draw_at < v ? v : f.draw_at,
+                }));
+              }}
+              required
+            />
           </div>
           <div className="field">
             <label>Fim</label>
-            <input className="input" type="datetime-local" value={form.ends_at} onChange={e => setForm({ ...form, ends_at: e.target.value })} required />
+            <input
+              className="input"
+              type="datetime-local"
+              min={form.starts_at || undefined}
+              value={form.ends_at}
+              onChange={e => {
+                const v = e.target.value;
+                setForm(f => ({
+                  ...f,
+                  ends_at: v,
+                  // Draw must be >= ends; if it slipped, snap forward.
+                  draw_at: f.draw_at && f.draw_at < v ? v : f.draw_at,
+                }));
+              }}
+              required
+            />
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              Quando a promoção encerra para receber depósitos.
+            </p>
           </div>
           <div className="field">
             <label>Data do Sorteio</label>
-            <input className="input" type="datetime-local" value={form.draw_at} onChange={e => setForm({ ...form, draw_at: e.target.value })} required />
+            <input
+              className="input"
+              type="datetime-local"
+              min={form.ends_at || form.starts_at || undefined}
+              value={form.draw_at}
+              onChange={e => setForm({ ...form, draw_at: e.target.value })}
+              required
+            />
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              Quando o sorteio será executado — precisa ser igual ou posterior ao fim.
+            </p>
           </div>
           <div className="field">
             <label>Tiers</label>
