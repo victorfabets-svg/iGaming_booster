@@ -21,6 +21,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { useAuth } from '../state/AuthContext';
+import ThemeToggle from './ThemeToggle';
 
 const STORAGE_KEY = 'sidebar_admin_expanded';
 
@@ -110,13 +111,18 @@ export default function AdminLayout() {
           })}
         </nav>
 
-        {expanded && (
+        {expanded ? (
           <div className="sidebar-footer">
             <p className="text-muted text-xs uppercase mb-1">Logado como</p>
             <p className="text-sm mb-3">{user?.email}</p>
+            <ThemeToggle className="theme-toggle-sidebar-footer" />
             <button type="button" className="btn btn-primary full-width" onClick={handleLogout}>
               Sair
             </button>
+          </div>
+        ) : (
+          <div className="sidebar-footer-compact">
+            <ThemeToggle compact />
           </div>
         )}
       </aside>

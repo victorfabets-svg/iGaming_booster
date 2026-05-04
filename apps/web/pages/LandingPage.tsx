@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
+import ThemeToggle from '../components/ThemeToggle';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -61,6 +62,7 @@ function TopBar({ isAuthenticated }: { isAuthenticated: boolean }) {
       <div className="landing-topbar-inner">
         <span className="landing-brand">Tipster Engine</span>
         <nav className="landing-topbar-actions">
+          <ThemeToggle compact />
           {isAuthenticated ? (
             <Link to="/me" className="btn btn-primary">Minha conta</Link>
           ) : (

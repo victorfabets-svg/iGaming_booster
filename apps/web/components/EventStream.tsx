@@ -8,10 +8,10 @@ export interface StreamEvent {
 
 const badgeForType = (t: StreamEvent['type']) => {
   switch (t) {
-    case 'proof_submitted': return { cls: 'badge', style: { background: 'rgba(255,255,255,0.1)' as const, color: 'var(--text-primary)' } };
+    case 'proof_submitted': return { cls: 'badge badge-gray', style: undefined };
     case 'proof_validated': return { cls: 'badge badge-success', style: undefined };
     case 'proof_rejected': return { cls: 'badge badge-error', style: undefined };
-    case 'reward_granted': return { cls: 'badge', style: { background: '#fff', color: '#000' as const } };
+    case 'reward_granted': return { cls: 'badge badge-warning', style: undefined };
   }
 };
 

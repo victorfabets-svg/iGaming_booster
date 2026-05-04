@@ -82,7 +82,7 @@ function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => 
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.6)',
+        background: 'var(--modal-overlay, rgba(0,0,0,0.6))',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
       }}
@@ -119,10 +119,10 @@ function DetailModal({ proof, onClose }: { proof: ProofListItem; onClose: () => 
 
         <div
           style={{
-            border: '1px solid var(--color-border, #333)',
+            border: '1px solid var(--color-border-subtle)',
             borderRadius: 8,
             padding: 12,
-            background: 'var(--color-surface, #0c0c0c)',
+            background: 'var(--color-surface-primary)',
             minHeight: 120,
             display: 'flex',
             alignItems: 'center',

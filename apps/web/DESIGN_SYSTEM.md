@@ -10,60 +10,69 @@
 
 ## 1. Princípios
 
-1. **Dark-first.** O produto opera sempre em modo escuro (`#0B0F14` base). Não há tema claro.
-2. **Glassmorphism contido.** Superfícies usam `backdrop-filter: blur()` com bordas sutis (`--glass-border`) e leves highlights (`--glass-highlight`). Não abusar de transparências em áreas de leitura densa.
-3. **Tipografia bicéfala.** `Syne` para display/headings (impacto), `Plus Jakarta Sans` para corpo/UI (legibilidade). Mono (`JetBrains Mono`) apenas para IDs/códigos/timestamps.
-4. **Cor como semântica.** Verde = sucesso, Vermelho = erro, Âmbar = warning, Azul = primário/nav, Roxo = secundário/fraude/revisão. Não usar cor por estética fora destes papéis.
-5. **Movimento suave.** Easing padrão `cubic-bezier(0.4, 0, 0.2, 1)` para layout e `cubic-bezier(0.16, 1, 0.3, 1)` para transições de dados/barras.
-6. **Escala fixa.** Spacing, radius, tipografia e shadows só podem usar tokens — nunca valores mágicos.
+1. **Paleta de 3 cores.** Toda a UI nasce de três cores: **Grafite profundo** (`#0F1115` dark) / **Off-white estruturado** (`#F4F6F8` light) como base, **Verde orgânico** (`#2FBF71`) como ação/sucesso, **Ouro envelhecido** (`#C6A85B`) como valor/destaque. Qualquer outra cor (erro, info, fraud) é **derivada** dessas três, não inventada.
+2. **Dark + Light.** O produto opera em ambos os temas (`data-theme="light"` no `<html>`). O default segue `prefers-color-scheme` do SO; preferência explícita persiste em `localStorage` (`igb_theme`). Tokens semânticos não trocam de papel — só `background`, `text` e `overlays` flipam.
+3. **Glassmorphism contido.** Superfícies usam `backdrop-filter: blur()` com bordas sutis (`--glass-border`) e leves highlights (`--surface-overlay-medium`). Os overlays se invertem no light (preto translúcido em vez de branco). Não abusar de transparências em áreas de leitura densa.
+4. **Tipografia bicéfala.** `Syne` para display/headings (impacto), `Plus Jakarta Sans` para corpo/UI (legibilidade). `JetBrains Mono` para IDs/códigos/timestamps.
+5. **Cor como semântica.** Verde = sucesso/CTA primário, Ouro = valor/warning, Terra (`#BF553B`) = erro, Ouro queimado (`#8C6F2A`) = fraude/revisão, Azul-frio (`#6B8FA6`) = info. Não usar cor por estética fora destes papéis.
+6. **Movimento suave.** Easing padrão `cubic-bezier(0.4, 0, 0.2, 1)` para layout e `cubic-bezier(0.16, 1, 0.3, 1)` para transições de dados/barras.
+7. **Escala fixa.** Spacing, radius, tipografia e shadows só podem usar tokens — nunca valores mágicos.
 
 ---
 
 ## 2. Tokens de Cor
 
-### 2.1 Background & Surface
+### 2.1 Marca (constantes em ambos os temas)
 
-| Token | Hex | Uso |
+| Token | Hex | Papel |
 |---|---|---|
-| `--color-background-primary` / `--bg-base` | `#0B0F14` | Plano de fundo global da página |
-| `--color-background-secondary` / `--bg-surface-hover` | `#121821` | Hover de tabelas e superfícies elevadas |
-| `--color-background-tertiary` | `#1A2230` | Camada mais alta (modais, drilldowns internos) |
-| `--color-surface-primary` / `--bg-surface` | `#141C26` | Cards, selectors, filter-bar |
-| `--bg-glass` | `rgba(255,255,255,0.03)` | Camada glass sobre imagem de fundo |
-| `--glass-border` / `--color-border-subtle` | `#1F2A3A` | Bordas padrão de cards, inputs, divisores |
-| `--glass-highlight` | `rgba(255,255,255,0.05)` | Hover sutil em elementos glass |
+| `--color-action` | `#2FBF71` | Verde orgânico — CTAs, success, primary |
+| `--color-action-hover` | `#248F55` | Verde escurecido para hover |
+| `--color-value` | `#C6A85B` | Ouro envelhecido — valor, recompensa, warning |
+| `--color-value-hover` | `#A88B47` | Ouro escurecido para hover |
 
-### 2.2 Texto
+### 2.2 Background & Surface (varia por tema)
 
-| Token | Hex | Uso |
-|---|---|---|
-| `--color-text-primary` | `#E6EDF3` | Títulos, KPIs, valores |
-| `--color-text-secondary` | `#B3C5D7` | Labels, descrições, metadados |
-| `--color-text-muted` | `#6B7C93` | Placeholders, textos auxiliares |
-| `--color-text-disabled` | `#4A586B` | Texto em estados disabled |
-
-### 2.3 Semântica (cada papel tem `primary`, `secondary` escura e `glow` translúcida)
-
-| Papel | Primary | Secondary | Glow (badge/hover) |
+| Token | Dark | Light | Uso |
 |---|---|---|---|
-| Success | `#22C55E` | `#16A34A` (dark `#166534`) | `rgba(34,197,94,0.15)` |
-| Error | `#EF4444` | `#DC2626` (dark `#7F1D1D`) | `rgba(239,68,68,0.15)` |
-| Warning | `#F59E0B` | `#D97706` (dark `#92400E`) | `rgba(245,158,11,0.15)` |
-| Primary (azul/nav) | `#3B82F6` | `#2563EB` (hover) | `rgba(59,130,246,0.15)` |
-| Secondary (roxo) | `#A855F7` | `#9333EA` (hover) | `rgba(168,85,247,0.15)` |
-| Fraud | `#A855F7` | `#7E22CE` | `rgba(168,85,247,0.15)` |
-| Anomaly | `#F97316` | `#C2410C` | — |
-| Info | `#38BDF8` | `#0284C7` | — |
+| `--color-background-primary` / `--bg-base` | `#0F1115` | `#F4F6F8` | Plano de fundo global |
+| `--color-background-secondary` / `--bg-surface-hover` | `#161A21` | `#ECEEF1` | Hover/superfícies elevadas |
+| `--color-background-tertiary` | `#1D222B` | `#E2E5EA` | Modais, drilldowns |
+| `--color-surface-primary` / `--bg-surface` | `#181D25` | `#FFFFFF` | Cards, selectors, filter-bar |
+| `--color-border-subtle` / `--glass-border` | `#262C36` | `#D8DCE2` | Bordas padrão |
+| `--surface-overlay-soft` | `rgba(255,255,255,0.02)` | `rgba(15,17,21,0.03)` | Hover quase imperceptível |
+| `--surface-overlay-medium` / `--glass-highlight` | `rgba(255,255,255,0.05)` | `rgba(15,17,21,0.05)` | Hover padrão de glass |
+| `--surface-overlay-strong` | `rgba(255,255,255,0.10)` | `rgba(15,17,21,0.08)` | Bordas de glass mais visíveis |
+| `--modal-overlay` | `rgba(0,0,0,0.6)` | `rgba(15,17,21,0.45)` | Backdrop de modal |
 
-### 2.4 Cinza neutro
+### 2.3 Texto (varia por tema)
 
-`--color-gray-100` `#E6EDF3` · `200` `#CBD5E1` · `300` `#B3C5D7` · `400` `#8A9BAE` · `500` `#6B7C93` · `600` `#4A586B` · `700` `#2F3B4C` · `800` `#1F2A3A` · `900` `#141C26`.
+| Token | Dark | Light | Uso |
+|---|---|---|---|
+| `--color-text-primary` | `#E8ECF1` | `#0F1115` | Títulos, KPIs, valores |
+| `--color-text-secondary` | `#A4ADBA` | `#4A5160` | Labels, descrições, metadados |
+| `--color-text-muted` | `#6F7787` | `#6F7787` | Placeholders, textos auxiliares |
+| `--color-on-primary` | `#0F1115` | `#0F1115` | Texto sobre superfícies action/value (sempre grafite — passa AA em verde e ouro) |
+
+### 2.4 Semântica (cada papel tem `primary`, `secondary` e `glow` translúcida)
+
+Todos derivados do par verde/ouro ou de complementos harmônicos. As cores **primary** são constantes em ambos os temas; só os **glows** afinam de opacidade no light pra não saturar fundos brancos.
+
+| Papel | Primary | Secondary | Glow (dark) | Glow (light) |
+|---|---|---|---|---|
+| Success | `#2FBF71` (`--color-action`) | `#248F55` | `rgba(47,191,113,0.15)` | `rgba(47,191,113,0.12)` |
+| Primary | `#2FBF71` (`--color-action`) | `#248F55` | `rgba(47,191,113,0.15)` | `rgba(47,191,113,0.12)` |
+| Warning | `#C6A85B` (`--color-value`) | `#A88B47` | `rgba(198,168,91,0.15)` | `rgba(198,168,91,0.16)` |
+| Anomaly | `#C6A85B` | — | — | — |
+| Error | `#BF553B` (terra, complemento harmônico do verde) | `#8F3F2C` | `rgba(191,85,59,0.15)` | `rgba(191,85,59,0.10)` |
+| Fraud | `#8C6F2A` (ouro queimado, variação do valor) | `#B59650` | `rgba(140,111,42,0.18)` | `rgba(140,111,42,0.12)` |
+| Info | `#6B8FA6` (azul-frio, derivado do grafite) | — | — | — |
 
 ### 2.5 Paleta de gráficos (sequencial)
 
-`--color-chart-1` `#60A5FA` · `2` `#34D399` · `3` `#FBBF24` · `4` `#F87171` · `5` `#A78BFA`. Usar **nesta ordem** em séries múltiplas.
+Use **nesta ordem** em séries múltiplas: `--color-action` · `--color-value` · `--color-info-primary` · `--color-error-primary` · `--color-fraud-primary`.
 
-> **Regra:** nunca introduza hex hard-coded em componentes. Exceção documentada: `#7C3AED` no botão de confirmação de modal (`.btn-modal-primary`) — deve ser migrado para `--color-secondary-primary` em próximo refactor.
+> **Regra:** nunca introduza hex hard-coded em componentes ou inline styles. Toda cor deve resolver para um token. Exceção documentada: `background: #fff` no `<iframe>` de preview de PDF em `HistoricoSection.tsx` — necessário porque PDFs renderizam transparentes e ficariam ilegíveis em fundo escuro.
 
 ---
 
@@ -397,13 +406,50 @@ Cada seção deve:
 
 ---
 
-## 15. Dívidas técnicas conhecidas
+## 15. Tema (Dark + Light)
 
-1. `JetBrains Mono` referenciada mas não importada — adicionar ao `@import` de `global.css`.
-2. `.btn-modal-primary` usa `#7C3AED` hard-coded — migrar para `var(--color-secondary-primary)`.
-3. `box-shadow`, `backdrop-filter` e durações ainda não são tokens — candidatos a `--shadow-*`, `--blur-*`, `--duration-*` em próxima iteração.
-4. `aria-live` regions ausentes em `.event-stream` e `.toast` — adicionar antes de qualquer feature com notificações acessíveis.
-5. `.drilldown-overlay`, `.hist-drilldown`, `.modal-backdrop`, `.timeline`, `.comparison-grid` estão definidos mas não ainda renderizados pelo `index.tsx` atual — documentados aqui porque fazem parte da identidade e serão ativados em próximas seções.
+### 15.1 Mecanismo
+
+O tema ativo é declarado em `<html data-theme="light|dark">`. Os tokens em `:root` (dark, default) são sobrescritos pelo seletor `[data-theme="light"]`. **Componentes nunca devem ler hex literais nem ter classes condicionais por tema** — basta usar os tokens.
+
+```css
+/* certo */
+.card { background: var(--bg-surface); color: var(--text-primary); }
+
+/* errado */
+.card { background: #181D25; }
+.card.light { background: #fff; }
+```
+
+### 15.2 Resolução do tema na primeira pintura
+
+1. `localStorage["igb_theme"]` se existir (`"light"` ou `"dark"`)
+2. `prefers-color-scheme: light` do SO
+3. Default: `dark`
+
+Implementado em `apps/web/state/ThemeContext.tsx`. Mudar via `useTheme().toggleTheme()` ou `setTheme("light"|"dark")`. Toggle visual = `<ThemeToggle />` (`apps/web/components/ThemeToggle.tsx`), com modo `compact` para sidebars colapsados.
+
+### 15.3 Pontos de exposição do toggle
+
+| Onde | Modo |
+|---|---|
+| `LandingPage` top-bar | `compact` (ícone) |
+| `AdminLayout` sidebar-footer | full (expandido) / `compact` (colapsado) |
+| `UserLayout` sidebar-footer | full / `compact` |
+| `AffiliateLayout` sidebar-footer | full |
+
+### 15.4 Regra de adição de novo token
+
+Se um valor de cor / overlay / shadow precisa diferir entre temas, **adicione o token em ambos** os blocos (`:root` e `[data-theme="light"]`). Nunca use cores literais em componentes para "ajustar" o light theme.
+
+---
+
+## 16. Dívidas técnicas conhecidas
+
+1. `box-shadow`, `backdrop-filter` e durações ainda não são tokens — candidatos a `--shadow-*`, `--blur-*`, `--duration-*` em próxima iteração.
+2. `aria-live` regions ausentes em `.event-stream` e `.toast` — adicionar antes de qualquer feature com notificações acessíveis.
+3. `.drilldown-overlay`, `.hist-drilldown`, `.modal-backdrop`, `.timeline`, `.comparison-grid` estão definidos mas não ainda renderizados pelo `index.tsx` atual — documentados aqui porque fazem parte da identidade e serão ativados em próximas seções.
+4. Paleta antiga (azul `#3B82F6`, roxo `#A855F7`, vermelho `#EF4444`, âmbar `#F59E0B`) substituída pela paleta de 3 cores em PR posterior — remover do código de bibliotecas/componentes que ainda referenciem por valor literal.
 
 ---
 
