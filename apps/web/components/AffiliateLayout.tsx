@@ -5,6 +5,7 @@
 import React from 'react';
 import { NavLink, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
+import ThemeToggle from './ThemeToggle';
 
 interface NavItem { path: string; label: string; }
 
@@ -53,6 +54,7 @@ export default function AffiliateLayout() {
         <div className="sidebar-footer">
           <p className="text-muted text-xs uppercase mb-1">Logado como</p>
           <p className="text-sm mb-3">{user?.email}</p>
+          <ThemeToggle className="theme-toggle-sidebar-footer" />
           <button type="button" className="btn btn-primary full-width" onClick={handleLogout}>
             Sair
           </button>

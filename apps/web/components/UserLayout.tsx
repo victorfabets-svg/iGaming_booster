@@ -18,6 +18,7 @@ import {
   User,
 } from 'lucide-react';
 import { useAuth } from '../state/AuthContext';
+import ThemeToggle from './ThemeToggle';
 
 const STORAGE_KEY = 'sidebar_user_expanded';
 
@@ -96,13 +97,18 @@ export default function UserLayout() {
           ))}
         </nav>
 
-        {expanded && (
+        {expanded ? (
           <div className="sidebar-footer">
             <p className="text-muted text-xs uppercase mb-1">Logado como</p>
             <p className="text-sm mb-3">{user?.display_name || user?.email}</p>
+            <ThemeToggle className="theme-toggle-sidebar-footer" />
             <button type="button" className="btn btn-ghost full-width" onClick={handleLogout}>
               Sair
             </button>
+          </div>
+        ) : (
+          <div className="sidebar-footer-compact">
+            <ThemeToggle compact />
           </div>
         )}
       </aside>
