@@ -435,11 +435,37 @@ function PromotionModal({
           </div>
           <div className="field">
             <label>Tiers</label>
+            <div className="tier-row tier-row-header">
+              <span>Depósito mínimo (R$)</span>
+              <span>Cotas</span>
+              <span />
+            </div>
             {form.tiers.map((tier, idx) => (
-              <div key={idx} className="g-row g-col-2-4 mb-2">
-                <input className="input" type="number" placeholder="Mín. R$" value={(tier.min_deposit_cents / 100).toFixed(2)} onChange={e => updateTier(idx, 'min_deposit_cents', Math.round(Number(e.target.value.replace(',', '.')) * 100))} />
-                <input className="input" type="number" placeholder="Tickets" value={tier.tickets} onChange={e => updateTier(idx, 'tickets', parseInt(e.target.value, 10))} />
-                <button type="button" className="btn btn-ghost" onClick={() => removeTier(idx)}>×</button>
+              <div key={idx} className="tier-row mb-2">
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0,00"
+                  value={(tier.min_deposit_cents / 100).toFixed(2)}
+                  onChange={e => updateTier(idx, 'min_deposit_cents', Math.round(Number(e.target.value.replace(',', '.')) * 100))}
+                />
+                <input
+                  className="input"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Cotas"
+                  value={tier.tickets}
+                  onChange={e => updateTier(idx, 'tickets', parseInt(e.target.value, 10) || 1)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost tier-remove"
+                  onClick={() => removeTier(idx)}
+                  aria-label="Remover tier"
+                >×</button>
               </div>
             ))}
             <button type="button" className="btn btn-ghost" onClick={addTier}>+ adicionar tier</button>
