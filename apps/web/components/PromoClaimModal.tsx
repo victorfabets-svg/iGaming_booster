@@ -35,14 +35,6 @@ function formatBRL(cents: number): string {
   });
 }
 
-function maskCpf(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 11);
-  return digits
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
-}
-
 function maskPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   if (digits.length <= 2) return digits;
@@ -55,7 +47,6 @@ export default function PromoClaimModal({ context, onClose }: PromoClaimModalPro
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [cpf, setCpf] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,7 +71,6 @@ export default function PromoClaimModal({ context, onClose }: PromoClaimModalPro
     if (!file) { setError('Envie um print claro do comprovante.'); return; }
     if (!name.trim()) { setError('Informe seu nome completo.'); return; }
     if (!email.trim()) { setError('Informe um e-mail válido.'); return; }
-    if (cpf.replace(/\D/g, '').length !== 11) { setError('CPF deve ter 11 dígitos.'); return; }
     if (whatsapp.replace(/\D/g, '').length < 10) { setError('Informe um WhatsApp válido (DDD + número).'); return; }
 
     setLoading(true);
@@ -89,7 +79,6 @@ export default function PromoClaimModal({ context, onClose }: PromoClaimModalPro
       fd.append('file', file);
       fd.append('email', email.trim());
       fd.append('name', name.trim());
-      fd.append('cpf', cpf.replace(/\D/g, ''));
       fd.append('whatsapp', whatsapp.replace(/\D/g, ''));
       if (context.tier_min_deposit_cents !== undefined) {
         fd.append('tier_min_deposit_cents', String(context.tier_min_deposit_cents));
@@ -197,11 +186,6 @@ export default function PromoClaimModal({ context, onClose }: PromoClaimModalPro
           <div className="field">
             <label htmlFor="claim-email">E-mail</label>
             <input id="claim-email" className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="voce@email.com" autoComplete="email" />
-          </div>
-
-          <div className="field">
-            <label htmlFor="claim-cpf">CPF</label>
-            <input id="claim-cpf" className="input" value={cpf} onChange={e => setCpf(maskCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" />
           </div>
 
           <div className="field">

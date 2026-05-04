@@ -24,14 +24,6 @@ function digitsOnly(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\D/g, '') : '';
 }
 
-function isValidCpf(cpf: string): boolean {
-  // Format-only validation: 11 digits. Rigorous CPF arithmetic skipped
-  // intentionally — many users mistype the verifier digits even on valid
-  // documents and bouncing them at the gate hurts conversion. Real
-  // validation happens later in OCR/operator review.
-  return cpf.length === 11;
-}
-
 function isValidWhatsapp(phone: string): boolean {
   // Accept 10-13 digits (BR mobile with or without country code).
   return phone.length >= 10 && phone.length <= 13;
@@ -253,7 +245,6 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
       let filename: string | null = null;
       let email = '';
       let name = '';
-      let cpf = '';
       let whatsapp = '';
 
       try {
@@ -265,7 +256,6 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
             const v = typeof part.value === 'string' ? part.value.trim() : '';
             if (part.fieldname === 'email') email = v.toLowerCase();
             else if (part.fieldname === 'name') name = v;
-            else if (part.fieldname === 'cpf') cpf = digitsOnly(v);
             else if (part.fieldname === 'whatsapp') whatsapp = digitsOnly(v);
           }
         }
@@ -283,9 +273,6 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
       if (!name) {
         return fail(reply, 'Informe seu nome completo.', 'VALIDATION_ERROR');
       }
-      if (!isValidCpf(cpf)) {
-        return fail(reply, 'Informe um CPF com 11 dígitos.', 'VALIDATION_ERROR');
-      }
       if (!isValidWhatsapp(whatsapp)) {
         return fail(reply, 'Informe um WhatsApp válido (DDD + número).', 'VALIDATION_ERROR');
       }
@@ -302,9 +289,9 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
       if (existing.rows.length === 0) {
         userId = randomUUID();
         await db.query(
-          `INSERT INTO identity.users (id, email, display_name, cpf, whatsapp, created_at)
-           VALUES ($1, $2, $3, $4, $5, NOW())`,
-          [userId, email, name, cpf, whatsapp]
+          `INSERT INTO identity.users (id, email, display_name, whatsapp, created_at)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [userId, email, name, whatsapp]
         );
         isNewUser = true;
         await auditLog(userId, 'user_created_via_promo_claim', { email, promotion_slug: slug }, requestId);
@@ -321,14 +308,14 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
         }
         userId = u.id;
         // Refresh contact fields with the values the user just typed —
-        // they may differ from a previous shadow signup.
+        // they may differ from a previous shadow signup. CPF stays NULL
+        // until the user fills it on /me/profile.
         await db.query(
           `UPDATE identity.users
               SET display_name = COALESCE(NULLIF($2, ''), display_name),
-                  cpf          = COALESCE(NULLIF($3, ''), cpf),
-                  whatsapp     = COALESCE(NULLIF($4, ''), whatsapp)
+                  whatsapp     = COALESCE(NULLIF($3, ''), whatsapp)
             WHERE id = $1`,
-          [userId, name, cpf, whatsapp]
+          [userId, name, whatsapp]
         );
         isNewUser = false;
       }
