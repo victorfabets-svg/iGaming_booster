@@ -189,14 +189,6 @@ function HousePromoBlock({
 
   return (
     <div className="landing-house-promo-block">
-      <button
-        type="button"
-        className="landing-house-promo-creative"
-        onClick={onPromoClick}
-        aria-label={`Abrir ${promo.name}`}
-      >
-        <PromoCreative promo={promo} />
-      </button>
       <div className="landing-house-promo-content">
         <button type="button" className="landing-house-promo-title" onClick={onPromoClick}>
           <span>{promo.name}</span>
@@ -215,6 +207,14 @@ function HousePromoBlock({
           <p className="text-muted text-sm">Sem tiers configurados.</p>
         )}
       </div>
+      <button
+        type="button"
+        className="landing-house-promo-creative"
+        onClick={onPromoClick}
+        aria-label={`Abrir ${promo.name}`}
+      >
+        <PromoCreative promo={promo} />
+      </button>
     </div>
   );
 }
