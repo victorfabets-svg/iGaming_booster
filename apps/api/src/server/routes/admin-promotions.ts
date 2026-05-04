@@ -9,6 +9,7 @@ import { authMiddleware } from '../../infrastructure/auth/middleware';
 import { requireAdmin } from '../../infrastructure/auth/require-admin';
 import { ok, fail } from '../utils/response';
 import { db } from '@shared/database/connection';
+import { randomUUID } from 'crypto';
 
 // Input validation constants
 const SLUG_REGEX = /^[a-z0-9-]+$/;
@@ -394,26 +395,27 @@ async function createPromotion(input: {
     await client.query('BEGIN');
 
     // Create the raffle that backs this promotion (1:1).
-    // raffles.raffles uses a single `draw_date` column — schema in
-    // production diverges from 001_init.sql; the canonical reference is
-    // raffle.repository.ts. Draw date here is the promotion's draw_at.
-    const raffleResult = await client.query<{ id: string }>(
-      `INSERT INTO raffles.raffles (name, prize, total_numbers, draw_date, status)
-       VALUES ($1, $2, $3, $4, 'active')
-       RETURNING id`,
-      [input.name, input.prize, input.total_numbers, drawAt]
+    // raffles.raffles in production uses a single `draw_date` column and
+    // its `id` has no DEFAULT — the schema diverges from 001_init.sql in
+    // both regards (canonical reference is raffle.repository.ts). We
+    // generate the UUID in app code so it works regardless of DB defaults.
+    const raffleId = randomUUID();
+    await client.query(
+      `INSERT INTO raffles.raffles (id, name, prize, total_numbers, draw_date, status)
+       VALUES ($1, $2, $3, $4, $5, 'active')`,
+      [raffleId, input.name, input.prize, input.total_numbers, drawAt]
     );
-    const raffleId = raffleResult.rows[0].id;
 
-    // Insert promotion
-    const promoResult = await client.query(
+    // Insert promotion (id generated in app for the same defensive reason).
+    const promotionId = randomUUID();
+    await client.query(
       `INSERT INTO promotions.promotions (
-         slug, name, description, creative_url, creative_type, cta_label, cta_url,
+         id, slug, name, description, creative_url, creative_type, cta_label, cta_url,
          house_id, raffle_id, starts_at, ends_at, draw_at, repescagem, active
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
+        promotionId,
         input.slug,
         input.name,
         input.description || null,
@@ -430,7 +432,6 @@ async function createPromotion(input: {
         input.active ?? true,
       ]
     );
-    const promotionId = promoResult.rows[0].id;
 
     // Insert tiers
     for (const tier of input.tiers) {

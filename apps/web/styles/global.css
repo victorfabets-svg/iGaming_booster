@@ -1536,6 +1536,40 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 .landing-promo-cta { display: flex; justify-content: center; }
 .btn-lg { padding: 14px 28px; font-size: 16px; }
 
+/* === Promotion modal — tier rows ===
+   Two equal-width inputs + a compact remove button. Inputs use full
+   width of their grid cell so numbers up to 8 digits (e.g. 99.999.999)
+   render without clipping; tabular-nums keeps them aligned. */
+.tier-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+}
+.tier-row .input {
+  width: 100%;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tier-row-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.tier-row-header span { padding: 0 4px; }
+.tier-remove {
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
 /* Admin "destacar" toggle */
 .action-btn.is-featured {
   color: var(--color-warning-primary);
