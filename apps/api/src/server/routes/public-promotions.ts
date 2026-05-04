@@ -108,4 +108,55 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
       });
     }
   );
+
+  // GET /public/promotions/active — all active promotions in window,
+  // grouped by house. Powers the landing's hero grid and the
+  // "Como Funciona" per-house listing. No auth, cached 60s.
+  fastify.get(
+    '/public/promotions/active',
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const result = await db.query<FeaturedRow & { is_featured: boolean }>(
+        `SELECT
+           p.id, p.slug, p.name, p.description, p.creative_url,
+           p.creative_type, p.cta_label, p.cta_url, p.is_featured,
+           h.slug AS house_slug, h.name AS house_name, h.deposit_url,
+           p.starts_at, p.ends_at, p.draw_at,
+           p.raffle_id, r.name AS raffle_name, r.prize AS raffle_prize,
+           r.total_numbers, r.next_number
+         FROM promotions.promotions p
+         JOIN core.houses h ON h.id = p.house_id
+         JOIN raffles.raffles r ON r.id = p.raffle_id
+         WHERE p.active = TRUE
+           AND p.starts_at <= NOW()
+           AND p.ends_at >= NOW()
+         ORDER BY p.is_featured DESC, h.name ASC, p.draw_at ASC`
+      );
+
+      reply.header('Cache-Control', 'public, max-age=60');
+
+      const promotions = result.rows.map(row => ({
+        slug: row.slug,
+        name: row.name,
+        description: row.description,
+        creative_url: row.creative_url,
+        creative_type: row.creative_type,
+        cta_label: row.cta_label,
+        cta_url: row.cta_url,
+        is_featured: row.is_featured,
+        house_slug: row.house_slug,
+        house_name: row.house_name,
+        starts_at: row.starts_at,
+        ends_at: row.ends_at,
+        draw_at: row.draw_at,
+        raffle: {
+          name: row.raffle_name,
+          prize: row.raffle_prize,
+          total_numbers: row.total_numbers,
+          tickets_emitted: Math.max(0, row.next_number - 1),
+        },
+      }));
+
+      return ok(reply, { promotions });
+    }
+  );
 }
