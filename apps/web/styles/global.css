@@ -826,7 +826,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   overflow-y: auto;
   background: rgba(20, 22, 26, 0.98);
   border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 32px;
 }
 
@@ -1750,7 +1750,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 .landing-section-tinted {
   background: var(--surface-overlay-soft);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 40px 32px;
 }
 .landing-section-title {
@@ -1796,7 +1796,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   padding: 12px 16px 12px 36px;
   background: var(--color-surface-primary);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text-primary);
   font-size: 15px;
 }
@@ -1845,7 +1845,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   padding: 16px;
   background: var(--color-surface-primary);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 15px;
   color: var(--text-primary);
 }
@@ -1872,7 +1872,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 .landing-house-group {
   background: var(--color-surface-primary);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 20px 24px;
 }
 .landing-house-group-title {
@@ -1892,7 +1892,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 }
 .landing-house-promo {
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--surface-overlay-soft);
   overflow: hidden;
 }
@@ -1937,7 +1937,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
 }
 .landing-faq-item {
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--color-surface-primary);
 }
@@ -1972,7 +1972,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   padding: 48px 24px;
   background: linear-gradient(135deg, var(--color-warning-glow) 0%, var(--color-success-glow) 100%);
   border: 1px solid var(--color-action);
-  border-radius: 16px;
+  border-radius: 8px;
 }
 .landing-final-headline {
   font-family: var(--font-display);
@@ -1995,11 +1995,10 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   align-items: stretch;
   padding: 0;
   border: 1px solid var(--color-value);
-  border-radius: 16px;
+  border-radius: 8px;
   background: linear-gradient(135deg,
     var(--color-warning-glow) 0%,
     var(--surface-overlay-soft) 100%);
-  cursor: pointer;
   text-align: left;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   overflow: hidden;
@@ -2032,7 +2031,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   justify-content: center;
 }
 .landing-featured-title {
@@ -2056,27 +2055,75 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   letter-spacing: 0.05em;
   color: var(--text-muted);
 }
-.landing-featured-cta {
-  margin-top: 8px;
+.landing-featured-description {
+  margin: 4px 0 0;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--color-action);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+.landing-featured-cta-btn {
+  margin-top: 8px;
+  align-self: flex-start;
 }
 @media (max-width: 640px) {
   .landing-featured-card { grid-template-columns: 1fr; }
   .landing-featured-media { min-height: 180px; }
 }
 
+/* Sliding arrow for CTAs — replaces the 👉 emoji prefix. */
+.btn-arrow {
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.2s ease;
+}
+.btn:hover .btn-arrow,
+.landing-featured-cta-btn:hover .btn-arrow,
+.landing-house-promo-title:hover .btn-arrow,
+.landing-tier-btn:hover .btn-arrow {
+  transform: translateX(4px);
+}
+
 /* === HOUSE / PROMO / TIER BUTTONS === */
 .landing-house-promo-block {
-  margin-top: 12px;
-  padding: 12px 0;
+  margin-top: 16px;
+  padding: 16px 0 0;
   border-top: 1px solid var(--color-border-subtle);
+  display: grid;
+  grid-template-columns: minmax(0, 200px) 1fr;
+  gap: 16px;
+  align-items: start;
 }
 .landing-house-promo-block:first-child {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+}
+.landing-house-promo-creative {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-background-tertiary);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.landing-house-promo-creative img,
+.landing-house-promo-creative video,
+.landing-house-promo-creative .landing-promo-creative-placeholder {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.landing-house-promo-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 .landing-house-promo-title {
   width: 100%;
@@ -2086,12 +2133,31 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   gap: 12px;
   background: transparent;
   border: 0;
-  padding: 8px 0 12px;
+  padding: 0 0 4px;
   cursor: pointer;
   text-align: left;
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+}
+.landing-house-promo-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+@media (max-width: 640px) {
+  .landing-house-promo-block { grid-template-columns: 1fr; }
+}
+
+/* Tier grid embedded inside the hero featured card. Uses smaller min-width
+   than the section grid so up to 5 tiers fit beside the creative. */
+.landing-featured-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
 }
 .landing-house-promo-title:hover { color: var(--color-action); }
 .landing-house-promo-title .landing-house-promo-prize {
@@ -2112,7 +2178,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   padding: 14px 16px;
   background: var(--surface-overlay-soft);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
   color: var(--text-primary);
@@ -2197,7 +2263,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   gap: 6px;
   padding: 28px 20px;
   border: 2px dashed var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--surface-overlay-soft);
   cursor: pointer;
   text-align: center;
