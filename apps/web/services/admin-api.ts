@@ -689,6 +689,9 @@ export interface Promotion {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
+  cta_label: string | null;
+  cta_url: string | null;
   house_id: string;
   house_slug: string;
   house_name: string;
@@ -711,6 +714,9 @@ export interface PromotionCreateInput {
   name: string;
   description?: string;
   creative_url?: string;
+  creative_type?: 'image' | 'video';
+  cta_label?: string;
+  cta_url?: string;
   house_slug: string;
   prize: string;
   total_numbers: number;
@@ -726,6 +732,9 @@ export interface PromotionUpdateInput {
   name?: string;
   description?: string;
   creative_url?: string;
+  creative_type?: 'image' | 'video';
+  cta_label?: string | null;
+  cta_url?: string | null;
   ends_at?: string;
   draw_at?: string;
   active?: boolean;

@@ -257,6 +257,9 @@ function PromotionModal({
     name: promotion?.name || '',
     description: promotion?.description || '',
     creative_url: promotion?.creative_url || '',
+    creative_type: (promotion?.creative_type || 'image') as 'image' | 'video',
+    cta_label: promotion?.cta_label || '',
+    cta_url: promotion?.cta_url || '',
     house_slug: promotion?.house_slug || (houses.length > 0 ? houses[0].slug : ''),
     prize: '',
     total_numbers: 1000,
@@ -279,6 +282,9 @@ function PromotionModal({
       name: form.name,
       description: form.description || undefined,
       creative_url: form.creative_url || undefined,
+      creative_type: form.creative_type,
+      cta_label: form.cta_label.trim() || undefined,
+      cta_url: form.cta_url.trim() || undefined,
       house_slug: form.house_slug,
       starts_at: new Date(`${startsDate}T${startsTime}`).toISOString(),
       ends_at: new Date(`${endsDate}T${endsTime}`).toISOString(),
@@ -338,8 +344,48 @@ function PromotionModal({
             <textarea className="input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="field">
+            <label>Tipo da Criatividade</label>
+            <select
+              className="input"
+              value={form.creative_type}
+              onChange={e => setForm({ ...form, creative_type: e.target.value as 'image' | 'video' })}
+            >
+              <option value="image">Imagem</option>
+              <option value="video">Vídeo (sem áudio)</option>
+            </select>
+          </div>
+          <div className="field">
             <label>URL da Criatividade</label>
-            <input className="input" type="url" value={form.creative_url} onChange={e => setForm({ ...form, creative_url: e.target.value })} />
+            <input
+              className="input"
+              type="url"
+              placeholder={form.creative_type === 'video' ? 'https://...mp4' : 'https://...jpg'}
+              value={form.creative_url}
+              onChange={e => setForm({ ...form, creative_url: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>Texto do Botão (CTA)</label>
+            <input
+              className="input"
+              type="text"
+              placeholder='Ex: "Participar agora", "Falar no WhatsApp"'
+              value={form.cta_label}
+              onChange={e => setForm({ ...form, cta_label: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>Link do Botão (CTA)</label>
+            <input
+              className="input"
+              type="text"
+              placeholder="https://wa.me/..., https://casa.com/deposit, /me/upload?promo=..."
+              value={form.cta_url}
+              onChange={e => setForm({ ...form, cta_url: e.target.value })}
+            />
+            <p className="text-muted text-xs" style={{ marginTop: 4 }}>
+              Aceita link absoluto (https://…) ou caminho interno (/…). Deixe ambos vazios para usar o fluxo padrão de cadastro.
+            </p>
           </div>
           <div className="field">
             <label>Casa</label>

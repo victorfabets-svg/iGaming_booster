@@ -1411,6 +1411,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
   .landing-promo-card { grid-template-columns: 1fr; }
 }
 .landing-promo-creative img,
+.landing-promo-creative video,
 .landing-promo-creative-placeholder {
   width: 100%;
   aspect-ratio: 1 / 1;

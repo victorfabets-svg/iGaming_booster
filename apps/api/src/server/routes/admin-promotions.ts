@@ -19,6 +19,9 @@ interface PromotionRow {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
+  cta_label: string | null;
+  cta_url: string | null;
   house_id: string;
   house_slug: string;
   house_name: string;
@@ -91,6 +94,32 @@ function validatePromotionInput(input: unknown, isUpdate = false): string | null
   // Validate slug format (only for create)
   if (!isUpdate && body.slug && !SLUG_REGEX.test(body.slug as string)) {
     return 'slug must be lowercase alphanumeric with dashes only';
+  }
+
+  // Validate creative_type when present
+  if (body.creative_type !== undefined && body.creative_type !== null) {
+    if (body.creative_type !== 'image' && body.creative_type !== 'video') {
+      return 'creative_type must be "image" or "video"';
+    }
+  }
+
+  // CTA: if either label or url is provided, both must be provided
+  const ctaLabel = typeof body.cta_label === 'string' ? body.cta_label.trim() : null;
+  const ctaUrl = typeof body.cta_url === 'string' ? body.cta_url.trim() : null;
+  if ((ctaLabel && !ctaUrl) || (!ctaLabel && ctaUrl)) {
+    return 'cta_label and cta_url must be provided together';
+  }
+  if (ctaUrl) {
+    try {
+      // Accept relative paths (e.g. /me/upload?promo=...) and absolute URLs
+      if (ctaUrl.startsWith('/')) {
+        // ok — internal path
+      } else {
+        new URL(ctaUrl);
+      }
+    } catch {
+      return 'cta_url must be a valid URL or absolute path';
+    }
   }
 
   // Validate dates
@@ -190,7 +219,7 @@ async function listRaffles(filters?: { active?: boolean; without_promotion?: boo
  * GET /admin/promotions - List all promotions
  */
 async function listPromotions(filters?: { house?: string; active?: boolean }): Promise<PromotionRow[]> {
-  let sql = `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
+  let sql = `SELECT p.id, p.slug, p.name, p.description, p.creative_url, p.creative_type, p.cta_label, p.cta_url,
                     p.house_id, h.slug as house_slug, h.name as house_name,
                     p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
                     p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
@@ -228,7 +257,7 @@ async function getPromotionBySlug(slug: string): Promise<{
   repescagem_source_slugs: string[];
 } | null> {
   const promoResult = await db.query(
-    `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
+    `SELECT p.id, p.slug, p.name, p.description, p.creative_url, p.creative_type, p.cta_label, p.cta_url,
             p.house_id, h.slug as house_slug, h.name as house_name,
             p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
             p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
@@ -277,7 +306,7 @@ async function getPromotionById(id: string): Promise<{
   repescagem_source_slugs: string[];
 } | null> {
   const result = await db.query(
-    `SELECT p.id, p.slug, p.name, p.description, p.creative_url,
+    `SELECT p.id, p.slug, p.name, p.description, p.creative_url, p.creative_type, p.cta_label, p.cta_url,
             p.house_id, h.slug as house_slug, h.name as house_name,
             p.raffle_id, p.starts_at, p.ends_at, p.draw_at,
             p.repescagem, p.repescagem_applied_at, p.active, p.is_featured,
@@ -323,6 +352,9 @@ async function createPromotion(input: {
   name: string;
   description?: string;
   creative_url?: string;
+  creative_type?: 'image' | 'video';
+  cta_label?: string;
+  cta_url?: string;
   house_slug: string;
   prize: string;
   total_numbers: number;
@@ -362,24 +394,33 @@ async function createPromotion(input: {
     await client.query('BEGIN');
 
     // Create the raffle that backs this promotion (1:1).
+    // raffles.raffles uses a single `draw_date` column — schema in
+    // production diverges from 001_init.sql; the canonical reference is
+    // raffle.repository.ts. Draw date here is the promotion's draw_at.
     const raffleResult = await client.query<{ id: string }>(
-      `INSERT INTO raffles.raffles (name, prize, total_numbers, start_at, end_at, status)
-       VALUES ($1, $2, $3, $4, $5, 'active')
+      `INSERT INTO raffles.raffles (name, prize, total_numbers, draw_date, status)
+       VALUES ($1, $2, $3, $4, 'active')
        RETURNING id`,
-      [input.name, input.prize, input.total_numbers, startsAt, endsAt]
+      [input.name, input.prize, input.total_numbers, drawAt]
     );
     const raffleId = raffleResult.rows[0].id;
 
     // Insert promotion
     const promoResult = await client.query(
-      `INSERT INTO promotions.promotions (slug, name, description, creative_url, house_id, raffle_id, starts_at, ends_at, draw_at, repescagem, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO promotions.promotions (
+         slug, name, description, creative_url, creative_type, cta_label, cta_url,
+         house_id, raffle_id, starts_at, ends_at, draw_at, repescagem, active
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         input.slug,
         input.name,
         input.description || null,
         input.creative_url || null,
+        input.creative_type || 'image',
+        input.cta_label?.trim() || null,
+        input.cta_url?.trim() || null,
         house_id,
         raffleId,
         startsAt,
@@ -426,6 +467,9 @@ async function updatePromotion(slug: string, input: {
   name?: string;
   description?: string;
   creative_url?: string;
+  creative_type?: 'image' | 'video';
+  cta_label?: string | null;
+  cta_url?: string | null;
   ends_at?: string;
   draw_at?: string;
   active?: boolean;
@@ -465,6 +509,18 @@ async function updatePromotion(slug: string, input: {
   if (input.creative_url !== undefined) {
     sets.push(`creative_url = $${paramIndex++}`);
     params.push(input.creative_url || null);
+  }
+  if (input.creative_type !== undefined) {
+    sets.push(`creative_type = $${paramIndex++}`);
+    params.push(input.creative_type);
+  }
+  if (input.cta_label !== undefined) {
+    sets.push(`cta_label = $${paramIndex++}`);
+    params.push(input.cta_label?.trim() || null);
+  }
+  if (input.cta_url !== undefined) {
+    sets.push(`cta_url = $${paramIndex++}`);
+    params.push(input.cta_url?.trim() || null);
   }
   if (input.ends_at !== undefined) {
     sets.push(`ends_at = $${paramIndex++}`);
@@ -733,6 +789,9 @@ export async function adminPromotionsRoutes(
         name: string;
         description?: string;
         creative_url?: string;
+        creative_type?: 'image' | 'video';
+        cta_label?: string;
+        cta_url?: string;
         house_slug: string;
         prize: string;
         total_numbers: number;
@@ -782,6 +841,9 @@ export async function adminPromotionsRoutes(
         name?: string;
         description?: string;
         creative_url?: string;
+        creative_type?: 'image' | 'video';
+        cta_label?: string | null;
+        cta_url?: string | null;
         ends_at?: string;
         draw_at?: string;
         active?: boolean;
