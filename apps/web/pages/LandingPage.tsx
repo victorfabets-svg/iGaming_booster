@@ -113,9 +113,36 @@ function TopBar({ isAuthenticated }: { isAuthenticated: boolean }) {
   );
 }
 
-function FeaturedPromoCard({ promo, onClick }: { promo: ActivePromotion; onClick: () => void }) {
+function TierButton({ tier, onClick }: { tier: Tier; onClick: () => void }) {
   return (
-    <button type="button" className="landing-featured-card" onClick={onClick}>
+    <button type="button" className="landing-tier-btn" onClick={onClick}>
+      <div className="landing-tier-amount">
+        <strong>{formatBRL(tier.min_deposit_cents)}</strong>
+        <span>depósito mínimo</span>
+      </div>
+      <div className="landing-tier-tickets">
+        <strong>{tier.tickets}</strong> {tier.tickets === 1 ? 'cota' : 'cotas'}
+      </div>
+    </button>
+  );
+}
+
+function FeaturedPromoCard({
+  promo,
+  onPromoClick,
+  onTierClick,
+}: {
+  promo: ActivePromotion;
+  onPromoClick: () => void;
+  onTierClick: (tier: Tier) => void;
+}) {
+  const sortedTiers = useMemo(
+    () => [...promo.tiers].sort((a, b) => a.min_deposit_cents - b.min_deposit_cents),
+    [promo.tiers]
+  );
+
+  return (
+    <section className="landing-featured-card" aria-label={promo.name}>
       <div className="landing-featured-media">
         <PromoCreative promo={promo} />
       </div>
@@ -124,9 +151,25 @@ function FeaturedPromoCard({ promo, onClick }: { promo: ActivePromotion; onClick
         <h2 className="landing-featured-title">{promo.name}</h2>
         <p className="landing-featured-prize">{promo.raffle.prize}</p>
         <p className="landing-featured-house">{promo.house_name}</p>
-        <span className="landing-featured-cta">Participar agora →</span>
+        {promo.description && (
+          <p className="landing-featured-description">{promo.description}</p>
+        )}
+        {sortedTiers.length > 0 && (
+          <div className="landing-featured-tier-grid">
+            {sortedTiers.map(tier => (
+              <TierButton key={tier.min_deposit_cents} tier={tier} onClick={() => onTierClick(tier)} />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary landing-featured-cta-btn"
+          onClick={onPromoClick}
+        >
+          Participar agora <span className="btn-arrow" aria-hidden>→</span>
+        </button>
       </div>
-    </button>
+    </section>
   );
 }
 
@@ -146,32 +189,32 @@ function HousePromoBlock({
 
   return (
     <div className="landing-house-promo-block">
-      <button type="button" className="landing-house-promo-title" onClick={onPromoClick}>
-        <span>{promo.name}</span>
-        <span className="landing-house-promo-prize">{promo.raffle.prize}</span>
+      <button
+        type="button"
+        className="landing-house-promo-creative"
+        onClick={onPromoClick}
+        aria-label={`Abrir ${promo.name}`}
+      >
+        <PromoCreative promo={promo} />
       </button>
-      {sortedTiers.length > 0 ? (
-        <div className="landing-tier-grid">
-          {sortedTiers.map(tier => (
-            <button
-              key={tier.min_deposit_cents}
-              type="button"
-              className="landing-tier-btn"
-              onClick={() => onTierClick(tier)}
-            >
-              <div className="landing-tier-amount">
-                <strong>{formatBRL(tier.min_deposit_cents)}</strong>
-                <span>depósito mínimo</span>
-              </div>
-              <div className="landing-tier-tickets">
-                🎟 <strong>{tier.tickets}</strong> {tier.tickets === 1 ? 'cota' : 'cotas'}
-              </div>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted text-sm">Sem tiers configurados.</p>
-      )}
+      <div className="landing-house-promo-content">
+        <button type="button" className="landing-house-promo-title" onClick={onPromoClick}>
+          <span>{promo.name}</span>
+          <span className="landing-house-promo-prize">{promo.raffle.prize}</span>
+        </button>
+        {promo.description && (
+          <p className="landing-house-promo-description">{promo.description}</p>
+        )}
+        {sortedTiers.length > 0 ? (
+          <div className="landing-tier-grid">
+            {sortedTiers.map(tier => (
+              <TierButton key={tier.min_deposit_cents} tier={tier} onClick={() => onTierClick(tier)} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted text-sm">Sem tiers configurados.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -292,7 +335,11 @@ export default function LandingPage() {
             </p>
 
             {featured ? (
-              <FeaturedPromoCard promo={featured} onClick={() => openClaim(featured)} />
+              <FeaturedPromoCard
+                promo={featured}
+                onPromoClick={() => openClaim(featured)}
+                onTierClick={tier => openClaim(featured, tier)}
+              />
             ) : status === 'loaded' ? (
               <p className="landing-active-empty">Novas promoções em breve.</p>
             ) : (
@@ -302,10 +349,12 @@ export default function LandingPage() {
             <div className="landing-hero-ctas">
               {primaryCtaOnClick ? (
                 <button type="button" className="btn btn-primary btn-lg" onClick={primaryCtaOnClick}>
-                  👉 Participar agora
+                  Participar agora <span className="btn-arrow" aria-hidden>→</span>
                 </button>
               ) : (
-                <Link to={primaryCtaHref} className="btn btn-primary btn-lg">👉 Participar agora</Link>
+                <Link to={primaryCtaHref} className="btn btn-primary btn-lg">
+                  Participar agora <span className="btn-arrow" aria-hidden>→</span>
+                </Link>
               )}
               <button type="button" className="btn btn-ghost btn-lg" onClick={scrollToHowItWorks}>
                 Ver como funciona ↓
@@ -410,10 +459,12 @@ export default function LandingPage() {
           <p className="landing-final-sub">Transforme seus depósitos em chances reais de ganhar.</p>
           {primaryCtaOnClick ? (
             <button type="button" className="btn btn-primary btn-lg" onClick={primaryCtaOnClick}>
-              👉 Começar agora
+              Começar agora <span className="btn-arrow" aria-hidden>→</span>
             </button>
           ) : (
-            <Link to={primaryCtaHref} className="btn btn-primary btn-lg">👉 Começar agora</Link>
+            <Link to={primaryCtaHref} className="btn btn-primary btn-lg">
+              Começar agora <span className="btn-arrow" aria-hidden>→</span>
+            </Link>
           )}
         </section>
       </main>
