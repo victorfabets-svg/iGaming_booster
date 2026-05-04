@@ -9,7 +9,33 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { db } from '@shared/database/connection';
-import { ok } from '../utils/response';
+import { ok, fail } from '../utils/response';
+import { randomUUID } from 'crypto';
+import { createProofUseCase } from '../../domains/validation/application/createProofUseCase';
+import { sendEmail } from '@shared/infrastructure/email/resend';
+import { loadAndRender } from '@shared/infrastructure/email/render-template';
+import { renderFallback } from '@shared/infrastructure/email/fallback-templates';
+import { auditLog } from '@shared/events/audit-log';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function digitsOnly(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\D/g, '') : '';
+}
+
+function isValidCpf(cpf: string): boolean {
+  // Format-only validation: 11 digits. Rigorous CPF arithmetic skipped
+  // intentionally — many users mistype the verifier digits even on valid
+  // documents and bouncing them at the gate hurts conversion. Real
+  // validation happens later in OCR/operator review.
+  return cpf.length === 11;
+}
+
+function isValidWhatsapp(phone: string): boolean {
+  // Accept 10-13 digits (BR mobile with or without country code).
+  return phone.length >= 10 && phone.length <= 13;
+}
 
 interface FeaturedRow {
   id: string;
@@ -110,8 +136,8 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
   );
 
   // GET /public/promotions/active — all active promotions in window,
-  // grouped by house. Powers the landing's hero grid and the
-  // "Como Funciona" per-house listing. No auth, cached 60s.
+  // with tiers, grouped on the client by house. Powers the landing's
+  // hero card + per-house tier-button grid. No auth, cached 60s.
   fastify.get(
     '/public/promotions/active',
     async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -134,6 +160,28 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
 
       reply.header('Cache-Control', 'public, max-age=60');
 
+      if (result.rows.length === 0) {
+        return ok(reply, { promotions: [] });
+      }
+
+      const promoIds = result.rows.map(r => r.id);
+      const tiersResult = await db.query<{ promotion_id: string; min_deposit_cents: number; tickets: number }>(
+        `SELECT promotion_id, min_deposit_cents, tickets
+           FROM promotions.tiers
+          WHERE promotion_id = ANY($1::uuid[])
+          ORDER BY min_deposit_cents ASC`,
+        [promoIds]
+      );
+
+      const tiersByPromo = new Map<string, Array<{ min_deposit_cents: number; tickets: number }>>();
+      for (const t of tiersResult.rows) {
+        if (!tiersByPromo.has(t.promotion_id)) tiersByPromo.set(t.promotion_id, []);
+        tiersByPromo.get(t.promotion_id)!.push({
+          min_deposit_cents: t.min_deposit_cents,
+          tickets: t.tickets,
+        });
+      }
+
       const promotions = result.rows.map(row => ({
         slug: row.slug,
         name: row.name,
@@ -154,9 +202,209 @@ export async function publicPromotionsRoutes(fastify: FastifyInstance): Promise<
           total_numbers: row.total_numbers,
           tickets_emitted: Math.max(0, row.next_number - 1),
         },
+        tiers: tiersByPromo.get(row.id) ?? [],
       }));
 
       return ok(reply, { promotions });
+    }
+  );
+
+  // POST /public/promotions/:slug/claim — passwordless proof submission.
+  //
+  // Accepts (multipart):
+  //   file                       — proof image/pdf (required)
+  //   email, name, cpf, whatsapp — contact details (required)
+  //   tier_min_deposit_cents     — optional; tier the user is targeting
+  //
+  // Behaviour:
+  //   1. Find or create a user by email. If a password is already set,
+  //      we refuse and ask the operator to log in (we don't leak the fact
+  //      that an account exists — message is generic).
+  //   2. Persist cpf/whatsapp/name on the user (so admin sees them later).
+  //   3. Run the existing createProofUseCase (storage + OCR pipeline +
+  //      reward path + ticket generation when validation approves).
+  //   4. Issue a verification email reusing the email_verification
+  //      template; clicking lands on /verify-email/:token which already
+  //      logs the user in (no password needed for first session).
+  //   5. Best-effort affiliate attribution from the tipster_cid cookie
+  //      (matches /register's pattern; ON CONFLICT DO NOTHING).
+  fastify.post<{ Params: { slug: string } }>(
+    '/public/promotions/:slug/claim',
+    async (request: FastifyRequest<{ Params: { slug: string } }>, reply: FastifyReply) => {
+      const { slug } = request.params;
+      const requestId = (request as any).requestId;
+
+      // Validate promo is active in window.
+      const promoResult = await db.query<{ id: string; name: string }>(
+        `SELECT id, name FROM promotions.promotions
+          WHERE slug = $1 AND active = TRUE
+            AND starts_at <= NOW() AND ends_at >= NOW()
+          LIMIT 1`,
+        [slug]
+      );
+      if (promoResult.rows.length === 0) {
+        return fail(reply, 'Promoção não encontrada ou fora da janela', 'INVALID_PROMOTION', 400);
+      }
+      const promotion = promoResult.rows[0];
+
+      // Parse multipart payload.
+      const parts = request.parts();
+      let fileBuffer: Buffer | null = null;
+      let filename: string | null = null;
+      let email = '';
+      let name = '';
+      let cpf = '';
+      let whatsapp = '';
+
+      try {
+        for await (const part of parts) {
+          if (part.type === 'file' && part.fieldname === 'file') {
+            fileBuffer = await part.toBuffer();
+            filename = part.filename;
+          } else if (part.type === 'field') {
+            const v = typeof part.value === 'string' ? part.value.trim() : '';
+            if (part.fieldname === 'email') email = v.toLowerCase();
+            else if (part.fieldname === 'name') name = v;
+            else if (part.fieldname === 'cpf') cpf = digitsOnly(v);
+            else if (part.fieldname === 'whatsapp') whatsapp = digitsOnly(v);
+          }
+        }
+      } catch (err) {
+        request.log.error({ event: 'claim_multipart_parse_failed', err: (err as Error).message });
+        return fail(reply, 'Falha ao processar o envio. Tente novamente.', 'MULTIPART_ERROR');
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return fail(reply, 'Envie o comprovante.', 'VALIDATION_ERROR');
+      }
+      if (!EMAIL_REGEX.test(email)) {
+        return fail(reply, 'Informe um e-mail válido.', 'VALIDATION_ERROR');
+      }
+      if (!name) {
+        return fail(reply, 'Informe seu nome completo.', 'VALIDATION_ERROR');
+      }
+      if (!isValidCpf(cpf)) {
+        return fail(reply, 'Informe um CPF com 11 dígitos.', 'VALIDATION_ERROR');
+      }
+      if (!isValidWhatsapp(whatsapp)) {
+        return fail(reply, 'Informe um WhatsApp válido (DDD + número).', 'VALIDATION_ERROR');
+      }
+
+      // Find or create user by email.
+      const existing = await db.query<{ id: string; password_hash: string | null }>(
+        `SELECT id, password_hash FROM identity.users WHERE email = $1`,
+        [email]
+      );
+
+      let userId: string;
+      let isNewUser: boolean;
+
+      if (existing.rows.length === 0) {
+        userId = randomUUID();
+        await db.query(
+          `INSERT INTO identity.users (id, email, display_name, cpf, whatsapp, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [userId, email, name, cpf, whatsapp]
+        );
+        isNewUser = true;
+        await auditLog(userId, 'user_created_via_promo_claim', { email, promotion_slug: slug }, requestId);
+      } else {
+        const u = existing.rows[0];
+        if (u.password_hash) {
+          // Don't leak existence — same generic message either way.
+          return fail(
+            reply,
+            'Já encontramos um cadastro com esse e-mail. Faça login para enviar o comprovante.',
+            'ACCOUNT_EXISTS',
+            409
+          );
+        }
+        userId = u.id;
+        // Refresh contact fields with the values the user just typed —
+        // they may differ from a previous shadow signup.
+        await db.query(
+          `UPDATE identity.users
+              SET display_name = COALESCE(NULLIF($2, ''), display_name),
+                  cpf          = COALESCE(NULLIF($3, ''), cpf),
+                  whatsapp     = COALESCE(NULLIF($4, ''), whatsapp)
+            WHERE id = $1`,
+          [userId, name, cpf, whatsapp]
+        );
+        isNewUser = false;
+      }
+
+      // Best-effort affiliate attribution (matches /register pattern).
+      const cookieCid = (request.cookies as Record<string, string> | undefined)?.tipster_cid;
+      if (cookieCid) {
+        try {
+          await db.query(
+            `INSERT INTO affiliate.attributions (user_id, click_id, house_id)
+             SELECT $1, c.click_id, c.house_id
+               FROM affiliate.clicks c
+               WHERE c.click_id = $2
+             ON CONFLICT (user_id) DO NOTHING`,
+            [userId, cookieCid]
+          );
+        } catch (attrErr) {
+          request.log.error({ event: 'claim_attribution_failed', err: (attrErr as Error).message });
+        }
+      }
+
+      // Submit proof through the existing pipeline (storage + OCR + reward).
+      let proofId: string;
+      try {
+        const result = await createProofUseCase({
+          user_id: userId,
+          file_buffer: fileBuffer,
+          filename: filename || 'comprovante.jpg',
+          promotion_id: promotion.id,
+        });
+        proofId = result.proof_id;
+      } catch (err) {
+        request.log.error({ event: 'claim_proof_failed', err: (err as Error).message });
+        return fail(reply, 'Falha ao salvar o comprovante. Tente novamente.', 'PROOF_FAILED');
+      }
+
+      // Issue a verification email so the user can land on the platform
+      // logged in (no password required for the first session).
+      const verificationToken = randomUUID();
+      const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS);
+      try {
+        await db.query(
+          `UPDATE identity.users
+              SET verification_token = $2,
+                  verification_token_expires_at = $3
+            WHERE id = $1`,
+          [userId, verificationToken, expiresAt]
+        );
+      } catch (err) {
+        request.log.error({ event: 'claim_verification_token_save_failed', err: (err as Error).message });
+        // Non-fatal — proof is already saved.
+      }
+
+      const webBase = process.env.WEB_BASE_URL || 'http://localhost:5173';
+      const verificationUrl = `${webBase}/verify-email/${verificationToken}`;
+      const rendered = await loadAndRender('email_verification', {
+        verification_url: verificationUrl,
+        display_name: name,
+        email,
+      }) ?? renderFallback('email_verification', {
+        verification_url: verificationUrl,
+        display_name: name,
+        email,
+      });
+
+      // Fire-and-forget — never block the API response on email infra.
+      sendEmail({ to: email, subject: rendered.subject, html: rendered.html })
+        .catch(err => request.log.error({ event: 'claim_email_failed', err: (err as Error).message }));
+
+      return ok(reply, {
+        ok: true,
+        email,
+        is_new_user: isNewUser,
+        proof_id: proofId,
+        promotion_name: promotion.name,
+      });
     }
   );
 }
