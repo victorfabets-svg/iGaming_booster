@@ -82,11 +82,14 @@ export const authApi = {
   async register(
     email: string,
     password: string,
-    displayName?: string
+    displayName?: string,
+    cid?: string
   ): Promise<ApiResponse<{ user_id: string; email: string }>> {
+    const body: Record<string, unknown> = { email, password, display_name: displayName };
+    if (cid) body.cid = cid;
     return fetchJson<{ user_id: string; email: string }>('/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, display_name: displayName }),
+      body: JSON.stringify(body),
     });
   },
 

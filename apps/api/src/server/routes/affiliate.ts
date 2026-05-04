@@ -133,6 +133,121 @@ export async function affiliateRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // Promotion-based redirect: /r/p/:promo_slug
+  // Records a click against the promo's house (when an affiliate.houses entry
+  // exists for that core.house) and sends the user to /signup with `ref` so
+  // the SPA can forward it as `cid` to /register — important because API
+  // and web live on different domains in production (cookies cross-site
+  // are unreliable, so we duplicate via query string).
+  fastify.get<{ Params: { promo_slug: string } }>(
+    '/r/p/:promo_slug',
+    async (request: FastifyRequest<{ Params: { promo_slug: string } }>, reply: FastifyReply) => {
+      const { promo_slug } = request.params;
+
+      const ip = request.ip
+        || (request.headers['x-forwarded-for'] as string)
+        || 'unknown';
+      const userAgent = request.headers['user-agent'];
+      const country = request.headers['cf-ipcountry'] as string
+        || request.headers['x-vercel-ip-country'] as string
+        || null;
+
+      const utmSource = request.query['utm_source'] as string | undefined;
+      const utmMedium = request.query['utm_medium'] as string | undefined;
+      const utmCampaign = request.query['utm_campaign'] as string | undefined;
+      const utmTerm = request.query['utm_term'] as string | undefined;
+      const utmContent = request.query['utm_content'] as string | undefined;
+
+      // Resolve promo → its core.house → matching affiliate.house (if any).
+      // Window check (active + starts/ends) is enforced so an unpublished or
+      // expired promo can't keep generating clicks.
+      const promoResult = await db.query<{
+        promo_id: string;
+        promo_name: string;
+        core_house_id: string;
+        affiliate_house_id: string | null;
+      }>(
+        `SELECT
+           p.id AS promo_id,
+           p.name AS promo_name,
+           p.house_id AS core_house_id,
+           ah.id AS affiliate_house_id
+         FROM promotions.promotions p
+         LEFT JOIN affiliate.houses ah ON ah.house_id = p.house_id AND ah.active = true
+         WHERE p.slug = $1
+           AND p.active = true
+           AND p.starts_at <= NOW()
+           AND p.ends_at >= NOW()
+         LIMIT 1`,
+        [promo_slug]
+      );
+
+      const webBase = process.env.WEB_BASE_URL || 'http://localhost:5173';
+
+      if (promoResult.rows.length === 0) {
+        // Promo invalid/expired — still let the user reach signup, no tracking.
+        return reply
+          .status(302)
+          .header('Location', `${webBase}/signup`)
+          .send();
+      }
+
+      const promo = promoResult.rows[0];
+      const signupUrl = new URL(`${webBase}/signup`);
+      signupUrl.searchParams.set('promo', promo_slug);
+      signupUrl.searchParams.set('promo_name', promo.promo_name);
+
+      if (!promo.affiliate_house_id) {
+        // No affiliate.houses entry for this promo's house → cannot attribute.
+        // Still redirect to signup with promo context (no ref).
+        return reply.status(302).header('Location', signupUrl.toString()).send();
+      }
+
+      const clickId = randomUUID();
+      try {
+        await db.query(
+          `INSERT INTO affiliate.clicks (
+            house_id, campaign_id, click_id, ip, user_agent, ref_cookie,
+            utm_source, utm_medium, utm_campaign, utm_term, utm_content, country
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            promo.affiliate_house_id,
+            null,
+            clickId,
+            ip,
+            userAgent,
+            null,
+            utmSource,
+            utmMedium,
+            utmCampaign,
+            utmTerm,
+            utmContent,
+            country,
+          ]
+        );
+      } catch (err) {
+        console.error('[affiliate] promo click insert failed:', err);
+        // Click insert failed — bail out gracefully without ref.
+        return reply.status(302).header('Location', signupUrl.toString()).send();
+      }
+
+      const isProduction = process.env.NODE_ENV === 'production';
+      reply.setCookie('tipster_cid', clickId, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 90 * 24 * 60 * 60,
+      });
+
+      // Pass click_id via query string so the SPA can forward it as `cid`
+      // even when cookies are blocked (cross-site cookie suppression).
+      signupUrl.searchParams.set('ref', clickId);
+
+      return reply.status(302).header('Location', signupUrl.toString()).send();
+    }
+  );
+
   // Legacy affiliate redirect: /r/:house_slug/:campaign_slug?
   // Registers click, sets cookie, redirects to house base URL
   fastify.get<{ Params: ClickParams }>(

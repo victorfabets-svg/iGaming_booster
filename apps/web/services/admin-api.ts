@@ -626,6 +626,13 @@ export const adminApi = {
     });
   },
 
+  async setPromotionFeatured(slug: string, featured: boolean) {
+    return fetchJson<{ promotion: Promotion; tiers: PromotionTier[]; repescagem_source_slugs: string[] }>(`/admin/promotions/${slug}/feature`, {
+      method: 'POST',
+      body: JSON.stringify({ featured }),
+    });
+  },
+
   async listRaffles(filters?: { active?: boolean; without_promotion?: boolean }) {
     const params = new URLSearchParams();
     if (filters?.active !== undefined) params.set('active', String(filters.active));
@@ -692,6 +699,7 @@ export interface Promotion {
   repescagem: boolean;
   repescagem_applied_at: string | null;
   active: boolean;
+  is_featured: boolean;
   tiers: PromotionTier[];
   repescagem_source_slugs: string[];
   created_at: string;
