@@ -255,6 +255,7 @@ export interface MePromotion {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
   house_slug: string;
   house_name: string;
   deposit_url: string;
