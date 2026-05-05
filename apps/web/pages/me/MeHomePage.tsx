@@ -168,13 +168,25 @@ function PromoCard({ promo, onUploadClick }: {
   const endsAt = useMemo(() => formatRemaining(promo.ends_at), [promo.ends_at]);
 
   return (
-    <div className="card">
+    <div className="card promo-grid-card">
       {promo.creative_url ? (
-        <img
-          src={promo.creative_url}
-          alt={promo.name}
-          className="promo-creative"
-        />
+        promo.creative_type === 'video' ? (
+          <video
+            src={promo.creative_url}
+            className="promo-creative"
+            autoPlay
+            loop
+            muted
+            playsInline
+            aria-label={promo.name}
+          />
+        ) : (
+          <img
+            src={promo.creative_url}
+            alt={promo.name}
+            className="promo-creative"
+          />
+        )
       ) : (
         <div className="promo-creative promo-creative-placeholder" />
       )}
@@ -184,7 +196,7 @@ function PromoCard({ promo, onUploadClick }: {
         <p className="text-secondary text-sm mb-3">{promo.description}</p>
       )}
       <p className="text-muted text-xs mb-3">Termina em {endsAt}</p>
-      <div className="flex gap-2">
+      <div className="flex gap-2 promo-grid-card-actions">
         <button
           type="button"
           className="btn btn-primary"

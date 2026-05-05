@@ -16,6 +16,7 @@ interface PromotionRow {
   name: string;
   description: string | null;
   creative_url: string | null;
+  creative_type: 'image' | 'video';
   house_slug: string;
   house_name: string;
   deposit_url: string;
@@ -50,7 +51,7 @@ export async function mePromotionsRoutes(fastify: FastifyInstance): Promise<void
   fastify.get('/me/promotions', async (_request: FastifyRequest, reply: FastifyReply) => {
     const promosResult = await db.query<PromotionRow>(
       `SELECT
-         p.id, p.slug, p.name, p.description, p.creative_url,
+         p.id, p.slug, p.name, p.description, p.creative_url, p.creative_type,
          h.slug AS house_slug, h.name AS house_name, h.deposit_url,
          p.starts_at, p.ends_at, p.draw_at, p.raffle_id
        FROM promotions.promotions p
@@ -89,6 +90,7 @@ export async function mePromotionsRoutes(fastify: FastifyInstance): Promise<void
       name: p.name,
       description: p.description,
       creative_url: p.creative_url,
+      creative_type: p.creative_type,
       house_slug: p.house_slug,
       house_name: p.house_name,
       deposit_url: p.deposit_url,
@@ -110,7 +112,7 @@ export async function mePromotionsRoutes(fastify: FastifyInstance): Promise<void
 
       const promoResult = await db.query<PromotionRow>(
         `SELECT
-           p.id, p.slug, p.name, p.description, p.creative_url,
+           p.id, p.slug, p.name, p.description, p.creative_url, p.creative_type,
            h.slug AS house_slug, h.name AS house_name, h.deposit_url,
            p.starts_at, p.ends_at, p.draw_at, p.raffle_id
          FROM promotions.promotions p
@@ -147,6 +149,7 @@ export async function mePromotionsRoutes(fastify: FastifyInstance): Promise<void
           name: promo.name,
           description: promo.description,
           creative_url: promo.creative_url,
+          creative_type: promo.creative_type,
           house_slug: promo.house_slug,
           house_name: promo.house_name,
           deposit_url: promo.deposit_url,
