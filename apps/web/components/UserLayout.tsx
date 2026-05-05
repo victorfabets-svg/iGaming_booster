@@ -9,8 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  Upload,
-  History,
+  Receipt,
   Ticket,
   Trophy,
   CreditCard,
@@ -30,8 +29,7 @@ interface NavItem {
 
 const menuItems: NavItem[] = [
   { path: '/me', label: 'Início', icon: <Home /> },
-  { path: '/me/upload', label: 'Enviar Comprovante', icon: <Upload /> },
-  { path: '/me/historico', label: 'Histórico', icon: <History /> },
+  { path: '/me/historico', label: 'Comprovantes', icon: <Receipt /> },
   { path: '/me/tickets', label: 'Meus Números', icon: <Ticket /> },
   { path: '/me/raffles', label: 'Sorteios', icon: <Trophy /> },
   { path: '/me/subscription', label: 'Assinatura', icon: <CreditCard /> },

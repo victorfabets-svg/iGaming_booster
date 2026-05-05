@@ -128,7 +128,7 @@ function validatePromotionInput(input: unknown, isUpdate = false): string | null
   }
   if (ctaUrl) {
     try {
-      // Accept relative paths (e.g. /me/upload?promo=...) and absolute URLs
+      // Accept relative paths (e.g. /me) and absolute URLs
       if (ctaUrl.startsWith('/')) {
         // ok — internal path
       } else {

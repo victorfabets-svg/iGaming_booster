@@ -458,7 +458,7 @@ function PromotionModal({
             <input
               className="input"
               type="text"
-              placeholder="https://wa.me/..., https://casa.com/deposit, /me/upload?promo=..."
+              placeholder="https://wa.me/..., https://casa.com/deposit, /me"
               value={form.cta_url}
               onChange={e => setForm({ ...form, cta_url: e.target.value })}
             />

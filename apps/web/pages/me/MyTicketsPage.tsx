@@ -38,9 +38,9 @@ export default function MyTicketsPage() {
     return (
       <div className="card empty-state">
         <h2 className="card-title mb-3">Você ainda não tem números</h2>
-        <p className="text-secondary mb-4">Envie um comprovante para participar dos sorteios.</p>
-        <button type="button" className="btn btn-primary" onClick={() => navigate('/me/upload')}>
-          Enviar Comprovante
+        <p className="text-secondary mb-4">Escolha uma promoção ativa e envie um comprovante para participar dos sorteios.</p>
+        <button type="button" className="btn btn-primary" onClick={() => navigate('/me')}>
+          Ver promoções ativas
         </button>
       </div>
     );

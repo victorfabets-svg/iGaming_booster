@@ -15,7 +15,6 @@ import MySubscriptionPage from './pages/me/MySubscriptionPage';
 import MyTipsPage from './pages/me/MyTipsPage';
 import MyProfilePage from './pages/me/MyProfilePage';
 import HistoricoSection from './pages/sections/HistoricoSection';
-import ConversionFlow from './pages/ConversionFlow';
 import AdminLayout from './components/AdminLayout';
 import DashboardPage from './pages/admin/DashboardPage';
 import PartnerHousesPage from './pages/admin/PartnerHousesPage';
@@ -88,8 +87,10 @@ function App() {
         }
       >
         <Route index element={<MeHomePage />} />
-        <Route path="upload" element={<ConversionFlow />} />
         <Route path="historico" element={<HistoricoSection />} />
+        {/* Legacy /me/upload — proofs now must be tied to a promotion via
+            the modal opened from /me. Redirect anyone with a stale link. */}
+        <Route path="upload" element={<Navigate to="/me" replace />} />
         <Route path="tickets" element={<MyTicketsPage />} />
         <Route path="raffles" element={<MyRafflesPage />} />
         <Route path="subscription" element={<MySubscriptionPage />} />

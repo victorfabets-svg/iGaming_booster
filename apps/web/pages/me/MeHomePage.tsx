@@ -6,8 +6,8 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { meApi, MePromotion, RepescagemInvitation } from '../../services/me-api';
+import PromoUploadModal from '../../components/PromoUploadModal';
 
 type LoadStatus = 'loading' | 'success' | 'error';
 
@@ -18,12 +18,12 @@ interface AccountStats {
 }
 
 export default function MeHomePage() {
-  const navigate = useNavigate();
   const [promotions, setPromotions] = useState<MePromotion[]>([]);
   const [invitations, setInvitations] = useState<RepescagemInvitation[]>([]);
   const [stats, setStats] = useState<AccountStats>({ proofs: 0, tickets: 0, raffles: 0 });
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<MePromotion | null>(null);
 
   useEffect(() => {
     loadAll();
@@ -142,11 +142,18 @@ export default function MeHomePage() {
             <div key={promo.id} className="g-col-4 mb-4">
               <PromoCard
                 promo={promo}
-                onUploadClick={() => navigate(`/me/upload?promotion=${promo.slug}`)}
+                onUploadClick={() => setUploadTarget(promo)}
               />
             </div>
           ))}
         </div>
+      )}
+
+      {uploadTarget && (
+        <PromoUploadModal
+          promo={uploadTarget}
+          onClose={() => setUploadTarget(null)}
+        />
       )}
     </div>
   );

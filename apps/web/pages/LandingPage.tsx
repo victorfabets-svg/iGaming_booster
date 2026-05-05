@@ -316,7 +316,7 @@ export default function LandingPage() {
     });
   };
 
-  const primaryCtaHref = isAuthenticated ? '/me/upload' : '/signup';
+  const primaryCtaHref = isAuthenticated ? '/me' : '/signup';
   const primaryCtaOnClick = featured ? () => openClaim(featured) : undefined;
 
   return (
